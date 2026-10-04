@@ -2,7 +2,7 @@
 
 Personal tool để biến video dài thành 2 video dọc 1080×1920. App có hai chế độ chọn nội dung:
 
-- **AI plan**: dùng transcript có timestamp với OpenAI, Qwen hoặc mock mode.
+- **AI plan**: đăng nhập ChatGPT Plus / Pro bằng OAuth chính thức, hoặc dùng mock mode.
 - **Manual cut**: nhập timestamp trực tiếp, không gọi AI và không cần subtitle.
 
 Sau khi cắt/ghép, worker dựng background blur, giữ main video ở native 100% và center-crop phần tràn ngang, thêm typography social-video, rồi mới tăng tốc video + audio lên 1.25×.
@@ -39,7 +39,7 @@ Media worker chỉ lắng nghe trên `127.0.0.1:8787`. Video nguồn và output 
    - YouTube: tải video tối đa 1080p, title gốc và thử lấy subtitle DE/EN/FR/JA/KO.
    - Local: upload file trực tiếp vào worker.
 3. Chọn **AI plan** hoặc **Manual cut**.
-4. Kiểm tra 2 Part và title trong portrait preview.
+4. Phát source ngay trong portrait preview, dùng thanh timeline để seek, rồi kiểm tra 2 Part và title.
 5. Bấm **Render 2 MP4 files** rồi tải Part 1 / Part 2 khi progress đạt 100%.
 
 Nếu YouTube không có subtitle hoặc endpoint subtitle bị giới hạn, video vẫn được chuẩn bị bình thường; chuyển sang **Manual cut** và nhập mỗi đoạn theo format:
@@ -51,11 +51,13 @@ Nếu YouTube không có subtitle hoặc endpoint subtitle bị giới hạn, vi
 
 Edit plan luôn lưu timestamp gốc. Ví dụ source cut 10 giây sẽ còn khoảng 8 giây sau bước speed-up 1.25×.
 
-## AI provider
+## ChatGPT plan — không cần API key
 
-Trong tab **AI plan**, chọn OpenAI hoặc Qwen rồi paste API key vào ô ngay bên dưới. Key được lưu trong localStorage của trình duyệt đó và chỉ gửi tới API route khi bấm **Generate 2-part plan**.
+Trong tab **AI plan**, bấm **Continue with ChatGPT**. App mở OAuth chính thức của OpenAI bằng Authorization Code + PKCE; nếu account Plus / Pro đủ điều kiện và cấp quyền plan usage, worker sẽ dùng Responses API để tạo edit plan.
 
-Không muốn nhập key thì chọn Mock hoặc dùng Manual cut. Cấu hình `.env.local` vẫn được hỗ trợ như một tùy chọn nâng cao, nhưng không bắt buộc cho workflow cá nhân.
+Access token và refresh token chỉ được lưu trong **macOS Keychain** bởi media worker local. Token không được đưa vào source, `.env`, localStorage hay website đã deploy. Không muốn đăng nhập thì chọn Mock hoặc dùng Manual cut.
+
+Chi tiết kỹ thuật và xử lý lỗi nằm trong [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md).
 
 ## Render preset
 
