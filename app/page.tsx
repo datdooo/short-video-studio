@@ -77,6 +77,7 @@ function downloadJson(filename: string, value: unknown) {
 
 export default function Home() {
   const [editMode, setEditMode] = useState<"ai" | "manual">("ai");
+  const [sourceMode, setSourceMode] = useState<"youtube" | "local">("youtube");
   const [provider, setProvider] = useState<AiProvider>("mock");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState(DEFAULT_REQUEST.originalTitle);
@@ -88,6 +89,8 @@ export default function Home() {
   const [error, setError] = useState("");
   const [localVideoUrl, setLocalVideoUrl] = useState("");
   const [localFileName, setLocalFileName] = useState("");
+  const [youtubeState, setYoutubeState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [youtubeError, setYoutubeError] = useState("");
   const [manualPart1Title, setManualPart1Title] = useState("THE DETAIL NOBODY EXPECTED");
   const [manualPart2Title, setManualPart2Title] = useState("THEN EVERYTHING CHANGED");
   const [manualPart1Ranges, setManualPart1Ranges] = useState("01:12 - 01:46 First reaction\n02:25 - 03:18 Engine reveal");
@@ -102,6 +105,37 @@ export default function Home() {
   useEffect(() => () => {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
   }, [localVideoUrl]);
+
+  useEffect(() => {
+    if (sourceMode !== "youtube" || !sourceUrl.trim()) {
+      setYoutubeState("idle");
+      setYoutubeError("");
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setYoutubeState("loading");
+      setYoutubeError("");
+      try {
+        const response = await fetch(`/api/youtube/metadata?url=${encodeURIComponent(sourceUrl.trim())}`, {
+          signal: controller.signal,
+        });
+        const data = (await response.json()) as { title?: string; error?: string };
+        if (!response.ok || !data.title) throw new Error(data.error || "Không lấy được YouTube title.");
+        setSourceTitle(data.title);
+        setPlan((current) => ({ ...current, originalTitle: data.title as string }));
+        setYoutubeState("ready");
+      } catch (caughtError) {
+        if (controller.signal.aborted) return;
+        setYoutubeState("error");
+        setYoutubeError(caughtError instanceof Error ? caughtError.message : "Không lấy được YouTube title.");
+      }
+    }, 450);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [sourceMode, sourceUrl]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -263,7 +297,7 @@ export default function Home() {
             </Badge>
           </div>
 
-          <Tabs defaultValue="youtube" className="mt-6">
+          <Tabs value={sourceMode} onValueChange={(value) => setSourceMode(value as "youtube" | "local")} className="mt-6">
             <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
               <TabsTrigger value="youtube" className="rounded-lg text-xs">YouTube</TabsTrigger>
               <TabsTrigger value="local" className="rounded-lg text-xs">Local video</TabsTrigger>
@@ -274,7 +308,12 @@ export default function Home() {
                 <Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
                 <Input id="youtube-url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
               </div>
-              <p className="mt-2 text-[11px] leading-5 text-zinc-600">URL import hook is ready; direct download needs a separate local media worker.</p>
+              <p className="mt-2 text-[11px] leading-5 text-zinc-600">
+                {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
+                {youtubeState === "ready" && "Đã tự động lấy title gốc từ YouTube."}
+                {youtubeState === "error" && youtubeError}
+                {youtubeState === "idle" && "Paste URL để app tự lấy original title."}
+              </p>
             </TabsContent>
             <TabsContent value="local" className="pt-3">
               <label className="flex h-[84px] cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-white/12 bg-white/[.02] text-sm text-zinc-400 transition hover:border-[#ff4d2e]/40 hover:bg-[#ff4d2e]/5 hover:text-white">
@@ -286,8 +325,22 @@ export default function Home() {
           </Tabs>
 
           <div className="mt-5">
-            <label htmlFor="source-title" className="field-label">Original title</label>
-            <Input id="source-title" value={sourceTitle} onChange={(event) => setSourceTitle(event.target.value)} className="studio-input mt-2" />
+            <div className="flex items-center justify-between">
+              <label htmlFor="source-title" className="field-label">Original title</label>
+              {sourceMode === "youtube" && (
+                <span className="flex items-center gap-1.5 text-[10px] text-zinc-600">
+                  {youtubeState === "loading" ? <Loader2 className="size-3 animate-spin" /> : youtubeState === "ready" ? <Check className="size-3 text-emerald-400" /> : null}
+                  Auto from YouTube
+                </span>
+              )}
+            </div>
+            <Input
+              id="source-title"
+              value={sourceTitle}
+              readOnly={sourceMode === "youtube"}
+              onChange={(event) => setSourceTitle(event.target.value)}
+              className="studio-input mt-2 read-only:cursor-default read-only:text-zinc-400"
+            />
           </div>
 
           <Tabs value={editMode} onValueChange={(value) => { setEditMode(value as "ai" | "manual"); setError(""); }} className="mt-5">
@@ -355,7 +408,7 @@ export default function Home() {
           <div className="mb-5 flex w-full max-w-[520px] items-center justify-between">
             <div>
               <p className="eyebrow">02 / PORTRAIT PREVIEW</p>
-              <p className="mt-1 text-xs text-zinc-500">Text safe width 86% · center crop</p>
+              <p className="mt-1 text-xs text-zinc-500">Native 100% · center crop horizontal overflow</p>
             </div>
             <div className="flex rounded-xl border border-white/8 bg-black/25 p-1">
               {plan.parts.map((part, index) => (
@@ -371,19 +424,19 @@ export default function Home() {
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
             )}
             <div className="absolute inset-0 bg-black/35" />
-            <div className="absolute inset-x-[7%] top-[5%] z-10 text-center">
+            <div className="absolute inset-x-[7%] top-[3%] z-10 flex h-[15.75%] items-end justify-center pb-2 text-center">
               <p className="social-copy text-[clamp(14px,2.4vh,20px)] leading-[1.12]">{plan.originalTitle.toUpperCase()}</p>
             </div>
-            <div className="absolute inset-x-0 top-[24%] z-10 h-[43%] overflow-hidden border-y border-white/15 bg-[#22242a]">
+            <div className="absolute inset-x-0 top-[18.75%] z-10 h-[56.25%] overflow-hidden border-y border-white/15 bg-[#22242a]">
               {localVideoUrl ? (
-                <video className="size-full object-cover" src={localVideoUrl} controls playsInline />
+                <video className="native-preview-video" src={localVideoUrl} controls playsInline />
               ) : (
                 <div className="absolute inset-0 bg-[linear-gradient(125deg,#111_0%,#572317_42%,#ef6b32_43%,#241716_47%,#0b0c0f_100%)]" />
               )}
               {!localVideoUrl && <button aria-label="Play preview" className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/40 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
-              <div className="absolute bottom-4 left-4 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-[9px] font-bold tracking-[.08em] text-white backdrop-blur-md">COVER · CENTER CROP</div>
+              <div className="absolute bottom-4 left-4 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-[9px] font-bold tracking-[.08em] text-white backdrop-blur-md">NATIVE 100% · CENTER CROP</div>
             </div>
-            <div className="absolute inset-x-[7%] bottom-[11.5%] z-10 text-center">
+            <div className="absolute inset-x-[7%] top-[75%] z-10 flex h-[16%] items-start justify-center pt-2 text-center">
               <p className="social-copy social-copy-main text-[clamp(24px,4vh,34px)] leading-[1.02]">{activePart.title}</p>
             </div>
             <div className="absolute inset-x-0 bottom-[4.2%] z-10 text-center"><span className="social-copy text-[clamp(17px,2.7vh,23px)]">{activePart.id}/{plan.parts.length}</span></div>
