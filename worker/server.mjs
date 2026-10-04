@@ -1,5 +1,11 @@
 import { spawn, spawnSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  randomBytes,
+  randomUUID,
+  verify as verifySignature,
+} from "node:crypto";
 import {
   createReadStream,
   createWriteStream,
@@ -8,6 +14,7 @@ import {
 } from "node:fs";
 import {
   mkdir,
+  chmod,
   readFile,
   readdir,
   rename,
@@ -25,6 +32,17 @@ const sourcesRoot = path.join(dataRoot, "sources");
 const port = Number(process.env.MEDIA_WORKER_PORT || 8787);
 const host = "127.0.0.1";
 const jobs = new Map();
+const pendingChatGPTAuth = new Map();
+const chatGPTRefreshes = new Map();
+const chatGPTHostPath = path.join(dataRoot, "chatgpt-host.json");
+const chatGPTKeychainService = "ShortCut Studio ChatGPT";
+const chatGPTKeychainAccount = "default";
+const chatGPTResource = "https://api.openai.com/v1";
+const chatGPTIssuer = "https://auth.openai.com";
+const chatGPTAuthorizeEndpoint = `${chatGPTIssuer}/api/accounts/authorize`;
+const chatGPTTokenEndpoint = `${chatGPTIssuer}/api/accounts/oauth/token`;
+const chatGPTJwksEndpoint = `${chatGPTIssuer}/.well-known/jwks.json`;
+const chatGPTScopes = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 
 function findOnPath(name) {
   const extensions = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
@@ -64,8 +82,9 @@ const versions = {
 function corsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": request.headers.origin || "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Filename",
+    "Access-Control-Allow-Methods": "GET, HEAD, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Filename, Range",
+    "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
     "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
@@ -90,6 +109,405 @@ async function readJson(request, limit = 6 * 1024 * 1024) {
     chunks.push(chunk);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+}
+
+function sendHtml(request, response, statusCode, title, message) {
+  const escapeHtml = (value) => String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  response.writeHead(statusCode, {
+    ...corsHeaders(request),
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  response.end(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{margin:0;background:#090a0c;color:#f4f4f5;font:16px/1.5 system-ui;display:grid;min-height:100vh;place-items:center}.card{max-width:520px;margin:24px;padding:28px;border:1px solid #ffffff18;border-radius:20px;background:#111216}h1{font-size:22px;margin:0 0 10px}p{color:#a1a1aa;margin:0}</style></head><body><main class="card"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main><script>setTimeout(()=>window.close(),1200)</script></body></html>`);
+}
+
+function base64Url(bytes) {
+  return Buffer.from(bytes).toString("base64url");
+}
+
+function runSecurity(args, input) {
+  if (process.platform !== "darwin" || !existsSync("/usr/bin/security")) {
+    throw new Error("ChatGPT sign-in cần macOS Keychain trên máy local này.");
+  }
+  return spawnSync("/usr/bin/security", args, {
+    encoding: "utf8",
+    input,
+    timeout: 8_000,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+}
+
+function readChatGPTCredentials() {
+  const result = runSecurity([
+    "find-generic-password",
+    "-a", chatGPTKeychainAccount,
+    "-s", chatGPTKeychainService,
+    "-w",
+  ]);
+  if (result.status !== 0) return null;
+  try {
+    return JSON.parse(result.stdout.trim());
+  } catch {
+    throw new Error("Credential ChatGPT trong Keychain bị hỏng. Hãy disconnect rồi đăng nhập lại.");
+  }
+}
+
+function writeChatGPTCredentials(credentials) {
+  const result = runSecurity([
+    "add-generic-password",
+    "-a", chatGPTKeychainAccount,
+    "-s", chatGPTKeychainService,
+    "-U",
+    "-w",
+  ], `${JSON.stringify(credentials)}\n`);
+  if (result.status !== 0) throw new Error("Không lưu được ChatGPT credential vào macOS Keychain.");
+}
+
+function deleteChatGPTCredentials() {
+  const result = runSecurity([
+    "delete-generic-password",
+    "-a", chatGPTKeychainAccount,
+    "-s", chatGPTKeychainService,
+  ]);
+  return result.status === 0;
+}
+
+async function getChatGPTHostId() {
+  try {
+    const saved = JSON.parse(await readFile(chatGPTHostPath, "utf8"));
+    if (/^urn:uuid:[a-f0-9-]{36}$/i.test(saved.ext_agent_host_id || "")) return saved.ext_agent_host_id;
+  } catch {
+    // First launch creates the stable host identifier below.
+  }
+  const extAgentHostId = `urn:uuid:${randomUUID()}`;
+  await mkdir(dataRoot, { recursive: true });
+  await writeFile(chatGPTHostPath, JSON.stringify({ ext_agent_host_id: extAgentHostId }, null, 2), { flag: "wx", mode: 0o600 })
+    .catch(async (error) => {
+      if (error?.code !== "EEXIST") throw error;
+    });
+  await chmod(chatGPTHostPath, 0o600).catch(() => undefined);
+  const saved = JSON.parse(await readFile(chatGPTHostPath, "utf8"));
+  return saved.ext_agent_host_id;
+}
+
+function decodeJwtPart(value) {
+  return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+}
+
+let cachedChatGPTJwks = null;
+
+async function validateChatGPTIdToken(idToken, { clientId, nonce, subject } = {}) {
+  const parts = String(idToken || "").split(".");
+  if (parts.length !== 3) throw new Error("OpenAI trả về ID token không hợp lệ.");
+  const header = decodeJwtPart(parts[0]);
+  const payload = decodeJwtPart(parts[1]);
+  if (header.alg !== "RS256" || !header.kid) throw new Error("ID token dùng thuật toán không được hỗ trợ.");
+
+  if (!cachedChatGPTJwks) {
+    const response = await fetch(chatGPTJwksEndpoint, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("Không tải được OpenAI signing keys.");
+    cachedChatGPTJwks = await response.json();
+  }
+  let jwk = cachedChatGPTJwks.keys?.find((key) => key.kid === header.kid);
+  if (!jwk) {
+    cachedChatGPTJwks = null;
+    const response = await fetch(chatGPTJwksEndpoint, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("Không refresh được OpenAI signing keys.");
+    cachedChatGPTJwks = await response.json();
+    jwk = cachedChatGPTJwks.keys?.find((key) => key.kid === header.kid);
+  }
+  if (!jwk) throw new Error("Không tìm thấy signing key cho ID token.");
+  const validSignature = verifySignature(
+    "RSA-SHA256",
+    Buffer.from(`${parts[0]}.${parts[1]}`),
+    createPublicKey({ key: jwk, format: "jwk" }),
+    Buffer.from(parts[2], "base64url"),
+  );
+  if (!validSignature) throw new Error("Chữ ký OpenAI ID token không hợp lệ.");
+
+  const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  const now = Math.floor(Date.now() / 1_000);
+  if (payload.iss !== chatGPTIssuer) throw new Error("OpenAI ID token issuer không hợp lệ.");
+  if (!audience.includes(clientId)) throw new Error("OpenAI ID token audience không khớp.");
+  if (!Number.isFinite(payload.exp) || payload.exp <= now) throw new Error("OpenAI ID token đã hết hạn.");
+  if (nonce && payload.nonce !== nonce) throw new Error("OpenAI ID token nonce không khớp.");
+  if (!payload.sub || (subject && payload.sub !== subject)) throw new Error("ChatGPT account không khớp với session đã lưu.");
+  return payload;
+}
+
+function normalizeScope(value) {
+  return String(value || "").split(/\s+/).filter(Boolean);
+}
+
+function publicChatGPTSession(credentials) {
+  if (!credentials) return { available: process.platform === "darwin", connected: false, sharing: false };
+  return {
+    available: process.platform === "darwin",
+    connected: true,
+    sharing: credentials.scopes?.includes("chatgpt.tokens.use.direct") || false,
+    email: credentials.email || null,
+    name: credentials.name || null,
+    expiresAt: credentials.expires_at || null,
+  };
+}
+
+async function startChatGPTAuthorization() {
+  const existing = readChatGPTCredentials();
+  const state = base64Url(randomBytes(32));
+  const nonce = base64Url(randomBytes(32));
+  const verifier = base64Url(randomBytes(48));
+  const challenge = base64Url(createHash("sha256").update(verifier).digest());
+  const redirectUri = `http://${host}:${port}/auth/callback`;
+  const extAgentHostId = await getChatGPTHostId();
+  const clientId = existing?.client_id || "dynamic_agent_client";
+  pendingChatGPTAuth.set(state, {
+    state,
+    nonce,
+    verifier,
+    redirectUri,
+    clientId,
+    subject: existing?.subject || null,
+    createdAt: Date.now(),
+  });
+  for (const [key, attempt] of pendingChatGPTAuth) {
+    if (Date.now() - attempt.createdAt > 10 * 60_000) pendingChatGPTAuth.delete(key);
+  }
+
+  const url = new URL(chatGPTAuthorizeEndpoint);
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("scope", chatGPTScopes);
+  url.searchParams.set("resource", chatGPTResource);
+  url.searchParams.set("state", state);
+  url.searchParams.set("nonce", nonce);
+  url.searchParams.set("code_challenge", challenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("ext_agent_host_id", extAgentHostId);
+  if (clientId === "dynamic_agent_client") {
+    url.searchParams.set("agent_name_hint", "ShortCut Studio");
+  } else {
+    if (existing?.id_token) url.searchParams.set("id_token_hint", existing.id_token);
+    if (existing?.email) url.searchParams.set("login_hint", existing.email);
+  }
+  return url.toString();
+}
+
+async function exchangeChatGPTCode(attempt, requestUrl) {
+  if (requestUrl.searchParams.get("state") !== attempt.state) throw new Error("OAuth state không khớp.");
+  const oauthError = requestUrl.searchParams.get("error");
+  if (oauthError) throw new Error(oauthError === "access_denied" ? "Bạn đã hủy cấp quyền ChatGPT." : `ChatGPT OAuth lỗi: ${oauthError}`);
+  const code = requestUrl.searchParams.get("code");
+  const callbackClientId = requestUrl.searchParams.get("client_id");
+  const issuedClientId = attempt.clientId === "dynamic_agent_client" ? callbackClientId : attempt.clientId;
+  if (!code || !issuedClientId || issuedClientId === "dynamic_agent_client") throw new Error("ChatGPT registration chưa hoàn tất.");
+  if (attempt.clientId !== "dynamic_agent_client" && callbackClientId && callbackClientId !== attempt.clientId) {
+    throw new Error("ChatGPT callback trả về client khác với account đã chọn.");
+  }
+
+  const response = await fetch(chatGPTTokenEndpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: issuedClientId,
+      code,
+      code_verifier: attempt.verifier,
+      redirect_uri: attempt.redirectUri,
+      resource: chatGPTResource,
+    }),
+  });
+  const token = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(token.error_description || token.error || `OpenAI token exchange failed (${response.status}).`);
+  const identity = await validateChatGPTIdToken(token.id_token, {
+    clientId: issuedClientId,
+    nonce: attempt.nonce,
+    subject: attempt.subject || undefined,
+  });
+  const scopes = normalizeScope(token.scope || requestUrl.searchParams.get("scope"));
+  const credentials = {
+    client_id: issuedClientId,
+    ext_agent_host_id: await getChatGPTHostId(),
+    subject: identity.sub,
+    email: identity.email || null,
+    name: identity.name || identity.preferred_username || null,
+    id_token: token.id_token,
+    access_token: token.access_token,
+    refresh_token: token.refresh_token,
+    token_type: token.token_type || "Bearer",
+    scopes,
+    expires_at: new Date(Date.now() + Number(token.expires_in || 3600) * 1_000).toISOString(),
+    earliest_refresh_at: token.earliest_refresh_at || null,
+    saved_at: new Date().toISOString(),
+  };
+  if (!credentials.access_token || !credentials.refresh_token) throw new Error("OpenAI không trả đủ OAuth credentials.");
+  writeChatGPTCredentials(credentials);
+  return credentials;
+}
+
+async function refreshChatGPTCredentials(credentials) {
+  const key = credentials.client_id;
+  if (chatGPTRefreshes.has(key)) return chatGPTRefreshes.get(key);
+  const refresh = (async () => {
+    const response = await fetch(chatGPTTokenEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: credentials.client_id,
+        refresh_token: credentials.refresh_token,
+        resource: chatGPTResource,
+      }),
+    });
+    const token = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(token.error_description || token.error || `Không refresh được ChatGPT session (${response.status}).`);
+    let identity = null;
+    if (token.id_token) {
+      identity = await validateChatGPTIdToken(token.id_token, {
+        clientId: credentials.client_id,
+        subject: credentials.subject,
+      });
+    }
+    const next = {
+      ...credentials,
+      email: identity?.email || credentials.email,
+      name: identity?.name || credentials.name,
+      id_token: token.id_token || credentials.id_token,
+      access_token: token.access_token,
+      refresh_token: token.refresh_token || credentials.refresh_token,
+      token_type: token.token_type || credentials.token_type || "Bearer",
+      scopes: normalizeScope(token.scope).length ? normalizeScope(token.scope) : credentials.scopes,
+      expires_at: new Date(Date.now() + Number(token.expires_in || 3600) * 1_000).toISOString(),
+      earliest_refresh_at: token.earliest_refresh_at || null,
+      saved_at: new Date().toISOString(),
+    };
+    writeChatGPTCredentials(next);
+    return next;
+  })().finally(() => chatGPTRefreshes.delete(key));
+  chatGPTRefreshes.set(key, refresh);
+  return refresh;
+}
+
+async function activeChatGPTCredentials() {
+  const credentials = readChatGPTCredentials();
+  if (!credentials) throw new Error("AUTH_REQUIRED: Hãy bấm Continue with ChatGPT trước.");
+  if (!credentials.scopes?.includes("chatgpt.tokens.use.direct")) {
+    throw new Error("PLAN_USAGE_DISABLED: ChatGPT plan usage chưa được cấp quyền.");
+  }
+  const expiresAt = Date.parse(credentials.expires_at || "");
+  if (!Number.isFinite(expiresAt) || expiresAt - Date.now() < 90_000) {
+    return refreshChatGPTCredentials(credentials);
+  }
+  return credentials;
+}
+
+async function listChatGPTModels(credentials = null) {
+  const session = credentials || await activeChatGPTCredentials();
+  const response = await fetch(`${chatGPTResource}/models`, {
+    headers: { Authorization: `Bearer ${session.access_token}`, Accept: "application/json" },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error?.message || body.detail || `Không đọc được model ChatGPT (${response.status}).`);
+  const models = (body.models || body.data || [])
+    .filter((model) => !model.visibility || model.visibility === "list")
+    .map((model) => ({ slug: model.slug || model.id, displayName: model.display_name || model.name || model.slug || model.id }))
+    .filter((model) => model.slug);
+  return models;
+}
+
+function parseEventStreamBlock(block) {
+  const event = block.split(/\r?\n/).find((line) => line.startsWith("event:"))?.slice(6).trim();
+  const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+  if (!data || data === "[DONE]") return { event, data: null };
+  try {
+    return { event, data: JSON.parse(data) };
+  } catch {
+    return { event, data: null };
+  }
+}
+
+function responseTextFromCompleted(response) {
+  return (response?.output || [])
+    .flatMap((item) => item.content || [])
+    .map((content) => content.text || "")
+    .join("");
+}
+
+async function analyzeWithChatGPTPlan(body) {
+  const credentials = await activeChatGPTCredentials();
+  const models = await listChatGPTModels(credentials);
+  const model = body.model || models[0]?.slug;
+  if (!model) throw new Error("MODEL_UNAVAILABLE: ChatGPT account không trả về model khả dụng.");
+  const response = await fetch(`${chatGPTResource}/responses`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credentials.access_token}`,
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify({
+      model,
+      store: false,
+      stream: true,
+      instructions: body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
+      input: [{ role: "user", content: String(body.input || "") }],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "edit_plan",
+          strict: true,
+          schema: body.schema,
+        },
+      },
+    }),
+  });
+  if (!response.ok || !response.body) {
+    const errorBody = await response.json().catch(() => ({}));
+    const code = errorBody.error?.code;
+    if (code === "subscription_sharing_usage_limit_exceeded") throw new Error("PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.");
+    if (response.status === 401) throw new Error("AUTH_EXPIRED: ChatGPT session không còn hợp lệ. Hãy đăng nhập lại.");
+    if (response.status === 429) throw new Error("RATE_LIMITED: ChatGPT đang giới hạn tạm thời.");
+    throw new Error(errorBody.error?.message || errorBody.detail || `ChatGPT request failed (${response.status}).`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let outputText = "";
+  let completed = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || "";
+    for (const block of blocks) {
+      const parsed = parseEventStreamBlock(block);
+      const eventType = parsed.data?.type || parsed.event;
+      if (eventType === "response.output_text.delta") outputText += parsed.data?.delta || "";
+      if (eventType === "response.output_text.done" && !outputText) outputText = parsed.data?.text || "";
+      if (eventType === "response.completed") {
+        completed = true;
+        if (!outputText) outputText = responseTextFromCompleted(parsed.data?.response);
+      }
+      if (eventType === "response.failed") {
+        const error = parsed.data?.response?.error || parsed.data?.error || {};
+        if (error.code === "subscription_sharing_usage_limit_exceeded") throw new Error("PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.");
+        throw new Error(error.message || error.code || "ChatGPT response failed.");
+      }
+    }
+    if (done) break;
+  }
+  if (!completed) throw new Error("INVALID_RESPONSE: ChatGPT stream kết thúc trước response.completed.");
+  const cleaned = outputText.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  try {
+    return { plan: JSON.parse(cleaned), model };
+  } catch {
+    throw new Error("INVALID_RESPONSE: ChatGPT không trả về JSON edit plan hợp lệ.");
+  }
 }
 
 function safeName(value) {
@@ -607,20 +1025,26 @@ async function startRender(body) {
   return job;
 }
 
-async function serveFile(request, response, pathname) {
-  const relative = decodeURIComponent(pathname.slice("/files/".length));
-  const target = path.resolve(sourcesRoot, relative);
-  if (!target.startsWith(`${sourcesRoot}${path.sep}`) || !existsSync(target) || !statSync(target).isFile()) {
-    sendJson(request, response, 404, { error: "Không tìm thấy output." });
-    return;
-  }
+function mediaContentType(target) {
+  return {
+    ".mp4": "video/mp4",
+    ".m4v": "video/mp4",
+    ".mov": "video/quicktime",
+    ".webm": "video/webm",
+    ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo",
+  }[path.extname(target).toLowerCase()] || "application/octet-stream";
+}
+
+async function serveMediaPath(request, response, target, { download = false } = {}) {
   const fileStat = statSync(target);
   const range = request.headers.range;
   const baseHeaders = {
     ...corsHeaders(request),
-    "Content-Type": "video/mp4",
+    "Content-Type": mediaContentType(target),
     "Accept-Ranges": "bytes",
-    "Content-Disposition": `attachment; filename="${path.basename(target)}"`,
+    "Cache-Control": "private, max-age=0, must-revalidate",
+    ...(download ? { "Content-Disposition": `attachment; filename="${path.basename(target)}"` } : {}),
   };
   if (range) {
     const match = range.match(/bytes=(\d+)-(\d*)/);
@@ -630,17 +1054,45 @@ async function serveFile(request, response, pathname) {
       return;
     }
     const start = Number(match[1]);
-    const end = match[2] ? Number(match[2]) : fileStat.size - 1;
+    const end = Math.min(match[2] ? Number(match[2]) : fileStat.size - 1, fileStat.size - 1);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= fileStat.size) {
+      response.writeHead(416, { ...baseHeaders, "Content-Range": `bytes */${fileStat.size}` });
+      response.end();
+      return;
+    }
     response.writeHead(206, {
       ...baseHeaders,
       "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
       "Content-Length": end - start + 1,
     });
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
     createReadStream(target, { start, end }).pipe(response);
     return;
   }
   response.writeHead(200, { ...baseHeaders, "Content-Length": fileStat.size });
+  if (request.method === "HEAD") {
+    response.end();
+    return;
+  }
   createReadStream(target).pipe(response);
+}
+
+async function serveFile(request, response, pathname) {
+  const relative = decodeURIComponent(pathname.slice("/files/".length));
+  const target = path.resolve(sourcesRoot, relative);
+  if (!target.startsWith(`${sourcesRoot}${path.sep}`) || !existsSync(target) || !statSync(target).isFile()) {
+    sendJson(request, response, 404, { error: "Không tìm thấy output." });
+    return;
+  }
+  await serveMediaPath(request, response, target, { download: true });
+}
+
+async function serveSourceMedia(request, response, sourceId) {
+  const source = await loadSource(sourceId);
+  await serveMediaPath(request, response, source.mediaPath);
 }
 
 await mkdir(sourcesRoot, { recursive: true });
@@ -657,9 +1109,54 @@ const server = createServer(async (request, response) => {
       sendJson(request, response, 200, {
         ok: Boolean(ffmpeg && ffprobe),
         readyForYouTube: Boolean(ffmpeg && ffprobe && ytDlp),
+        chatGPTAuthAvailable: process.platform === "darwin" && existsSync("/usr/bin/security"),
         tools: versions,
         dataRoot,
       });
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/auth/callback") {
+      const state = requestUrl.searchParams.get("state") || "";
+      const attempt = pendingChatGPTAuth.get(state);
+      if (!attempt) {
+        sendHtml(request, response, 400, "ChatGPT sign-in expired", "Quay lại ShortCut Studio và bấm Continue with ChatGPT lần nữa.");
+        return;
+      }
+      pendingChatGPTAuth.delete(state);
+      try {
+        const credentials = await exchangeChatGPTCode(attempt, requestUrl);
+        const sharingMessage = credentials.scopes.includes("chatgpt.tokens.use.direct")
+          ? "Đã kết nối ChatGPT plan. Cửa sổ này sẽ tự đóng."
+          : "Đã đăng nhập, nhưng ChatGPT plan usage chưa được cấp quyền.";
+        sendHtml(request, response, 200, "ChatGPT connected", sharingMessage);
+      } catch (error) {
+        sendHtml(request, response, 400, "Không kết nối được ChatGPT", error instanceof Error ? error.message : String(error));
+      }
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/api/chatgpt/session") {
+      sendJson(request, response, 200, { session: publicChatGPTSession(readChatGPTCredentials()) });
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/chatgpt/auth/start") {
+      const url = await startChatGPTAuthorization();
+      sendJson(request, response, 200, { url });
+      return;
+    }
+    if (request.method === "DELETE" && requestUrl.pathname === "/api/chatgpt/session") {
+      deleteChatGPTCredentials();
+      sendJson(request, response, 200, { session: publicChatGPTSession(null) });
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/api/chatgpt/models") {
+      const models = await listChatGPTModels();
+      sendJson(request, response, 200, { models });
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/chatgpt/analyze") {
+      const body = await readJson(request);
+      const result = await analyzeWithChatGPTPlan(body);
+      sendJson(request, response, 200, result);
       return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/youtube") {
@@ -689,13 +1186,24 @@ const server = createServer(async (request, response) => {
       sendJson(request, response, 200, { job });
       return;
     }
-    if (request.method === "GET" && requestUrl.pathname.startsWith("/files/")) {
+    const sourceMediaMatch = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/media$/i);
+    if (["GET", "HEAD"].includes(request.method || "") && sourceMediaMatch) {
+      await serveSourceMedia(request, response, sourceMediaMatch[1]);
+      return;
+    }
+    if (["GET", "HEAD"].includes(request.method || "") && requestUrl.pathname.startsWith("/files/")) {
       await serveFile(request, response, requestUrl.pathname);
       return;
     }
     sendJson(request, response, 404, { error: "Route không tồn tại." });
   } catch (error) {
-    sendJson(request, response, 500, { error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.startsWith("AUTH_REQUIRED") || message.startsWith("AUTH_EXPIRED") ? 401
+      : message.startsWith("PLAN_USAGE_DISABLED") ? 403
+        : message.startsWith("PLAN_LIMIT_REACHED") || message.startsWith("RATE_LIMITED") ? 429
+          : message.startsWith("MODEL_UNAVAILABLE") ? 503
+            : 500;
+    sendJson(request, response, status, { error: message });
   }
 });
 

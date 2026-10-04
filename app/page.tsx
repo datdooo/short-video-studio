@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronRight,
@@ -9,9 +9,10 @@ import {
   Download,
   FileJson,
   Film,
-  KeyRound,
   Link2,
+  LogIn,
   Loader2,
+  Pause,
   Play,
   RotateCcw,
   Scissors,
@@ -40,6 +41,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   AiProvider,
   AnalyzeRequest,
+  buildPrompt,
+  EDIT_PLAN_SCHEMA,
   EditPlan,
   durationOf,
   finalDurationOf,
@@ -47,6 +50,7 @@ import {
   isChronological,
   manualPlan,
   mockPlan,
+  normalizePlan,
 } from "@/lib/edit-plan";
 import { buildRenderManifest, fitOverlayText, fontStackFor } from "@/lib/render-spec";
 
@@ -55,7 +59,17 @@ const WORKER_ORIGIN = "http://127.0.0.1:8787";
 type WorkerHealth = {
   ok: boolean;
   readyForYouTube: boolean;
+  chatGPTAuthAvailable: boolean;
   tools: { ffmpeg: string | null; ffprobe: string | null; ytDlp: string | null };
+};
+
+type ChatGPTSession = {
+  available: boolean;
+  connected: boolean;
+  sharing: boolean;
+  email?: string | null;
+  name?: string | null;
+  expiresAt?: string | null;
 };
 
 type WorkerSource = {
@@ -114,8 +128,9 @@ function downloadJson(filename: string, value: unknown) {
 export default function Home() {
   const [editMode, setEditMode] = useState<"ai" | "manual">("ai");
   const [sourceMode, setSourceMode] = useState<"youtube" | "local">("youtube");
-  const [provider, setProvider] = useState<AiProvider>("openai");
-  const [apiKey, setApiKey] = useState("");
+  const [provider, setProvider] = useState<AiProvider>("chatgpt");
+  const [chatGPTSession, setChatGPTSession] = useState<ChatGPTSession | null>(null);
+  const [isChatGPTConnecting, setIsChatGPTConnecting] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState(DEFAULT_REQUEST.originalTitle);
   const [transcript, setTranscript] = useState(DEMO_TRANSCRIPT);
@@ -140,6 +155,12 @@ export default function Home() {
   const [manualPart2Ranges, setManualPart2Ranges] = useState("06:22 - 07:14 The problem\n08:41 - 09:36 Final result");
   const [previewElement, setPreviewElement] = useState<HTMLDivElement | null>(null);
   const [previewWidth, setPreviewWidth] = useState(384);
+  const [previewDuration, setPreviewDuration] = useState(0);
+  const [previewCurrentTime, setPreviewCurrentTime] = useState(0);
+  const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const backgroundVideoRef = useRef<HTMLVideoElement>(null);
 
   const activePart = plan.parts[activePartIndex];
   const fontStack = useMemo(
@@ -155,6 +176,10 @@ export default function Home() {
     [activePart.title],
   );
   const previewScale = previewWidth / 1080;
+  const previewVideoUrl = useMemo(
+    () => (sourceMode === "local" && localVideoUrl) || (preparedSource ? `${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media` : ""),
+    [localVideoUrl, preparedSource, sourceMode],
+  );
   const renderJobId = renderJob?.id;
   const renderJobState = renderJob?.state;
 
@@ -178,13 +203,6 @@ export default function Home() {
   }, [previewElement]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setApiKey(window.localStorage.getItem("shortcut-openai-api-key") || "");
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     let active = true;
     async function checkWorker() {
       try {
@@ -202,6 +220,33 @@ export default function Home() {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (!workerHealth?.ok) {
+      const timer = window.setTimeout(() => setChatGPTSession(null), 0);
+      return () => window.clearTimeout(timer);
+    }
+    let active = true;
+    fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store" })
+      .then(async (response) => {
+        const data = (await response.json()) as { session?: ChatGPTSession };
+        if (active && data.session) setChatGPTSession(data.session);
+      })
+      .catch(() => {
+        if (active) setChatGPTSession(null);
+      });
+    return () => { active = false; };
+  }, [workerHealth?.ok]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPreviewCurrentTime(0);
+      setPreviewDuration(0);
+      setIsPreviewPlaying(false);
+      setPreviewError("");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [previewVideoUrl]);
 
   useEffect(() => {
     if (!renderJobId || !renderJobState || !["queued", "rendering"].includes(renderJobState)) return;
@@ -314,34 +359,88 @@ export default function Home() {
     return () => lifecycle.abort();
   }, []);
 
+  async function readChatGPTSession() {
+    const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store" });
+    const data = (await response.json()) as { session?: ChatGPTSession; error?: string };
+    if (!response.ok || !data.session) throw new Error(data.error || "Không đọc được ChatGPT session.");
+    setChatGPTSession(data.session);
+    return data.session;
+  }
+
+  async function connectChatGPT() {
+    setError("");
+    if (!workerHealth?.ok) {
+      setError("Media worker đang offline. Chạy `npm run personal` trước.");
+      return;
+    }
+    const popup = window.open("about:blank", "shortcut-chatgpt", "popup,width=560,height=760");
+    setIsChatGPTConnecting(true);
+    try {
+      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/start`, { method: "POST" });
+      const data = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !data.url) throw new Error(data.error || "Không bắt đầu được ChatGPT sign-in.");
+      if (!popup) throw new Error("Trình duyệt đang chặn popup. Cho phép popup rồi thử lại.");
+      popup.location.href = data.url;
+
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+        const session = await readChatGPTSession();
+        if (session.connected) {
+          if (!session.sharing) setError("Đã đăng nhập nhưng ChatGPT plan usage chưa được cấp quyền. Bấm kết nối lại và cho phép plan usage.");
+          return;
+        }
+      }
+      throw new Error("ChatGPT sign-in hết thời gian chờ. Hãy thử lại.");
+    } catch (caughtError) {
+      popup?.close();
+      setError(caughtError instanceof Error ? caughtError.message : "Không kết nối được ChatGPT.");
+    } finally {
+      setIsChatGPTConnecting(false);
+    }
+  }
+
+  async function disconnectChatGPT() {
+    setError("");
+    try {
+      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { method: "DELETE" });
+      const data = (await response.json()) as { session?: ChatGPTSession; error?: string };
+      if (!response.ok || !data.session) throw new Error(data.error || "Không disconnect được ChatGPT.");
+      setChatGPTSession(data.session);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Không disconnect được ChatGPT.");
+    }
+  }
+
   async function analyze() {
     setError("");
     if (!transcript.trim()) {
       setError("Hãy paste transcript có timestamp trước.");
       return;
     }
-    if (provider !== "mock" && !apiKey.trim()) {
-      setError(`Nhập ${provider === "openai" ? "OpenAI" : "Qwen"} API key trước.`);
+    if (provider === "chatgpt" && !chatGPTSession?.sharing) {
+      setError("Hãy bấm Continue with ChatGPT và cho phép dùng ChatGPT plan trước.");
       return;
     }
     setIsAnalyzing(true);
     try {
-      const response = await fetch("/api/analyze", {
+      if (provider === "mock") {
+        setPlan(mockPlan({ provider: "mock", originalTitle: sourceTitle, transcript, instruction }));
+        setActivePartIndex(0);
+        return;
+      }
+      const request = { provider, originalTitle: sourceTitle, transcript, instruction } satisfies AnalyzeRequest;
+      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/analyze`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(provider !== "mock" ? { "X-Provider-API-Key": apiKey.trim() } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider,
-          originalTitle: sourceTitle,
-          transcript,
-          instruction,
-        } satisfies AnalyzeRequest),
+          instructions: "You are a precise short-form video editor. Return only the requested structured edit plan.",
+          input: buildPrompt(request),
+          schema: EDIT_PLAN_SCHEMA,
+        }),
       });
-      const data = (await response.json()) as EditPlan | { error: string };
-      if (!response.ok || "error" in data) throw new Error("error" in data ? data.error : "Không thể tạo edit plan.");
-      setPlan(data);
+      const data = (await response.json()) as { plan?: Omit<EditPlan, "providerUsed" | "render">; model?: string; error?: string };
+      if (!response.ok || !data.plan) throw new Error(data.error || "Không thể tạo edit plan.");
+      setPlan(normalizePlan(data.plan, "chatgpt"));
       setActivePartIndex(0);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Không thể tạo edit plan.");
@@ -351,19 +450,8 @@ export default function Home() {
   }
 
   function changeProvider(value: string) {
-    const nextProvider = value as AiProvider;
-    setProvider(nextProvider);
+    setProvider(value as AiProvider);
     setError("");
-    if (nextProvider === "mock") {
-      setApiKey("");
-      return;
-    }
-    setApiKey(window.localStorage.getItem(`shortcut-${nextProvider}-api-key`) || "");
-  }
-
-  function updateApiKey(value: string) {
-    setApiKey(value);
-    if (provider !== "mock") window.localStorage.setItem(`shortcut-${provider}-api-key`, value);
   }
 
   function applyManualPlan() {
@@ -396,6 +484,44 @@ export default function Home() {
     const fileTitle = file.name.replace(/\.[^.]+$/, "");
     setSourceTitle(fileTitle);
     setPlan((current) => ({ ...current, originalTitle: fileTitle }));
+  }
+
+  async function togglePreview() {
+    const video = previewVideoRef.current;
+    if (!video || !previewVideoUrl) return;
+    setPreviewError("");
+    if (video.paused) {
+      try {
+        await video.play();
+        if (backgroundVideoRef.current) {
+          backgroundVideoRef.current.currentTime = video.currentTime;
+          await backgroundVideoRef.current.play().catch(() => undefined);
+        }
+      } catch {
+        setPreviewError("Trình duyệt chưa phát được video source này.");
+      }
+    } else {
+      video.pause();
+      backgroundVideoRef.current?.pause();
+    }
+  }
+
+  function seekPreview(value: number) {
+    const video = previewVideoRef.current;
+    if (!video || !Number.isFinite(value)) return;
+    video.currentTime = value;
+    if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = value;
+    setPreviewCurrentTime(value);
+  }
+
+  function updatePreviewClock() {
+    const video = previewVideoRef.current;
+    if (!video) return;
+    setPreviewCurrentTime(video.currentTime);
+    const background = backgroundVideoRef.current;
+    if (background && Math.abs(background.currentTime - video.currentTime) > 0.3) {
+      background.currentTime = video.currentTime;
+    }
   }
 
   async function prepareSource() {
@@ -452,6 +578,13 @@ export default function Home() {
     try {
       const source = preparedSource || await prepareSource();
       if (!source) return;
+      for (const part of plan.parts) {
+        for (const segment of part.segments) {
+          if (segment.end > source.duration + 0.05) {
+            throw new Error(`Part ${part.id} có timestamp ${formatTime(segment.end)} vượt quá video source (${formatTime(source.duration)}). Hãy sửa timestamp hoặc Generate plan lại.`);
+          }
+        }
+      }
       const response = await fetch(`${WORKER_ORIGIN}/api/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -607,38 +740,40 @@ export default function Home() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="border-white/10 bg-[#17181d] text-zinc-200">
+                    <SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem>
                     <SelectItem value="mock">Mock · fast</SelectItem>
-                    <SelectItem value="openai">OpenAI</SelectItem>
-                    <SelectItem value="qwen">Qwen</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {provider !== "mock" && (
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label htmlFor="provider-api-key" className="field-label">{provider === "openai" ? "OpenAI" : "Qwen"} API key</label>
-                    <button
-                      type="button"
-                      onClick={() => updateApiKey("")}
-                      className="text-[10px] text-zinc-600 transition hover:text-zinc-300"
-                    >
-                      Xóa key
-                    </button>
+              {provider === "chatgpt" && (
+                <div className="rounded-2xl border border-white/8 bg-white/[.025] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
+                        <span className={`size-2 rounded-full ${chatGPTSession?.sharing ? "bg-emerald-400 shadow-[0_0_10px_#34d399]" : "bg-zinc-700"}`} />
+                        {chatGPTSession?.sharing ? "ChatGPT plan connected" : "Connect your ChatGPT plan"}
+                      </p>
+                      <p className="mt-1 truncate text-[10px] leading-4 text-zinc-500">
+                        {chatGPTSession?.connected
+                          ? chatGPTSession.email || chatGPTSession.name || "Connected account"
+                          : "Không cần API key · dùng Plus / Pro nếu account đủ điều kiện"}
+                      </p>
+                    </div>
+                    {chatGPTSession?.connected && (
+                      <button type="button" onClick={() => void disconnectChatGPT()} className="shrink-0 text-[10px] text-zinc-600 transition hover:text-zinc-300">
+                        Disconnect
+                      </button>
+                    )}
                   </div>
-                  <div className="relative mt-2">
-                    <KeyRound className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
-                    <Input
-                      id="provider-api-key"
-                      type="password"
-                      value={apiKey}
-                      onChange={(event) => updateApiKey(event.target.value)}
-                      placeholder={provider === "openai" ? "sk-proj-..." : "sk-..."}
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="studio-input pl-10 font-mono text-xs"
-                    />
-                  </div>
-                  <p className="mt-2 text-[10px] leading-4 text-zinc-600">Tự lưu trên trình duyệt này. Paste một lần rồi dùng luôn.</p>
+                  <Button
+                    variant={chatGPTSession?.sharing ? "outline" : "default"}
+                    onClick={() => void connectChatGPT()}
+                    disabled={isChatGPTConnecting || !workerHealth?.chatGPTAuthAvailable}
+                    className={`mt-3 h-10 w-full rounded-xl text-xs font-bold ${chatGPTSession?.sharing ? "border-white/10 bg-white/[.03] text-zinc-200 hover:bg-white/[.07]" : "bg-white text-black hover:bg-zinc-200"}`}
+                  >
+                    {isChatGPTConnecting ? <><Loader2 className="animate-spin" /> Waiting for ChatGPT…</> : chatGPTSession?.sharing ? <><LogIn /> Reconnect ChatGPT</> : <><LogIn /> Continue with ChatGPT</>}
+                  </Button>
+                  <p className="mt-2 text-[10px] leading-4 text-zinc-600">OAuth token chỉ nằm trong macOS Keychain của máy này, không lưu trong web.</p>
                 </div>
               )}
               <div>
@@ -655,7 +790,7 @@ export default function Home() {
               <Button onClick={analyze} disabled={isAnalyzing} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
                 {isAnalyzing ? <><Loader2 className="animate-spin" /> Building edit plan…</> : <><WandSparkles /> Generate 2-part plan</>}
               </Button>
-              <p className="text-center text-[10px] leading-5 text-zinc-600">Không muốn dùng API? Chọn Mock hoặc chuyển sang Manual cut.</p>
+              <p className="text-center text-[10px] leading-5 text-zinc-600">Không muốn đăng nhập? Chọn Mock hoặc chuyển sang Manual cut.</p>
             </TabsContent>
 
             <TabsContent value="manual" className="space-y-4 pt-4">
@@ -700,8 +835,8 @@ export default function Home() {
             className="portrait-preview relative aspect-[9/16] shrink-0 overflow-hidden rounded-[34px] border border-white/12 bg-[#17191e] shadow-[0_38px_100px_rgba(0,0,0,.55)]"
             style={{ width: "min(100%, 388px, calc(56.25vh - 101.25px))" }}
           >
-            {localVideoUrl ? (
-              <video className="absolute inset-0 size-full object-cover opacity-50 blur-[22px]" src={localVideoUrl} muted autoPlay loop playsInline />
+            {previewVideoUrl ? (
+              <video ref={backgroundVideoRef} className="absolute inset-0 size-full object-cover opacity-50 blur-[22px]" src={previewVideoUrl} muted preload="metadata" playsInline />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
             )}
@@ -718,12 +853,29 @@ export default function Home() {
               </p>
             </div>
             <div className="absolute inset-x-0 top-[18.75%] z-10 h-[56.25%] overflow-hidden border-y border-white/15 bg-[#22242a]">
-              {localVideoUrl ? (
-                <video className="native-preview-video" src={localVideoUrl} controls playsInline />
+              {previewVideoUrl ? (
+                <video
+                  ref={previewVideoRef}
+                  className="native-preview-video cursor-pointer"
+                  src={previewVideoUrl}
+                  preload="metadata"
+                  playsInline
+                  onClick={() => void togglePreview()}
+                  onLoadedMetadata={(event) => {
+                    const duration = Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : preparedSource?.duration || 0;
+                    setPreviewDuration(duration);
+                    setPreviewError("");
+                  }}
+                  onTimeUpdate={updatePreviewClock}
+                  onPlay={() => setIsPreviewPlaying(true)}
+                  onPause={() => setIsPreviewPlaying(false)}
+                  onEnded={() => { setIsPreviewPlaying(false); backgroundVideoRef.current?.pause(); }}
+                  onError={() => setPreviewError("Không phát được source. Hãy bấm Chuẩn bị source lại hoặc thử video MP4/H.264.")}
+                />
               ) : (
                 <div className="absolute inset-0 bg-[linear-gradient(125deg,#111_0%,#572317_42%,#ef6b32_43%,#241716_47%,#0b0c0f_100%)]" />
               )}
-              {!localVideoUrl && <button aria-label="Play preview" className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/40 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
+              {previewVideoUrl && !isPreviewPlaying && <button type="button" onClick={() => void togglePreview()} aria-label="Play preview" className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
               <div className="absolute bottom-4 left-4 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-[9px] font-bold tracking-[.08em] text-white backdrop-blur-md">NATIVE 100% · CENTER CROP</div>
             </div>
             <div className="absolute inset-x-[8.35%] top-[76.65%] z-10 flex h-[12.7%] items-start justify-center overflow-hidden text-center">
@@ -741,7 +893,27 @@ export default function Home() {
             <div className="absolute bottom-2.5 left-1/2 h-1 w-24 -translate-x-1/2 rounded-full bg-white/65" />
           </div>
 
-          <div className="mt-5 grid w-full max-w-[520px] grid-cols-3 gap-2">
+          <div className="preview-controls mt-4 w-full max-w-[520px]">
+            <button type="button" onClick={() => void togglePreview()} disabled={!previewVideoUrl} aria-label={isPreviewPlaying ? "Pause preview" : "Play preview"}>
+              {isPreviewPlaying ? <Pause className="size-4 fill-current" /> : <Play className="ml-0.5 size-4 fill-current" />}
+            </button>
+            <span>{formatTime(previewCurrentTime)}</span>
+            <input
+              className="preview-seek"
+              type="range"
+              min={0}
+              max={Math.max(previewDuration, 0)}
+              step={0.05}
+              value={Math.min(previewCurrentTime, previewDuration || 0)}
+              onChange={(event) => seekPreview(Number(event.target.value))}
+              disabled={!previewVideoUrl || previewDuration <= 0}
+              aria-label="Seek source video"
+            />
+            <span>{formatTime(previewDuration)}</span>
+          </div>
+          {previewError && <p className="mt-2 max-w-[520px] text-center text-[11px] leading-5 text-red-300">{previewError}</p>}
+
+          <div className="mt-4 grid w-full max-w-[520px] grid-cols-3 gap-2">
             <div className="preview-stat"><span>Source cut</span><strong>{formatTime(durationOf(activePart))}</strong></div>
             <div className="preview-stat accent"><span>After 1.25×</span><strong>{formatTime(finalDurationOf(activePart))}</strong></div>
             <div className="preview-stat"><span>Font preset</span><strong>{fontStack[0]}</strong></div>

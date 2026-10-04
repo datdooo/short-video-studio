@@ -1,4 +1,4 @@
-export type AiProvider = "mock" | "openai" | "qwen";
+export type AiProvider = "mock" | "chatgpt" | "openai" | "qwen";
 export type PlanSource = AiProvider | "manual";
 
 export type Segment = {
