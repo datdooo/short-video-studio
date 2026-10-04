@@ -14,15 +14,19 @@ import {
   Play,
   RotateCcw,
   Scissors,
+  ServerCog,
   Settings2,
   Sparkles,
   Upload,
   WandSparkles,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -44,6 +48,37 @@ import {
   mockPlan,
 } from "@/lib/edit-plan";
 import { buildRenderManifest, fontStackFor } from "@/lib/render-spec";
+
+const WORKER_ORIGIN = "http://127.0.0.1:8787";
+
+type WorkerHealth = {
+  ok: boolean;
+  readyForYouTube: boolean;
+  tools: { ffmpeg: string | null; ffprobe: string | null; ytDlp: string | null };
+};
+
+type WorkerSource = {
+  id: string;
+  kind: "youtube" | "upload";
+  title: string;
+  originalFilename: string;
+  duration: number;
+  width: number;
+  height: number;
+  hasAudio: boolean;
+  transcript: string;
+  subtitleFound: boolean;
+};
+
+type RenderJob = {
+  id: string;
+  sourceId: string;
+  state: "queued" | "rendering" | "done" | "error";
+  progress: number;
+  currentPart: number | null;
+  outputs: Array<{ part: number; filename: string; size: number; url: string }>;
+  error: string | null;
+};
 
 const DEMO_TRANSCRIPT = `00:00 Willkommen zurück auf dem Kanal.
 00:38 Heute schauen wir uns diesen völlig verrückten Audi A2 an.
@@ -89,8 +124,14 @@ export default function Home() {
   const [error, setError] = useState("");
   const [localVideoUrl, setLocalVideoUrl] = useState("");
   const [localFileName, setLocalFileName] = useState("");
+  const [localFile, setLocalFile] = useState<File | null>(null);
   const [youtubeState, setYoutubeState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [youtubeError, setYoutubeError] = useState("");
+  const [workerHealth, setWorkerHealth] = useState<WorkerHealth | null>(null);
+  const [isPreparingSource, setIsPreparingSource] = useState(false);
+  const [preparedSource, setPreparedSource] = useState<WorkerSource | null>(null);
+  const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
+  const [isStartingRender, setIsStartingRender] = useState(false);
   const [manualPart1Title, setManualPart1Title] = useState("THE DETAIL NOBODY EXPECTED");
   const [manualPart2Title, setManualPart2Title] = useState("THEN EVERYTHING CHANGED");
   const [manualPart1Ranges, setManualPart1Ranges] = useState("01:12 - 01:46 First reaction\n02:25 - 03:18 Engine reveal");
@@ -101,16 +142,60 @@ export default function Home() {
     () => fontStackFor(`${plan.originalTitle} ${activePart.title}`),
     [activePart.title, plan.originalTitle],
   );
+  const renderJobId = renderJob?.id;
+  const renderJobState = renderJob?.state;
 
   useEffect(() => () => {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
   }, [localVideoUrl]);
 
   useEffect(() => {
+    let active = true;
+    async function checkWorker() {
+      try {
+        const response = await fetch(`${WORKER_ORIGIN}/health`, { cache: "no-store" });
+        const data = (await response.json()) as WorkerHealth;
+        if (active) setWorkerHealth(response.ok ? data : null);
+      } catch {
+        if (active) setWorkerHealth(null);
+      }
+    }
+    void checkWorker();
+    const timer = window.setInterval(checkWorker, 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!renderJobId || !renderJobState || !["queued", "rendering"].includes(renderJobState)) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const response = await fetch(`${WORKER_ORIGIN}/api/jobs/${renderJobId}`, { cache: "no-store" });
+        const data = (await response.json()) as { job?: RenderJob; error?: string };
+        if (!response.ok || !data.job) throw new Error(data.error || "Không đọc được render progress.");
+        if (active) setRenderJob(data.job);
+      } catch (caughtError) {
+        if (active) setError(caughtError instanceof Error ? caughtError.message : "Mất kết nối với media worker.");
+      }
+    };
+    void poll();
+    const timer = window.setInterval(poll, 1_200);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [renderJobId, renderJobState]);
+
+  useEffect(() => {
     if (sourceMode !== "youtube" || !sourceUrl.trim()) {
-      setYoutubeState("idle");
-      setYoutubeError("");
-      return;
+      const idleTimer = window.setTimeout(() => {
+        setYoutubeState("idle");
+        setYoutubeError("");
+      }, 0);
+      return () => window.clearTimeout(idleTimer);
     }
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -246,7 +331,82 @@ export default function Home() {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
     setLocalVideoUrl(URL.createObjectURL(file));
     setLocalFileName(file.name);
-    if (!sourceTitle.trim()) setSourceTitle(file.name.replace(/\.[^.]+$/, ""));
+    setLocalFile(file);
+    setPreparedSource(null);
+    setRenderJob(null);
+    setTranscript("");
+    const fileTitle = file.name.replace(/\.[^.]+$/, "");
+    setSourceTitle(fileTitle);
+    setPlan((current) => ({ ...current, originalTitle: fileTitle }));
+  }
+
+  async function prepareSource() {
+    setError("");
+    if (!workerHealth?.ok) {
+      setError("Media worker đang offline. Chạy `npm run personal` trong thư mục app.");
+      return null;
+    }
+    if (sourceMode === "youtube" && !sourceUrl.trim()) {
+      setError("Hãy nhập YouTube URL trước.");
+      return null;
+    }
+    if (sourceMode === "local" && !localFile) {
+      setError("Hãy chọn video local trước.");
+      return null;
+    }
+
+    setIsPreparingSource(true);
+    setRenderJob(null);
+    try {
+      const response = sourceMode === "youtube"
+        ? await fetch(`${WORKER_ORIGIN}/api/sources/youtube`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: sourceUrl.trim() }),
+          })
+        : await fetch(`${WORKER_ORIGIN}/api/sources/upload?filename=${encodeURIComponent(localFile!.name)}`, {
+            method: "POST",
+            headers: { "Content-Type": localFile!.type || "application/octet-stream", "X-Filename": encodeURIComponent(localFile!.name) },
+            body: localFile,
+          });
+      const data = (await response.json()) as { source?: WorkerSource; error?: string };
+      if (!response.ok || !data.source) throw new Error(data.error || "Không chuẩn bị được source.");
+      setPreparedSource(data.source);
+      setSourceTitle(data.source.title);
+      setPlan((current) => ({ ...current, originalTitle: data.source!.title }));
+      setTranscript(data.source.transcript || "");
+      return data.source;
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Không chuẩn bị được source.");
+      return null;
+    } finally {
+      setIsPreparingSource(false);
+    }
+  }
+
+  async function startRender() {
+    setError("");
+    if (!plan.parts.every(isChronological)) {
+      setError("Edit plan có timestamp không hợp lệ.");
+      return;
+    }
+    setIsStartingRender(true);
+    try {
+      const source = preparedSource || await prepareSource();
+      if (!source) return;
+      const response = await fetch(`${WORKER_ORIGIN}/api/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId: source.id, plan }),
+      });
+      const data = (await response.json()) as { job?: RenderJob; error?: string };
+      if (!response.ok || !data.job) throw new Error(data.error || "Không thể bắt đầu render.");
+      setRenderJob(data.job);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : "Không thể bắt đầu render.");
+    } finally {
+      setIsStartingRender(false);
+    }
   }
 
   function updatePartTitle(title: string) {
@@ -280,6 +440,10 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Badge variant="outline" className={`hidden border-white/10 bg-white/[.03] sm:flex ${workerHealth?.ok ? "text-emerald-300" : "text-zinc-500"}`}>
+            {workerHealth?.ok ? <Wifi className="size-3" /> : <WifiOff className="size-3" />}
+            {workerHealth?.ok ? "Worker ready" : "Worker offline"}
+          </Badge>
           <Badge variant="outline" className="hidden border-white/10 bg-white/[.03] text-zinc-400 sm:flex">1080 × 1920</Badge>
           <Badge className="border-[#ff4d2e]/25 bg-[#ff4d2e]/10 text-[#ff806a]">1.25× final</Badge>
         </div>
@@ -297,7 +461,7 @@ export default function Home() {
             </Badge>
           </div>
 
-          <Tabs value={sourceMode} onValueChange={(value) => setSourceMode(value as "youtube" | "local")} className="mt-6">
+          <Tabs value={sourceMode} onValueChange={(value) => { setSourceMode(value as "youtube" | "local"); setPreparedSource(null); setRenderJob(null); }} className="mt-6">
             <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
               <TabsTrigger value="youtube" className="rounded-lg text-xs">YouTube</TabsTrigger>
               <TabsTrigger value="local" className="rounded-lg text-xs">Local video</TabsTrigger>
@@ -306,7 +470,7 @@ export default function Home() {
               <label htmlFor="youtube-url" className="field-label">YouTube URL</label>
               <div className="relative mt-2">
                 <Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
-                <Input id="youtube-url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
+                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { setSourceUrl(event.target.value); setPreparedSource(null); setRenderJob(null); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
               </div>
               <p className="mt-2 text-[11px] leading-5 text-zinc-600">
                 {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
@@ -323,6 +487,34 @@ export default function Home() {
               </label>
             </TabsContent>
           </Tabs>
+
+          <div className="mt-4 rounded-2xl border border-white/8 bg-white/[.025] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex items-center gap-2 text-xs font-semibold text-zinc-300"><ServerCog className="size-3.5" /> Media worker</p>
+                <p className="mt-1 truncate text-[10px] leading-4 text-zinc-600">
+                  {workerHealth?.ok
+                    ? `FFmpeg ready · YouTube ${workerHealth.readyForYouTube ? "ready" : "needs setup"}`
+                    : "Chạy npm run personal để upload / render MP4"}
+                </p>
+              </div>
+              <span className={`size-2 shrink-0 rounded-full ${workerHealth?.ok ? "bg-emerald-400 shadow-[0_0_10px_#34d399]" : "bg-zinc-700"}`} />
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => void prepareSource()}
+              disabled={isPreparingSource || !workerHealth?.ok || (sourceMode === "youtube" ? !sourceUrl.trim() : !localFile)}
+              className="mt-3 h-9 w-full rounded-xl border-white/10 bg-white/[.03] text-xs text-zinc-300 hover:bg-white/[.07] hover:text-white"
+            >
+              {isPreparingSource ? <><Loader2 className="animate-spin" /> {sourceMode === "youtube" ? "Đang tải video + subtitle…" : "Đang upload video…"}</> : preparedSource ? <><Check /> Source đã sẵn sàng</> : <><Download /> Chuẩn bị source để render</>}
+            </Button>
+            {preparedSource && (
+              <p className="mt-2 text-[10px] leading-4 text-emerald-300/80">
+                {preparedSource.width}×{preparedSource.height} · {formatTime(preparedSource.duration)} · {preparedSource.hasAudio ? "có audio" : "audio rỗng sẽ được tạo"}
+                {preparedSource.kind === "youtube" ? ` · ${preparedSource.subtitleFound ? "đã lấy subtitle" : "không có subtitle — dùng Manual cut"}` : ""}
+              </p>
+            )}
+          </div>
 
           <div className="mt-5">
             <div className="flex items-center justify-between">
@@ -499,13 +691,43 @@ export default function Home() {
             </ol>
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <Button variant="outline" onClick={() => downloadJson("edit-plan.json", plan)} className="h-11 rounded-xl border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"><FileJson /> Edit plan</Button>
-            <Button onClick={downloadRenderConfig} className="h-11 rounded-xl bg-white font-semibold text-black hover:bg-zinc-200"><Download /> Render config</Button>
+          {renderJob && (
+            <div className={`mt-5 rounded-2xl border p-4 ${renderJob.state === "error" ? "border-red-400/20 bg-red-400/5" : renderJob.state === "done" ? "border-emerald-400/20 bg-emerald-400/5" : "border-[#ff4d2e]/20 bg-[#ff4d2e]/5"}`}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-zinc-200">
+                  {renderJob.state === "done" ? "Render hoàn tất" : renderJob.state === "error" ? "Render lỗi" : `Đang render Part ${renderJob.currentPart || 1}`}
+                </span>
+                <strong className="text-[#ff806a]">{renderJob.progress}%</strong>
+              </div>
+              <Progress value={renderJob.progress} className="mt-3 h-1.5 bg-white/8 [&>div]:bg-[#ff4d2e]" />
+              {renderJob.error && <p className="mt-3 text-[11px] leading-5 text-red-300">{renderJob.error}</p>}
+              {renderJob.outputs.length > 0 && (
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {renderJob.outputs.map((output) => (
+                    <a key={output.part} href={`${WORKER_ORIGIN}${output.url}`} className="flex h-9 items-center justify-center gap-2 rounded-xl bg-white text-xs font-bold text-black hover:bg-zinc-200">
+                      <Download className="size-3.5" /> Part {output.part} · {(output.size / 1024 / 1024).toFixed(1)} MB
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <Button
+            onClick={() => void startRender()}
+            disabled={isStartingRender || renderJob?.state === "queued" || renderJob?.state === "rendering" || !workerHealth?.ok}
+            className="mt-5 h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]"
+          >
+            {isStartingRender || renderJob?.state === "queued" ? <><Loader2 className="animate-spin" /> Starting render…</> : renderJob?.state === "rendering" ? <><Loader2 className="animate-spin" /> Rendering {renderJob.progress}%</> : <><Film /> Render 2 MP4 files</>}
+          </Button>
+
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Button variant="outline" onClick={() => downloadJson("edit-plan.json", plan)} className="h-10 rounded-xl border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"><FileJson /> Edit plan</Button>
+            <Button variant="outline" onClick={downloadRenderConfig} className="h-10 rounded-xl border-white/10 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"><Download /> Manifest</Button>
           </div>
           <button onClick={() => setPlan(mockPlan({ ...DEFAULT_REQUEST, originalTitle: sourceTitle, transcript, instruction }))} className="mt-3 flex w-full items-center justify-center gap-2 py-2 text-xs text-zinc-600 transition hover:text-zinc-300"><RotateCcw className="size-3.5" /> Reset demo plan</button>
           {!isChronological(activePart) && <p className="mt-3 text-xs text-red-300">Timeline is invalid. Regenerate this plan.</p>}
-          <p className="mt-3 text-center text-[10px] leading-5 text-zinc-600">The browser exports a complete render manifest. Actual MP4 rendering is handled by the FFmpeg worker.</p>
+          <p className="mt-3 text-center text-[10px] leading-5 text-zinc-600">Timestamps luôn giữ theo source gốc. Worker chỉ apply 1.25× sau layout + typography.</p>
         </aside>
       </div>
     </main>

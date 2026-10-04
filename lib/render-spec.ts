@@ -74,9 +74,9 @@ export function buildFfmpegArgs(input: RenderSpecInput) {
     `[bgsrc]scale=${RENDER_PRESET.width}:${RENDER_PRESET.height}:force_original_aspect_ratio=increase,crop=${RENDER_PRESET.width}:${RENDER_PRESET.height},boxblur=50:25,eq=brightness=-0.5[bg]`,
     `[mainsrc]crop=w='min(iw,1080)':h='min(ih,1080)':x='max((iw-1080)/2,0)':y='max((ih-1080)/2,0)',pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black[main]`,
     `[bg][main]overlay=0:360[layout]`,
-    `[layout]drawtext=fontfile='${font}':text='${originalTitle}':fontcolor=white:fontsize=${input.originalTitle.length > 70 ? 42 : 52}:borderw=5:bordercolor=#c82018:shadowcolor=black@0.75:shadowx=3:shadowy=4:x=(w-text_w)/2:y=340-text_h:line_spacing=-3[t1]`,
-    `[t1]drawtext=fontfile='${font}':text='${partTitle}':fontcolor=white:fontsize=${input.part.title.length > 48 ? 62 : 78}:borderw=7:bordercolor=#d52b20:shadowcolor=#ff2a20@0.55:shadowx=2:shadowy=3:x=(w-text_w)/2:y=1460:line_spacing=-5[t2]`,
-    `[t2]drawtext=fontfile='${font}':text='${indicator}':fontcolor=white:fontsize=58:borderw=5:bordercolor=#c82018:shadowcolor=black@0.75:shadowx=3:shadowy=4:x=(w-text_w)/2:y=1770[titled]`,
+    `[layout]drawtext=fontfile='${font}':text='${originalTitle}':fontcolor=white:fontsize=${input.originalTitle.length > 70 ? 42 : 52}:borderw=5:bordercolor=#c82018:shadowcolor=black@0.75:shadowx=3:shadowy=4:x=(w-text_w)/2:y=350-text_h:line_spacing=-3[t1]`,
+    `[t1]drawtext=fontfile='${font}':text='${partTitle}':fontcolor=white:fontsize=${input.part.title.length > 48 ? 62 : 78}:borderw=7:bordercolor=#d52b20:shadowcolor=#ff2a20@0.55:shadowx=2:shadowy=3:x=(w-text_w)/2:y=1450:line_spacing=-5[t2]`,
+    `[t2]drawtext=fontfile='${font}':text='${indicator}':fontcolor=white:fontsize=58:borderw=5:bordercolor=#c82018:shadowcolor=black@0.75:shadowx=3:shadowy=4:x=(w-text_w)/2:y=1800[titled]`,
     `[titled]setpts=PTS/${RENDER_PRESET.speed}[vout]`,
     `[cuta]atempo=${RENDER_PRESET.speed}[aout]`,
   ].join(";");

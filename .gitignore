@@ -44,3 +44,5 @@ next-env.d.ts
 /.codex/
 /outputs/
 /work/
+/.local-tools/
+/worker-data/

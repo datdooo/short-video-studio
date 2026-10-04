@@ -26,7 +26,8 @@ async function analyzeWithOpenAI(request: AnalyzeRequest) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.OPENAI_MODEL || "gpt-5-mini",
+      model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
+      reasoning: { effort: process.env.OPENAI_REASONING_EFFORT || "low" },
       store: false,
       instructions: "You are a precise short-form video editor. Return only the requested structured edit plan.",
       input: buildPrompt(request),
@@ -59,7 +60,7 @@ async function analyzeWithQwen(request: AnalyzeRequest) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: process.env.QWEN_MODEL || "qwen3.8-flash",
+      model: process.env.QWEN_MODEL || "qwen-plus",
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: "You are a precise short-form video editor. Return only valid JSON matching the requested edit-plan shape." },
