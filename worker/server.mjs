@@ -129,13 +129,12 @@ function base64Url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
 
-function runSecurity(args, input) {
+function runSecurity(args) {
   if (process.platform !== "darwin" || !existsSync("/usr/bin/security")) {
     throw new Error("ChatGPT sign-in cần macOS Keychain trên máy local này.");
   }
   return spawnSync("/usr/bin/security", args, {
     encoding: "utf8",
-    input,
     timeout: 8_000,
     maxBuffer: 2 * 1024 * 1024,
   });
@@ -157,13 +156,15 @@ function readChatGPTCredentials() {
 }
 
 function writeChatGPTCredentials(credentials) {
+  const credentialHex = Buffer.from(JSON.stringify(credentials), "utf8").toString("hex");
   const result = runSecurity([
     "add-generic-password",
     "-a", chatGPTKeychainAccount,
     "-s", chatGPTKeychainService,
     "-U",
-    "-w",
-  ], `${JSON.stringify(credentials)}\n`);
+    "-X", credentialHex,
+    "-T", "/usr/bin/security",
+  ]);
   if (result.status !== 0) throw new Error("Không lưu được ChatGPT credential vào macOS Keychain.");
 }
 
