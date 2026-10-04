@@ -315,30 +315,93 @@ function fontFamilyFor(text) {
   return "Arial Rounded MT Bold, Arial, DejaVu Sans, sans-serif";
 }
 
-function wrapText(value, latinWidth, eastAsianWidth, maxLines) {
-  const text = String(value || "").trim();
-  const script = detectScript(text);
-  const maxWidth = script === "latin" ? latinWidth : eastAsianWidth;
-  const tokens = script === "latin" ? text.split(/\s+/) : Array.from(text);
-  const separator = script === "latin" ? " " : "";
-  const lines = [];
+const overlayFitConfig = {
+  original: { maxFontSize: 54, minFontSize: 32, maxLines: 3, maxWidth: 900, maxHeight: 220, lineSpacing: -2 },
+  part: { maxFontSize: 82, minFontSize: 44, maxLines: 4, maxWidth: 900, maxHeight: 244, lineSpacing: -4 },
+};
+
+function characterWidthEm(character) {
+  if (/\s/.test(character)) return 0.32;
+  if (/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(character)) return 1;
+  if (/[A-Z0-9]/.test(character)) return 0.9;
+  if (/[a-z\u00c0-\u024f]/.test(character)) return 0.62;
+  if (/[-–—.,:;!?()[\]{}'"/\\]/.test(character)) return 0.34;
+  return 0.62;
+}
+
+function textWidthEm(value) {
+  return Array.from(value).reduce((width, character) => width + characterWidthEm(character), 0);
+}
+
+function splitLongToken(token, maxWidthEm) {
+  const chunks = [];
   let current = "";
-  for (const token of tokens) {
-    const candidate = current ? `${current}${separator}${token}` : token;
-    if (candidate.length > maxWidth && current) {
-      lines.push(current);
-      current = token;
+  for (const character of Array.from(token)) {
+    if (current && textWidthEm(`${current}${character}`) > maxWidthEm) {
+      chunks.push(current);
+      current = character;
     } else {
-      current = candidate;
+      current += character;
     }
   }
-  if (current) lines.push(current);
-  if (lines.length > maxLines) {
-    const kept = lines.slice(0, maxLines);
-    kept[maxLines - 1] = `${kept[maxLines - 1].slice(0, Math.max(1, maxWidth - 1))}…`;
-    return kept.join("\n");
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function wrapByVisualWidth(value, maxWidthEm) {
+  const words = value.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
+  const lines = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (textWidthEm(candidate) <= maxWidthEm) {
+      current = candidate;
+      continue;
+    }
+
+    if (current) {
+      lines.push(current);
+      current = "";
+    }
+
+    const chunks = splitLongToken(word, maxWidthEm);
+    if (chunks.length > 1) {
+      lines.push(...chunks.slice(0, -1));
+      current = chunks.at(-1) || "";
+    } else {
+      current = word;
+    }
   }
-  return lines.join("\n");
+
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
+function ellipsizeLine(value, maxWidthEm) {
+  let result = value.trimEnd();
+  while (result && textWidthEm(`${result}…`) > maxWidthEm) {
+    result = Array.from(result).slice(0, -1).join("").trimEnd();
+  }
+  return `${result}…`;
+}
+
+function fitOverlayText(value, role) {
+  const config = overlayFitConfig[role];
+  const normalized = String(value || "").trim().replace(/\s+/g, " ") || "UNTITLED";
+
+  for (let fontSize = config.maxFontSize; fontSize >= config.minFontSize; fontSize -= 2) {
+    const lines = wrapByVisualWidth(normalized, config.maxWidth / fontSize);
+    const textHeight = lines.length * fontSize + Math.max(0, lines.length - 1) * config.lineSpacing;
+    if (lines.length <= config.maxLines && textHeight <= config.maxHeight) {
+      return { lines, fontSize, lineSpacing: config.lineSpacing, truncated: false };
+    }
+  }
+
+  const maxWidthEm = config.maxWidth / config.minFontSize;
+  const lines = wrapByVisualWidth(normalized, maxWidthEm).slice(0, config.maxLines);
+  lines[lines.length - 1] = ellipsizeLine(lines[lines.length - 1], maxWidthEm);
+  return { lines, fontSize: config.minFontSize, lineSpacing: config.lineSpacing, truncated: true };
 }
 
 function escapeXml(value) {
@@ -393,13 +456,12 @@ function svgTextLines(lines, { fontFamily, fontSize, firstBaseline, lineHeight, 
 }
 
 async function renderTitleOverlay({ outputPath, originalTitle, partTitle, partId, totalParts }) {
-  const originalLines = wrapText(originalTitle, 34, 18, 3).split("\n");
-  const partLines = wrapText(partTitle, 24, 13, 4).split("\n");
-  const originalFontSize = originalTitle.length > 90 ? 38 : originalTitle.length > 62 ? 44 : 50;
-  const partFontSize = partTitle.length > 62 ? 58 : partTitle.length > 42 ? 66 : 76;
-  const originalLineHeight = originalFontSize * 1.03;
-  const originalFirstBaseline = 345 - (originalLines.length - 1) * originalLineHeight;
-  const partLineHeight = partFontSize * 1.03;
+  const originalFit = fitOverlayText(originalTitle, "original");
+  const partFit = fitOverlayText(partTitle, "part");
+  const originalLineHeight = originalFit.fontSize + originalFit.lineSpacing;
+  const originalLastBaseline = 332 - originalFit.fontSize * 0.2;
+  const originalFirstBaseline = originalLastBaseline - (originalFit.lines.length - 1) * originalLineHeight;
+  const partLineHeight = partFit.fontSize + partFit.lineSpacing;
   const family = fontFamilyFor(`${originalTitle} ${partTitle}`);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
@@ -411,8 +473,8 @@ async function renderTitleOverlay({ outputPath, originalTitle, partTitle, partId
           <feDropShadow dx="3" dy="5" stdDeviation="4" flood-color="#000000" flood-opacity="0.82" />
         </filter>
       </defs>
-      ${svgTextLines(originalLines, { fontFamily: family, fontSize: originalFontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, strokeWidth: 5 })}
-      ${svgTextLines(partLines, { fontFamily: family, fontSize: partFontSize, firstBaseline: 1450 + partFontSize, lineHeight: partLineHeight, strokeWidth: 7 })}
+      ${svgTextLines(originalFit.lines, { fontFamily: family, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, strokeWidth: 5 })}
+      ${svgTextLines(partFit.lines, { fontFamily: family, fontSize: partFit.fontSize, firstBaseline: 1472 + partFit.fontSize * 0.82, lineHeight: partLineHeight, strokeWidth: 7 })}
       ${svgTextLines([`${partId}/${totalParts}`], { fontFamily: family, fontSize: 58, firstBaseline: 1850, lineHeight: 60, strokeWidth: 5 })}
     </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outputPath);

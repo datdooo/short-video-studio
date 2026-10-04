@@ -48,7 +48,7 @@ import {
   manualPlan,
   mockPlan,
 } from "@/lib/edit-plan";
-import { buildRenderManifest, fontStackFor } from "@/lib/render-spec";
+import { buildRenderManifest, fitOverlayText, fontStackFor } from "@/lib/render-spec";
 
 const WORKER_ORIGIN = "http://127.0.0.1:8787";
 
@@ -138,18 +138,44 @@ export default function Home() {
   const [manualPart2Title, setManualPart2Title] = useState("THEN EVERYTHING CHANGED");
   const [manualPart1Ranges, setManualPart1Ranges] = useState("01:12 - 01:46 First reaction\n02:25 - 03:18 Engine reveal");
   const [manualPart2Ranges, setManualPart2Ranges] = useState("06:22 - 07:14 The problem\n08:41 - 09:36 Final result");
+  const [previewElement, setPreviewElement] = useState<HTMLDivElement | null>(null);
+  const [previewWidth, setPreviewWidth] = useState(384);
 
   const activePart = plan.parts[activePartIndex];
   const fontStack = useMemo(
     () => fontStackFor(`${plan.originalTitle} ${activePart.title}`),
     [activePart.title, plan.originalTitle],
   );
+  const originalTitleFit = useMemo(
+    () => fitOverlayText(plan.originalTitle.toUpperCase(), "original"),
+    [plan.originalTitle],
+  );
+  const partTitleFit = useMemo(
+    () => fitOverlayText(activePart.title, "part"),
+    [activePart.title],
+  );
+  const previewScale = previewWidth / 1080;
   const renderJobId = renderJob?.id;
   const renderJobState = renderJob?.state;
 
   useEffect(() => () => {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
   }, [localVideoUrl]);
+
+  useEffect(() => {
+    if (!previewElement) return;
+    const updateWidth = () => setPreviewWidth(previewElement.getBoundingClientRect().width);
+    updateWidth();
+    const frame = window.requestAnimationFrame(updateWidth);
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(previewElement);
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updateWidth);
+      observer.disconnect();
+    };
+  }, [previewElement]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -620,7 +646,7 @@ export default function Home() {
                   <label htmlFor="transcript" className="field-label">Timestamped transcript</label>
                   <span className="text-[10px] text-zinc-600">{transcript.length.toLocaleString()} chars</span>
                 </div>
-                <Textarea id="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} className="studio-textarea mt-2 min-h-[180px] font-mono text-[12px] leading-5" placeholder="00:00 Transcript..." />
+                <Textarea id="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} className="studio-textarea studio-transcript mt-2 font-mono text-[12px] leading-5" placeholder="00:00 Transcript..." />
               </div>
               <div>
                 <label htmlFor="instruction" className="field-label">Your instruction</label>
@@ -669,15 +695,27 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="relative aspect-[9/16] h-[690px] max-h-[calc(100vh-180px)] max-w-full overflow-hidden rounded-[34px] border border-white/12 bg-[#17191e] shadow-[0_38px_100px_rgba(0,0,0,.55)]">
+          <div
+            ref={setPreviewElement}
+            className="portrait-preview relative aspect-[9/16] shrink-0 overflow-hidden rounded-[34px] border border-white/12 bg-[#17191e] shadow-[0_38px_100px_rgba(0,0,0,.55)]"
+            style={{ width: "min(100%, 388px, calc(56.25vh - 101.25px))" }}
+          >
             {localVideoUrl ? (
               <video className="absolute inset-0 size-full object-cover opacity-50 blur-[22px]" src={localVideoUrl} muted autoPlay loop playsInline />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
             )}
             <div className="absolute inset-0 bg-black/35" />
-            <div className="absolute inset-x-[7%] top-[3%] z-10 flex h-[15.75%] items-end justify-center pb-2 text-center">
-              <p className="social-copy text-[clamp(14px,2.4vh,20px)] leading-[1.12]">{plan.originalTitle.toUpperCase()}</p>
+            <div className="absolute inset-x-[8.35%] top-[4.9%] z-10 flex h-[12.7%] items-end justify-center overflow-hidden text-center">
+              <p
+                className="social-copy overlay-copy-block"
+                style={{
+                  fontSize: `${(originalTitleFit.fontSize * previewScale).toFixed(2)}px`,
+                  lineHeight: (originalTitleFit.fontSize + originalTitleFit.lineSpacing) / originalTitleFit.fontSize,
+                }}
+              >
+                {originalTitleFit.text}
+              </p>
             </div>
             <div className="absolute inset-x-0 top-[18.75%] z-10 h-[56.25%] overflow-hidden border-y border-white/15 bg-[#22242a]">
               {localVideoUrl ? (
@@ -688,8 +726,16 @@ export default function Home() {
               {!localVideoUrl && <button aria-label="Play preview" className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/40 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
               <div className="absolute bottom-4 left-4 rounded-full border border-white/20 bg-black/55 px-3 py-1.5 text-[9px] font-bold tracking-[.08em] text-white backdrop-blur-md">NATIVE 100% · CENTER CROP</div>
             </div>
-            <div className="absolute inset-x-[7%] top-[75%] z-10 flex h-[16%] items-start justify-center pt-2 text-center">
-              <p className="social-copy social-copy-main text-[clamp(24px,4vh,34px)] leading-[1.02]">{activePart.title}</p>
+            <div className="absolute inset-x-[8.35%] top-[76.65%] z-10 flex h-[12.7%] items-start justify-center overflow-hidden text-center">
+              <p
+                className="social-copy social-copy-main overlay-copy-block"
+                style={{
+                  fontSize: `${(partTitleFit.fontSize * previewScale).toFixed(2)}px`,
+                  lineHeight: (partTitleFit.fontSize + partTitleFit.lineSpacing) / partTitleFit.fontSize,
+                }}
+              >
+                {partTitleFit.text}
+              </p>
             </div>
             <div className="absolute inset-x-0 bottom-[4.2%] z-10 text-center"><span className="social-copy text-[clamp(17px,2.7vh,23px)]">{activePart.id}/{plan.parts.length}</span></div>
             <div className="absolute bottom-2.5 left-1/2 h-1 w-24 -translate-x-1/2 rounded-full bg-white/65" />
@@ -714,7 +760,7 @@ export default function Home() {
           <div className="mt-5">
             <label htmlFor="part-title" className="field-label">New part title</label>
             <Textarea id="part-title" value={activePart.title} onChange={(event) => updatePartTitle(event.target.value.toUpperCase())} className="studio-textarea mt-2 min-h-[72px] text-base font-bold leading-5" />
-            <p className="mt-2 text-[11px] leading-5 text-zinc-600">Main hook text · max 3–4 lines · auto wrapped in preview</p>
+            <p className="mt-2 text-[11px] leading-5 text-zinc-600">Main hook text · auto-scale trong vùng cố định 4 dòng · không tràn layout</p>
           </div>
 
           <div className="mt-5 space-y-2">
