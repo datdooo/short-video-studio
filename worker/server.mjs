@@ -67,6 +67,27 @@ const ytDlp = resolveBinary("YT_DLP_PATH", "yt-dlp", [
   path.join(projectRoot, ".local-tools", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
 ]);
 
+function supportsEncoder(binary, encoder) {
+  if (!binary) return false;
+  const result = spawnSync(binary, ["-hide_banner", "-h", `encoder=${encoder}`], {
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+  return result.status === 0 && !result.stderr.includes("not recognized");
+}
+
+function renderNumber(name, fallback, min, max) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
+const videoToolboxAvailable = process.platform === "darwin" && supportsEncoder(ffmpeg, "h264_videotoolbox");
+const preferredVideoEncoder = process.env.FFMPEG_VIDEO_ENCODER
+  || (videoToolboxAvailable ? "h264_videotoolbox" : "libx264");
+const renderContrast = renderNumber("FFMPEG_CONTRAST", 1.04, 0.8, 1.3);
+const renderSaturation = renderNumber("FFMPEG_SATURATION", 1.06, 0.8, 1.4);
+const hardwareDecodeCodecs = new Set(["h264", "hevc", "prores"]);
+
 function binaryVersion(binary, args = ["--version"]) {
   if (!binary) return null;
   const result = spawnSync(binary, args, { encoding: "utf8", timeout: 5_000 });
@@ -553,7 +574,12 @@ async function run(binary, args, options = {}) {
 async function probeMedia(mediaPath) {
   const result = await run(
     ffprobe,
-    ["-v", "error", "-show_entries", "format=duration:stream=index,codec_type,width,height", "-of", "json", mediaPath],
+    [
+      "-v", "error",
+      "-show_entries", "format=duration:stream=index,codec_type,codec_name,width,height,pix_fmt,color_range,color_space,color_transfer,color_primaries",
+      "-of", "json",
+      mediaPath,
+    ],
     { missingMessage: "Không tìm thấy ffprobe. Hãy cài FFmpeg trước." },
   );
   const data = JSON.parse(result.stdout);
@@ -564,6 +590,12 @@ async function probeMedia(mediaPath) {
     width: Number(video.width || 0),
     height: Number(video.height || 0),
     hasAudio: Boolean(data.streams?.some((stream) => stream.codec_type === "audio")),
+    videoCodec: String(video.codec_name || ""),
+    pixelFormat: String(video.pix_fmt || ""),
+    colorRange: String(video.color_range || "unknown"),
+    colorSpace: String(video.color_space || "unknown"),
+    colorTransfer: String(video.color_transfer || "unknown"),
+    colorPrimaries: String(video.color_primaries || "unknown"),
   };
 }
 
@@ -857,7 +889,8 @@ async function loadSource(sourceId) {
   const directory = path.join(sourcesRoot, id);
   const metadata = JSON.parse(await readFile(path.join(directory, "source.json"), "utf8"));
   const mediaPath = await findSourceMedia(directory);
-  return { ...metadata, directory, mediaPath };
+  const media = await probeMedia(mediaPath);
+  return { ...metadata, ...media, directory, mediaPath };
 }
 
 function svgTextLines(lines, { fontFamily, fontSize, firstBaseline, lineHeight, strokeWidth }) {
@@ -921,42 +954,74 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
   const filters = [
     ...segmentFilters,
     `${concatInputs}concat=n=${part.segments.length}:v=1:a=1[cutv][cuta]`,
-    `[cutv]split=2[bgsrc][mainsrc]`,
+    `[cutv]eq=contrast=${renderContrast}:saturation=${renderSaturation}[graded]`,
+    `[graded]split=2[bgsrc][mainsrc]`,
     `color=c=black:s=1080x1920:r=30[black]`,
-    `[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=50:25,format=rgba,colorchannelmixer=aa=0.5[bgvideo]`,
+    `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=1080:1920:flags=bilinear,format=rgba,colorchannelmixer=aa=0.5[bgvideo]`,
     `[black][bgvideo]overlay=shortest=1[bg]`,
     `[mainsrc]crop=w='min(iw,1080)':h='min(ih,1080)':x='max((iw-1080)/2,0)':y='max((ih-1080)/2,0)',pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black[main]`,
     `[bg][main]overlay=0:360:shortest=1[layout]`,
     `[${overlayInput}:v]format=rgba[titlecard]`,
     `[layout][titlecard]overlay=0:0:shortest=1[titled]`,
-    `[titled]setpts=PTS/1.25[vout]`,
+    `[titled]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,setpts=PTS/1.25[vout]`,
     `[cuta]atempo=1.25[aout]`,
   ];
 
-  const args = ["-y", "-i", source.mediaPath];
-  if (!source.hasAudio) args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo");
-  args.push("-loop", "1", "-framerate", "30", "-i", titleOverlayPath);
-  args.push(
-    "-filter_complex", filters.join(";"),
-    "-map", "[vout]",
-    "-map", "[aout]",
-    "-r", "30",
-    "-c:v", "libx264",
-    "-preset", process.env.FFMPEG_PRESET || "medium",
-    "-crf", process.env.FFMPEG_CRF || "18",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-b:a", "192k",
-    "-movflags", "+faststart",
-    "-shortest",
-    "-progress", "pipe:1",
-    "-nostats",
-    outputPath,
-  );
+  const buildArgs = (videoEncoder) => {
+    const hardwareRender = videoEncoder === "h264_videotoolbox";
+    const args = ["-y"];
+    if (hardwareRender && hardwareDecodeCodecs.has(source.videoCodec)) {
+      args.push("-hwaccel", "videotoolbox");
+    }
+    args.push("-i", source.mediaPath);
+    if (!source.hasAudio) args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo");
+    args.push("-loop", "1", "-framerate", "30", "-i", titleOverlayPath);
+    args.push(
+      "-filter_complex", filters.join(";"),
+      "-map", "[vout]",
+      "-map", "[aout]",
+      "-r", "30",
+      "-pix_fmt", "yuv420p",
+      "-color_range", "tv",
+      "-colorspace", "bt709",
+      "-color_primaries", "bt709",
+      "-color_trc", "bt709",
+    );
+    if (hardwareRender) {
+      args.push(
+        "-c:v", "h264_videotoolbox",
+        "-profile:v", "high",
+        "-level:v", "4.2",
+        "-b:v", process.env.FFMPEG_VIDEO_BITRATE || "12M",
+        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "16M",
+        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
+        "-spatial_aq", "1",
+        "-realtime", "0",
+        "-allow_sw", "0",
+      );
+    } else {
+      args.push(
+        "-c:v", videoEncoder,
+        "-preset", process.env.FFMPEG_PRESET || "medium",
+        "-crf", process.env.FFMPEG_CRF || "18",
+      );
+    }
+    args.push(
+      "-tag:v", "avc1",
+      "-c:a", "aac",
+      "-b:a", "192k",
+      "-movflags", "+faststart+write_colr",
+      "-shortest",
+      "-progress", "pipe:1",
+      "-nostats",
+      outputPath,
+    );
+    return args;
+  };
 
   const expectedMicroseconds = part.segments.reduce((sum, segment) => sum + segment.end - segment.start, 0) / 1.25 * 1_000_000;
   let progressBuffer = "";
-  await run(ffmpeg, args, {
+  const renderOptions = {
     onStdout(chunk) {
       progressBuffer += chunk;
       const lines = progressBuffer.split(/\r?\n/);
@@ -967,8 +1032,18 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
         if (Number.isFinite(current) && expectedMicroseconds > 0) onProgress(Math.min(1, current / expectedMicroseconds));
       }
     },
-  });
+  };
+  let encoderUsed = preferredVideoEncoder;
+  try {
+    await run(ffmpeg, buildArgs(encoderUsed), renderOptions);
+  } catch (error) {
+    if (encoderUsed !== "h264_videotoolbox") throw error;
+    encoderUsed = "libx264";
+    progressBuffer = "";
+    await run(ffmpeg, buildArgs(encoderUsed), renderOptions);
+  }
   onProgress(1);
+  return encoderUsed;
 }
 
 async function executeRender(job, source, plan) {
@@ -980,7 +1055,7 @@ async function executeRender(job, source, plan) {
     for (const [index, part] of plan.parts.entries()) {
       job.currentPart = part.id;
       const outputPath = path.join(outputDirectory, `part-${part.id}.mp4`);
-      await renderPart({
+      job.encoder = await renderPart({
         source,
         plan,
         part,
@@ -1018,6 +1093,7 @@ async function startRender(body) {
     progress: 0,
     currentPart: null,
     outputs: [],
+    encoder: preferredVideoEncoder,
     error: null,
     createdAt: new Date().toISOString(),
   };
@@ -1112,6 +1188,12 @@ const server = createServer(async (request, response) => {
         readyForYouTube: Boolean(ffmpeg && ffprobe && ytDlp),
         chatGPTAuthAvailable: process.platform === "darwin" && existsSync("/usr/bin/security"),
         tools: versions,
+        render: {
+          encoder: preferredVideoEncoder,
+          hardwareAccelerated: preferredVideoEncoder === "h264_videotoolbox",
+          label: preferredVideoEncoder === "h264_videotoolbox" ? "Apple VideoToolbox" : preferredVideoEncoder,
+          colorSpace: "Rec.709",
+        },
         dataRoot,
       });
       return;

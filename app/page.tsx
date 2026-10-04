@@ -61,6 +61,7 @@ type WorkerHealth = {
   readyForYouTube: boolean;
   chatGPTAuthAvailable: boolean;
   tools: { ffmpeg: string | null; ffprobe: string | null; ytDlp: string | null };
+  render?: { encoder: string; hardwareAccelerated: boolean; label: string; colorSpace: string };
 };
 
 type ChatGPTSession = {
@@ -685,7 +686,7 @@ export default function Home() {
                 <p className="flex items-center gap-2 text-xs font-semibold text-zinc-300"><ServerCog className="size-3.5" /> Media worker</p>
                 <p className="mt-1 truncate text-[10px] leading-4 text-zinc-600">
                   {workerHealth?.ok
-                    ? `FFmpeg ready · YouTube ${workerHealth.readyForYouTube ? "ready" : "needs setup"}`
+                    ? `FFmpeg ready · ${workerHealth.render?.hardwareAccelerated ? `${workerHealth.render.label} GPU` : "CPU render"} · ${workerHealth.render?.colorSpace || "Rec.709"}`
                     : "Chạy npm run personal để upload / render MP4"}
                 </p>
               </div>

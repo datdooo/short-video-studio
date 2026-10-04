@@ -61,9 +61,11 @@ Chi tiết kỹ thuật và xử lý lỗi nằm trong [`docs/AI_PROVIDERS.md`](
 
 ## Render preset
 
-- Canvas: 1080×1920, 30 fps, H.264 + AAC.
+- Canvas: 1080×1920, 30 fps, H.264 + AAC, Rec.709 limited-range metadata để màu nhất quán với Premiere/QuickTime.
+- macOS Apple Silicon: encode bằng Apple VideoToolbox; tự fallback về `libx264` nếu hardware encoder không khả dụng.
+- Color grade mặc định: contrast 1.04, saturation 1.06; có thể chỉnh bằng `FFMPEG_CONTRAST` và `FFMPEG_SATURATION`.
 - Main video: native 100%, frame 1080×1080 tại `y=360`, center crop ngang, không kéo méo.
-- Background: cùng source, scale cover, blur 50, opacity 50% trên nền đen.
+- Background: cùng source, scale cover, blur tương đương 50 px trên proxy 1/4-size, opacity 50% trên nền đen để render nhanh hơn mà không đổi layout.
 - Original title: sát cạnh trên của main video.
 - New part title: sát cạnh dưới và nổi bật nhất.
 - Part indicator: `1/2`, `2/2` ở bottom safe area.
