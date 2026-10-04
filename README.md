@@ -53,19 +53,9 @@ Edit plan luôn lưu timestamp gốc. Ví dụ source cut 10 giây sẽ còn kho
 
 ## AI provider
 
-Copy `.env.example` thành `.env.local` và điền key cần dùng:
+Trong tab **AI plan**, chọn OpenAI hoặc Qwen rồi paste API key vào ô ngay bên dưới. Key được lưu trong localStorage của trình duyệt đó và chỉ gửi tới API route khi bấm **Generate 2-part plan**.
 
-```text
-OPENAI_API_KEY=...
-OPENAI_MODEL=gpt-5.6-luna
-OPENAI_REASONING_EFFORT=low
-
-DASHSCOPE_API_KEY=...
-QWEN_BASE_URL=...
-QWEN_MODEL=...
-```
-
-Không có key thì provider tự fallback sang mock plan. Manual cut không cần key.
+Không muốn nhập key thì chọn Mock hoặc dùng Manual cut. Cấu hình `.env.local` vẫn được hỗ trợ như một tùy chọn nâng cao, nhưng không bắt buộc cho workflow cá nhân.
 
 ## Render preset
 

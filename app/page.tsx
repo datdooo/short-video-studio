@@ -9,6 +9,7 @@ import {
   Download,
   FileJson,
   Film,
+  KeyRound,
   Link2,
   Loader2,
   Play,
@@ -113,7 +114,8 @@ function downloadJson(filename: string, value: unknown) {
 export default function Home() {
   const [editMode, setEditMode] = useState<"ai" | "manual">("ai");
   const [sourceMode, setSourceMode] = useState<"youtube" | "local">("youtube");
-  const [provider, setProvider] = useState<AiProvider>("mock");
+  const [provider, setProvider] = useState<AiProvider>("openai");
+  const [apiKey, setApiKey] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState(DEFAULT_REQUEST.originalTitle);
   const [transcript, setTranscript] = useState(DEMO_TRANSCRIPT);
@@ -148,6 +150,13 @@ export default function Home() {
   useEffect(() => () => {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
   }, [localVideoUrl]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setApiKey(window.localStorage.getItem("shortcut-openai-api-key") || "");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -285,11 +294,18 @@ export default function Home() {
       setError("Hãy paste transcript có timestamp trước.");
       return;
     }
+    if (provider !== "mock" && !apiKey.trim()) {
+      setError(`Nhập ${provider === "openai" ? "OpenAI" : "Qwen"} API key trước.`);
+      return;
+    }
     setIsAnalyzing(true);
     try {
       const response = await fetch("/api/analyze", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(provider !== "mock" ? { "X-Provider-API-Key": apiKey.trim() } : {}),
+        },
         body: JSON.stringify({
           provider,
           originalTitle: sourceTitle,
@@ -306,6 +322,22 @@ export default function Home() {
     } finally {
       setIsAnalyzing(false);
     }
+  }
+
+  function changeProvider(value: string) {
+    const nextProvider = value as AiProvider;
+    setProvider(nextProvider);
+    setError("");
+    if (nextProvider === "mock") {
+      setApiKey("");
+      return;
+    }
+    setApiKey(window.localStorage.getItem(`shortcut-${nextProvider}-api-key`) || "");
+  }
+
+  function updateApiKey(value: string) {
+    setApiKey(value);
+    if (provider !== "mock") window.localStorage.setItem(`shortcut-${provider}-api-key`, value);
   }
 
   function applyManualPlan() {
@@ -544,7 +576,7 @@ export default function Home() {
             <TabsContent value="ai" className="space-y-4 pt-4">
               <div>
                 <label className="field-label">AI provider</label>
-                <Select value={provider} onValueChange={(value) => setProvider(value as AiProvider)}>
+                <Select value={provider} onValueChange={changeProvider}>
                   <SelectTrigger aria-label="AI provider" className="studio-input mt-2 w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -555,6 +587,34 @@ export default function Home() {
                   </SelectContent>
                 </Select>
               </div>
+              {provider !== "mock" && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="provider-api-key" className="field-label">{provider === "openai" ? "OpenAI" : "Qwen"} API key</label>
+                    <button
+                      type="button"
+                      onClick={() => updateApiKey("")}
+                      className="text-[10px] text-zinc-600 transition hover:text-zinc-300"
+                    >
+                      Xóa key
+                    </button>
+                  </div>
+                  <div className="relative mt-2">
+                    <KeyRound className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
+                    <Input
+                      id="provider-api-key"
+                      type="password"
+                      value={apiKey}
+                      onChange={(event) => updateApiKey(event.target.value)}
+                      placeholder={provider === "openai" ? "sk-proj-..." : "sk-..."}
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="studio-input pl-10 font-mono text-xs"
+                    />
+                  </div>
+                  <p className="mt-2 text-[10px] leading-4 text-zinc-600">Tự lưu trên trình duyệt này. Paste một lần rồi dùng luôn.</p>
+                </div>
+              )}
               <div>
                 <div className="flex items-center justify-between">
                   <label htmlFor="transcript" className="field-label">Timestamped transcript</label>
@@ -569,7 +629,7 @@ export default function Home() {
               <Button onClick={analyze} disabled={isAnalyzing} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
                 {isAnalyzing ? <><Loader2 className="animate-spin" /> Building edit plan…</> : <><WandSparkles /> Generate 2-part plan</>}
               </Button>
-              <p className="text-center text-[10px] leading-5 text-zinc-600">No key? OpenAI/Qwen falls back to mock mode.</p>
+              <p className="text-center text-[10px] leading-5 text-zinc-600">Không muốn dùng API? Chọn Mock hoặc chuyển sang Manual cut.</p>
             </TabsContent>
 
             <TabsContent value="manual" className="space-y-4 pt-4">

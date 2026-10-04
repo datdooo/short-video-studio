@@ -15,8 +15,8 @@ function parseJson(text: string) {
   return JSON.parse(cleaned);
 }
 
-async function analyzeWithOpenAI(request: AnalyzeRequest) {
-  const apiKey = process.env.OPENAI_API_KEY;
+async function analyzeWithOpenAI(request: AnalyzeRequest, suppliedApiKey?: string) {
+  const apiKey = suppliedApiKey || process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -48,10 +48,10 @@ async function analyzeWithOpenAI(request: AnalyzeRequest) {
   return normalizePlan(parseJson(outputText), "openai");
 }
 
-async function analyzeWithQwen(request: AnalyzeRequest) {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
-  const baseUrl = process.env.QWEN_BASE_URL;
-  if (!apiKey || !baseUrl) return null;
+async function analyzeWithQwen(request: AnalyzeRequest, suppliedApiKey?: string) {
+  const apiKey = suppliedApiKey || process.env.DASHSCOPE_API_KEY;
+  const baseUrl = process.env.QWEN_BASE_URL || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+  if (!apiKey) return null;
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -76,6 +76,7 @@ async function analyzeWithQwen(request: AnalyzeRequest) {
 
 export async function POST(httpRequest: Request) {
   try {
+    const suppliedApiKey = httpRequest.headers.get("x-provider-api-key")?.trim() || undefined;
     const request = (await httpRequest.json()) as AnalyzeRequest;
     if (!request.transcript?.trim()) {
       return NextResponse.json({ error: "Paste a timestamped transcript first." }, { status: 400 });
@@ -83,9 +84,9 @@ export async function POST(httpRequest: Request) {
 
     const plan =
       request.provider === "openai"
-        ? await analyzeWithOpenAI(request)
+        ? await analyzeWithOpenAI(request, suppliedApiKey)
         : request.provider === "qwen"
-          ? await analyzeWithQwen(request)
+          ? await analyzeWithQwen(request, suppliedApiKey)
           : null;
 
     return NextResponse.json(plan || mockPlan(request), {
