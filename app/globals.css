@@ -1,0 +1,83 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+:root {
+  --background: #090a0c;
+  --foreground: #f4f4f5;
+  --card: #111216;
+  --card-foreground: #f4f4f5;
+  --popover: #15161a;
+  --popover-foreground: #f4f4f5;
+  --primary: #ff4d2e;
+  --primary-foreground: #ffffff;
+  --secondary: #202126;
+  --secondary-foreground: #f4f4f5;
+  --muted: #202126;
+  --muted-foreground: #a1a1aa;
+  --accent: #27282e;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --border: #ffffff14;
+  --input: #ffffff1a;
+  --ring: #ff4d2e;
+  --radius: 0.75rem;
+  --sidebar: #0d0e11;
+  --sidebar-foreground: #f4f4f5;
+  --sidebar-primary: #ff4d2e;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #202126;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #ffffff14;
+  --sidebar-ring: #ff4d2e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { background: #090a0c; }
+body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-sans); }
+button, input, textarea { font: inherit; }
+
+.eyebrow { font-size: 10px; font-weight: 800; letter-spacing: .18em; color: #71717a; }
+.field-label { font-size: 11px; font-weight: 700; letter-spacing: .02em; color: #a1a1aa; }
+.studio-input { height: 44px; border-radius: 12px; border-color: rgb(255 255 255 / 9%); background: rgb(255 255 255 / 3%); color: #f4f4f5; box-shadow: none; }
+.studio-input::placeholder { color: #52525b; }
+.studio-input:focus-visible, .studio-textarea:focus-visible { border-color: rgb(255 77 46 / 65%); --tw-ring-color: rgb(255 77 46 / 15%); }
+.studio-textarea { resize: vertical; border-radius: 12px; border-color: rgb(255 255 255 / 9%); background: rgb(255 255 255 / 3%); color: #e4e4e7; box-shadow: none; }
+.studio-textarea::placeholder { color: #52525b; }
+.metric { display: flex; min-height: 62px; flex-direction: column; justify-content: space-between; border: 1px solid rgb(255 255 255 / 7%); border-radius: 14px; background: rgb(255 255 255 / 2.5%); padding: 12px; }
+.metric span { font-size: 10px; color: #71717a; }
+.metric strong { font-size: 15px; color: #e4e4e7; }
+.social-copy { font-family: "Arial Rounded MT Bold", "Noto Sans", Inter, sans-serif; font-weight: 950; letter-spacing: -.03em; color: white; -webkit-text-stroke: 1.8px #d92b20; paint-order: stroke fill; text-shadow: 0 0 8px rgb(255 40 32 / 65%), 0 3px 5px rgb(0 0 0 / 75%); }
+.social-copy-main { -webkit-text-stroke-width: 2.5px; text-shadow: 0 0 12px rgb(255 40 32 / 75%), 0 4px 8px rgb(0 0 0 / 80%); }
+.preview-stat { display: flex; min-width: 0; flex-direction: column; gap: 5px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 12px; background: rgb(255 255 255 / 2.5%); padding: 10px 12px; }
+.preview-stat span { font-size: 9px; text-transform: uppercase; letter-spacing: .08em; color: #52525b; }
+.preview-stat strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #d4d4d8; }
+.preview-stat.accent { border-color: rgb(255 77 46 / 16%); background: rgb(255 77 46 / 5%); }
+.preview-stat.accent strong { color: #ff806a; }
+@media (max-width: 1023px) { main { overflow-x: hidden; } }
