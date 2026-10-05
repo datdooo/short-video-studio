@@ -74,8 +74,11 @@ button, input, textarea { font: inherit; }
 .metric { display: flex; min-height: 62px; flex-direction: column; justify-content: space-between; border: 1px solid rgb(255 255 255 / 7%); border-radius: 14px; background: rgb(255 255 255 / 2.5%); padding: 12px; }
 .metric span { font-size: 10px; color: #71717a; }
 .metric strong { font-size: 15px; color: #e4e4e7; }
-.social-copy { font-family: "Arial Black", "Avenir Next", "Noto Sans", Inter, sans-serif; font-weight: 900; letter-spacing: -.025em; color: #fffdfb; -webkit-text-stroke: 1.8px #a81524; paint-order: stroke fill; text-shadow: 0 0 5px rgb(255 68 56 / 32%), 0 3px 3px rgb(9 9 11 / 90%); }
-.social-copy-main { -webkit-text-stroke-width: 2.5px; text-shadow: 0 0 7px rgb(255 68 56 / 35%), 0 4px 4px rgb(9 9 11 / 90%); }
+@font-face { font-family: "Studio Noto Sans"; src: url("/NotoSans-Variable.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Studio Noto Sans JP"; src: url("/NotoSansJP-Variable.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Studio Noto Sans KR"; src: url("/NotoSansKR-Variable.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: swap; }
+.social-copy { font-family: "Studio Noto Sans", "Studio Noto Sans JP", "Studio Noto Sans KR", sans-serif; font-weight: 700; letter-spacing: 0; color: #fff; -webkit-text-stroke: 0; text-shadow: 0 0 .045em rgb(255 255 255 / 85%), 0 0 .16em rgb(229 239 255 / 55%), 0 .07em .04em rgb(5 8 15 / 95%), 0 .12em .20em rgb(5 8 15 / 90%), 0 .02em .36em rgb(5 8 15 / 70%); }
+.social-copy-main { font-weight: 800; }
 .overlay-copy-block { width: 100%; max-width: 100%; white-space: pre-line; overflow-wrap: anywhere; }
 .native-preview-video { position: absolute; left: 50%; top: 50%; height: 100%; width: auto; max-width: none; transform: translate(-50%, -50%); }
 .preview-controls { display: grid; grid-template-columns: 38px 42px minmax(0, 1fr) 42px; align-items: center; gap: 9px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 14px; background: rgb(0 0 0 / 28%); padding: 9px 11px; }

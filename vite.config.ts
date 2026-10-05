@@ -37,6 +37,8 @@ const localBindingConfig = {
 };
 
 export default defineConfig(async ({ command }) => {
+  // Desktop bundles use a plain local Node server, without cloud hosting tooling.
+  if (process.env.SHORTCUT_PERSONAL_BUILD === "1") return { plugins: [vinext()] };
   // Use Miniflare's local Request.cf placeholder unless fetching is requested.
   process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= "false";
   process.env.WRANGLER_SEND_METRICS ??= "false";

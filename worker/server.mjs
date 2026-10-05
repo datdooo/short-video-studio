@@ -25,13 +25,100 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
+import { removeBatchItem } from "./batch-cleanup.mjs";
+import { createAntigravityBridge } from "./antigravity-bridge.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
 const sourcesRoot = path.join(dataRoot, "sources");
+const gemini = createAntigravityBridge(dataRoot);
 const port = Number(process.env.MEDIA_WORKER_PORT || 8787);
 const host = "127.0.0.1";
 const jobs = new Map();
+const batches = new Map();
+const batchControllers = new Map();
+const renderControllers = new Map();
+const batchHistoryPath = path.join(dataRoot, "batch-history.json");
+let historyWriteQueue = Promise.resolve();
+function persistBatchHistory() {
+  const snapshot = JSON.stringify({ batches: [...batches.values()], jobs: [...jobs.values()].filter((job) => [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && item.jobId === job.id))) });
+  historyWriteQueue = historyWriteQueue.then(async () => {
+    await mkdir(dataRoot, { recursive: true });
+    const temporary = `${batchHistoryPath}.tmp`;
+    await writeFile(temporary, snapshot);
+    await rename(temporary, batchHistoryPath);
+  }).catch((error) => console.error(`Không lưu được lịch sử hàng đợi: ${error.message}`));
+  return historyWriteQueue;
+}
+async function restoreBatchHistory() {
+  try {
+    const history = JSON.parse(await readFile(batchHistoryPath, "utf8"));
+    for (const job of history.jobs || []) {
+      if (!["done", "error", "cancelled"].includes(job.state)) {
+        job.state = "cancelled";
+        job.error = "App đã đóng trước khi xử lý xong. File đã hoàn tất vẫn được giữ.";
+      }
+      jobs.set(job.id, job);
+    }
+    for (const batch of history.batches || []) {
+      for (const item of batch.items) {
+        item.id ||= randomUUID();
+        if (!item.jobId && !["done", "error", "cancelled"].includes(item.state)) {
+          item.state = "cancelled";
+          item.error = "App đã đóng trước khi xử lý xong.";
+        }
+      }
+      batches.set(batch.id, batch);
+    }
+    await importLegacyRenderHistory();
+  } catch (error) {
+    if (error.code === "ENOENT") await importLegacyRenderHistory();
+    else console.error(`Không đọc được lịch sử hàng đợi: ${error.message}`);
+  }
+}
+async function importLegacyRenderHistory() {
+  // Older personal builds stored files but no history. Recover completed YouTube
+  // outputs for download/delete, without touching media or claiming to recover AI plans.
+  const recoveredItems = [];
+  let directories;
+  try { directories = await readdir(sourcesRoot, { withFileTypes: true }); } catch { return; }
+  for (const directory of directories) {
+    if (!directory.isDirectory() || !/^[a-f0-9-]{16,64}$/i.test(directory.name)) continue;
+    const sourceDirectory = path.join(sourcesRoot, directory.name);
+    try {
+      const source = JSON.parse(await readFile(path.join(sourceDirectory, "source.json"), "utf8"));
+      if (source.kind !== "youtube") continue;
+      for (const jobId of await readdir(path.join(sourceDirectory, "outputs"))) {
+        if (!/^[a-f0-9-]{16,64}$/i.test(jobId)) continue;
+        if (jobs.has(jobId) || [...batches.values()].some((batch) => batch.items.some((item) => item.jobId === jobId))) continue;
+        const outputs = [];
+        for (const part of [1, 2]) {
+          const partDirectory = path.join(sourceDirectory, "outputs", jobId, `part-${part}`);
+          let files;
+          try { files = await readdir(partDirectory); } catch { continue; }
+          for (const filename of files.filter((name) => name.endsWith(".mp4"))) {
+            const target = path.join(partDirectory, filename);
+            try {
+              const media = await probeMedia(target);
+              if (!media.duration) continue;
+              outputs.push({ part, filename, size: (await stat(target)).size, url: `/files/${directory.name}/outputs/${jobId}/part-${part}/${encodeURIComponent(filename)}` });
+            } catch { /* Ignore incomplete exports. */ }
+          }
+        }
+        if (!outputs.length) continue;
+        jobs.set(jobId, { id: jobId, sourceId: directory.name, state: "done", progress: 100, currentPart: null, outputs, error: null });
+        recoveredItems.push({ id: randomUUID(), title: source.title, url: source.sourceUrl || "Video YouTube đã render", sourceId: directory.name, jobId, state: "done", error: null });
+      }
+    } catch { /* Subtitle-only and incomplete source folders are not history. */ }
+  }
+  if (recoveredItems.length) {
+    const batch = { id: randomUUID(), items: recoveredItems };
+    batches.set(batch.id, batch);
+    await persistBatchHistory();
+  }
+}
+let renderQueue = Promise.resolve();
+let batchPreparationQueue = Promise.resolve();
 const transcriptRequests = new Map();
 const pendingChatGPTAuth = new Map();
 const chatGPTRefreshes = new Map();
@@ -428,9 +515,10 @@ async function activeChatGPTCredentials() {
   return credentials;
 }
 
-async function listChatGPTModels(credentials = null) {
+async function listChatGPTModels(credentials = null, signal) {
   const session = credentials || await activeChatGPTCredentials();
   const response = await fetch(`${chatGPTResource}/models`, {
+    signal,
     headers: { Authorization: `Bearer ${session.access_token}`, Accept: "application/json" },
   });
   const body = await response.json().catch(() => ({}));
@@ -460,12 +548,14 @@ function responseTextFromCompleted(response) {
     .join("");
 }
 
-async function analyzeWithChatGPTPlan(body) {
+async function analyzeWithChatGPTPlan(body, signal) {
+  signal?.throwIfAborted();
   const credentials = await activeChatGPTCredentials();
-  const models = await listChatGPTModels(credentials);
+  const models = await listChatGPTModels(credentials, signal);
   const model = body.model || models[0]?.slug;
   if (!model) throw new Error("MODEL_UNAVAILABLE: ChatGPT account không trả về model khả dụng.");
   const response = await fetch(`${chatGPTResource}/responses`, {
+    signal,
     method: "POST",
     headers: {
       Authorization: `Bearer ${credentials.access_token}`,
@@ -547,13 +637,30 @@ function assertId(value) {
 }
 
 async function run(binary, args, options = {}) {
+  options.signal?.throwIfAborted();
   if (!binary) throw new Error(options.missingMessage || "Thiếu binary cần thiết.");
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
       cwd: options.cwd || projectRoot,
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "pipe", "pipe"],
+      detached: Boolean(options.signal) && process.platform !== "win32",
     });
+    let killTimer;
+    const kill = (signal) => {
+      try {
+        if (options.signal && process.platform !== "win32") process.kill(-child.pid, signal);
+        else child.kill(signal);
+      } catch { /* The process may already have exited. */ }
+    };
+    const abort = () => {
+      kill("SIGTERM");
+      killTimer = setTimeout(() => kill("SIGKILL"), 3000);
+      killTimer.unref();
+    };
+    const cleanup = () => { clearTimeout(killTimer); options.signal?.removeEventListener("abort", abort); };
+    options.signal?.addEventListener("abort", abort, { once: true });
+    if (options.signal?.aborted) abort();
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {
@@ -564,8 +671,10 @@ async function run(binary, args, options = {}) {
       stderr = `${stderr}${chunk}`.slice(-100_000);
       options.onStderr?.(chunk.toString());
     });
-    child.once("error", reject);
+    child.once("error", (error) => { cleanup(); reject(error); });
     child.once("close", (code) => {
+      cleanup();
+      if (options.signal?.aborted) { reject(options.signal.reason); return; }
       if (code === 0) resolve({ stdout, stderr });
       else reject(new Error((stderr || stdout || `${path.basename(binary)} exited with ${code}`).trim().slice(-5_000)));
     });
@@ -662,15 +771,16 @@ function validateYouTubeUrl(url) {
   }
 }
 
-async function fetchYouTubeTranscript(url) {
+async function fetchYouTubeTranscript(url, signal) {
+  signal?.throwIfAborted();
   validateYouTubeUrl(url);
   if (!ytDlp) throw new Error("Chưa có yt-dlp. Chạy npm run setup:media.");
-  if (transcriptRequests.has(url)) return transcriptRequests.get(url);
+  if (!signal && transcriptRequests.has(url)) return transcriptRequests.get(url);
   const request = (async () => {
     const metadata = await run(ytDlp, [
       "--no-playlist", "--skip-download", "--dump-single-json",
       "--js-runtimes", `node:${process.execPath}`, url,
-    ], { maxStdout: 10 * 1024 * 1024 });
+    ], { maxStdout: 10 * 1024 * 1024, signal });
     const info = JSON.parse(metadata.stdout);
     const manual = Object.keys(info.subtitles || {}).filter((key) => key !== "live_chat");
     const automatic = Object.keys(info.automatic_captions || {});
@@ -691,7 +801,7 @@ async function fetchYouTubeTranscript(url) {
       "--sub-langs", selected, "--sub-format", "vtt",
       "--js-runtimes", `node:${process.execPath}`,
       "-o", path.join(directory, "transcript.%(ext)s"), url,
-    ]);
+    ], { signal });
     const files = await readdir(directory);
     const subtitle = files.find((name) => name.endsWith(".vtt"));
     if (!subtitle) throw new Error("YouTube có phụ đề nhưng tải transcript chưa thành công. Hãy thử lại.");
@@ -702,12 +812,15 @@ async function fetchYouTubeTranscript(url) {
       message: "",
     };
   })();
-  transcriptRequests.set(url, request);
-  request.then((result) => { if (!result.transcript) transcriptRequests.delete(url); }, () => transcriptRequests.delete(url));
+  if (!signal) {
+    transcriptRequests.set(url, request);
+    request.then((result) => { if (!result.transcript) transcriptRequests.delete(url); }, () => transcriptRequests.delete(url));
+  }
   return request;
 }
 
-async function importYouTube(url) {
+async function importYouTube(url, signal) {
+  signal?.throwIfAborted();
   if (!ytDlp) throw new Error("Chưa có yt-dlp. Chạy `npm run setup:media` rồi thử lại.");
   if (!/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i.test(url)) {
     throw new Error("URL phải thuộc YouTube.");
@@ -725,11 +838,12 @@ async function importYouTube(url) {
     "--merge-output-format", "mp4",
     "-o", outputTemplate,
     url,
-  ], { missingMessage: "Chưa có yt-dlp. Chạy `npm run setup:media`." });
+  ], { missingMessage: "Chưa có yt-dlp. Chạy `npm run setup:media`.", signal });
 
-  const captions = await fetchYouTubeTranscript(url).catch((error) => ({
+  const captions = await fetchYouTubeTranscript(url, signal).catch((error) => ({
     transcript: "", message: `Không tải được transcript: ${error.message}`,
   }));
+  signal?.throwIfAborted();
 
   const mediaPath = await findSourceMedia(directory);
   const media = await probeMedia(mediaPath);
@@ -752,6 +866,7 @@ async function importYouTube(url) {
     hasAudio: media.hasAudio,
     transcript,
     transcriptMessage: captions.message,
+    language: captions.language || info.language || "",
     subtitleFound: Boolean(transcript),
     subtitleFile: subtitleNames[0] || null,
     createdAt: new Date().toISOString(),
@@ -792,8 +907,8 @@ async function importUpload(request, url) {
 }
 
 function detectScript(text) {
-  const japanese = (text.match(/[\u3040-\u30ff]/g) || []).length;
-  const korean = (text.match(/[\uac00-\ud7af]/g) || []).length;
+  const japanese = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+  const korean = (text.match(/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/g) || []).length;
   if (japanese > korean && japanese > 0) return "japanese";
   if (korean > 0) return "korean";
   return "latin";
@@ -807,14 +922,26 @@ function fontFamilyFor(text) {
     korean: process.env.FONT_KOREAN_FAMILY,
   }[script];
   if (configured) return configured;
-  if (script === "japanese") return "Hiragino Kaku Gothic ProN, Hiragino Sans, Noto Sans CJK JP, sans-serif";
-  if (script === "korean") return "Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif";
-  return "Arial Black, Avenir Next, Arial, DejaVu Sans, sans-serif";
+  if (script === "japanese") return "Noto Sans JP, Noto Sans, Noto Sans KR, sans-serif";
+  if (script === "korean") return "Noto Sans KR, Noto Sans, Noto Sans JP, sans-serif";
+  return "Noto Sans, Noto Sans JP, Noto Sans KR, sans-serif";
+}
+
+let overlayFontsReady;
+function registerOverlayFonts() {
+  overlayFontsReady ||= Promise.all([
+    ["Noto Sans", "NotoSans-Variable.ttf"],
+    ["Noto Sans JP", "NotoSansJP-Variable.ttf"],
+    ["Noto Sans KR", "NotoSansKR-Variable.ttf"],
+  ].map(([family, filename]) => sharp({ text: {
+    text: "A", font: `${family} Bold 12`, fontfile: path.join(projectRoot, "public", filename), rgba: true,
+  } }).png().toBuffer()));
+  return overlayFontsReady;
 }
 
 const overlayFitConfig = {
-  original: { maxFontSize: 54, minFontSize: 32, maxLines: 3, maxWidth: 900, maxHeight: 220, lineSpacing: -2 },
-  part: { maxFontSize: 82, minFontSize: 44, maxLines: 4, maxWidth: 900, maxHeight: 244, lineSpacing: -4 },
+  original: { maxFontSize: 54, minFontSize: 32, maxLines: 3, maxWidth: 900, maxHeight: 220, lineSpacing: 4 },
+  part: { maxFontSize: 82, minFontSize: 44, maxLines: 4, maxWidth: 900, maxHeight: 244, lineSpacing: 6 },
 };
 
 function characterWidthEm(character) {
@@ -939,46 +1066,46 @@ async function loadSource(sourceId) {
   return { ...metadata, ...media, directory, mediaPath };
 }
 
-function svgTextLines(lines, { fontFamily, fontSize, firstBaseline, lineHeight, strokeWidth }) {
+function svgTextLines(lines, { fontFamily, fontSize, firstBaseline, lineHeight, fontWeight = 800 }) {
   const textNodes = lines.map((line, index) => {
     const y = Math.round(firstBaseline + index * lineHeight);
     return `<text x="540" y="${y}" text-anchor="middle">${escapeXml(line)}</text>`;
   }).join("");
-  return `
-    <g font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="900" letter-spacing="-1.2"
-       fill="#fffdfb" stroke="#ff4438" stroke-width="${strokeWidth + 6}" stroke-linejoin="round" paint-order="stroke fill"
-       opacity="0.32" filter="url(#glow)">${textNodes}</g>
-    <g font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="900" letter-spacing="-1.2"
-       fill="#fffdfb" stroke="#a81524" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"
-       filter="url(#shadow)">${textNodes}</g>`;
+  const effectId = `${Math.round(firstBaseline)}-${fontSize}`;
+  // Render each effect independently: sequential drop shadows can obscure the glow.
+  // em units keep the same visual proportions as the browser at every title size.
+  return `<g font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="${fontWeight}" letter-spacing="0" stroke="none">
+    <defs>${[["ambient-shadow", .18], ["soft-shadow", .10], ["contact-shadow", .02], ["outer-glow", .08], ["inner-glow", .0225]].map(([id, radius]) => `<filter id="${id}-${effectId}" x="-50%" y="-100%" width="200%" height="300%"><feGaussianBlur stdDeviation="${radius * fontSize}" /></filter>`).join("")}</defs>
+    <g fill="#05080f" opacity="0.70" filter="url(#ambient-shadow-${effectId})">${textNodes}</g>
+    <g fill="#05080f" opacity="0.90" transform="translate(0 ${fontSize * 0.12})" filter="url(#soft-shadow-${effectId})">${textNodes}</g>
+    <g fill="#05080f" opacity="0.95" transform="translate(0 ${fontSize * 0.07})" filter="url(#contact-shadow-${effectId})">${textNodes}</g>
+    <g fill="#e5efff" opacity="0.55" filter="url(#outer-glow-${effectId})">${textNodes}</g>
+    <g fill="#ffffff" opacity="0.85" filter="url(#inner-glow-${effectId})">${textNodes}</g>
+    <g fill="#ffffff">${textNodes}</g>
+  </g>`;
 }
 
 async function renderTitleOverlay({ outputPath, originalTitle, partTitle, partId, totalParts }) {
+  await registerOverlayFonts();
   const originalFit = fitOverlayText(originalTitle, "original");
   const partFit = fitOverlayText(partTitle, "part");
   const originalLineHeight = originalFit.fontSize + originalFit.lineSpacing;
   const originalLastBaseline = 332 - originalFit.fontSize * 0.2;
   const originalFirstBaseline = originalLastBaseline - (originalFit.lines.length - 1) * originalLineHeight;
   const partLineHeight = partFit.fontSize + partFit.lineSpacing;
-  const family = fontFamilyFor(`${originalTitle} ${partTitle}`);
+  const originalFamily = fontFamilyFor(originalTitle);
+  const partFamily = fontFamilyFor(partTitle);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
-      <defs>
-        <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="5" />
-        </filter>
-        <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="0" dy="6" stdDeviation="3" flood-color="#09090b" flood-opacity="0.9" />
-        </filter>
-      </defs>
-      ${svgTextLines(originalFit.lines, { fontFamily: family, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, strokeWidth: 5 })}
-      ${svgTextLines(partFit.lines, { fontFamily: family, fontSize: partFit.fontSize, firstBaseline: 1472 + partFit.fontSize * 0.82, lineHeight: partLineHeight, strokeWidth: 7 })}
-      ${svgTextLines([`${partId}/${totalParts}`], { fontFamily: family, fontSize: 58, firstBaseline: 1850, lineHeight: 60, strokeWidth: 5 })}
+      ${svgTextLines(originalFit.lines, { fontFamily: originalFamily, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, fontWeight: 700 })}
+      ${svgTextLines(partFit.lines, { fontFamily: partFamily, fontSize: partFit.fontSize, firstBaseline: 1472 + partFit.fontSize * 0.82, lineHeight: partLineHeight })}
+      ${svgTextLines([`${partId}/${totalParts}`], { fontFamily: partFamily, fontSize: 58, firstBaseline: 1850, lineHeight: 60 })}
     </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outputPath);
 }
 
-async function renderPart({ source, plan, part, totalParts, outputPath, onProgress }) {
+async function renderPart({ source, plan, part, totalParts, outputPath, onProgress, signal }) {
+  signal?.throwIfAborted();
   if (!ffmpeg) throw new Error("Không tìm thấy FFmpeg. macOS: brew install ffmpeg");
   const workDirectory = path.dirname(outputPath);
   const titleOverlayPath = path.join(workDirectory, `part-${part.id}-titles.png`);
@@ -1068,6 +1195,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
   const expectedMicroseconds = part.segments.reduce((sum, segment) => sum + segment.end - segment.start, 0) / 1.25 * 1_000_000;
   let progressBuffer = "";
   const renderOptions = {
+    signal,
     onStdout(chunk) {
       progressBuffer += chunk;
       const lines = progressBuffer.split(/\r?\n/);
@@ -1083,6 +1211,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
   try {
     await run(ffmpeg, buildArgs(encoderUsed), renderOptions);
   } catch (error) {
+    signal?.throwIfAborted();
     if (encoderUsed !== "h264_videotoolbox") throw error;
     encoderUsed = "libx264";
     progressBuffer = "";
@@ -1092,20 +1221,45 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
   return encoderUsed;
 }
 
-async function executeRender(job, source, plan) {
+function exportPrefixFor(plan, source) {
+  const aliases = { de: "de", fr: "fr", ja: "jp", jp: "jp", ko: "kr", kr: "kr", en: "us", us: "us", vi: "vn", zh: "cn", es: "es", it: "it", pt: "pt", ru: "ru" };
+  const sourceLanguage = String(source.language || "").toLowerCase().split(/[-_]/)[0];
+  if (aliases[sourceLanguage]) return aliases[sourceLanguage];
+  const script = detectScript(`${plan.originalTitle} ${plan.parts.map((part) => part.title).join(" ")}`);
+  if (script === "korean") return "kr";
+  if (script === "japanese") return "jp";
+  return aliases[String(plan.language || "").toLowerCase()] || "us";
+}
+
+async function reserveExportNames(plan, source) {
+  const filename = path.join(dataRoot, "export-name-counters.json");
+  let counters;
+  try { counters = JSON.parse(await readFile(filename, "utf8")); }
+  catch (error) { if (error.code !== "ENOENT") throw error; counters = {}; }
+  const prefix = exportPrefixFor(plan, source);
+  const previous = counters[prefix] ?? 0;
+  if (!Number.isInteger(previous) || previous < 0) throw new Error("Bộ đếm tên file không hợp lệ.");
+  const index = previous + 1;
+  if (index > 240) throw new Error(`Tên ${prefix} đã quá dài sau 240 video. Cần đổi quy tắc đặt tên.`);
+  counters[prefix] = index;
+  const temporary = `${filename}.${randomUUID()}.tmp`;
+  await writeFile(temporary, JSON.stringify(counters, null, 2));
+  await rename(temporary, filename);
+  return plan.parts.map((_, partIndex) => `${prefix}${String(partIndex + 1).repeat(index)}.mp4`);
+}
+
+async function executeRender(job, source, plan, signal) {
   try {
+    signal?.throwIfAborted();
     job.state = "rendering";
     job.startedAt = new Date().toISOString();
     const outputDirectory = path.join(source.directory, "outputs", job.id);
     await mkdir(outputDirectory, { recursive: true });
+    const exportNames = await reserveExportNames(plan, source);
     for (const [index, part] of plan.parts.entries()) {
+      signal?.throwIfAborted();
       job.currentPart = part.id;
-      const cleanTitle = (title) => {
-        let result = String(title || "Untitled").replace(/[\/\\\u0000-\u001f]/g, "-").trim();
-        while (Buffer.byteLength(result, "utf8") > 115) result = Array.from(result).slice(0, -1).join("");
-        return result || "Untitled";
-      };
-      const filename = `${cleanTitle(plan.originalTitle)} | ${cleanTitle(part.title)}.mp4`;
+      const filename = exportNames[index];
       const partDirectory = path.join(outputDirectory, `part-${part.id}`);
       await mkdir(partDirectory, { recursive: true });
       const outputPath = path.join(partDirectory, filename);
@@ -1115,6 +1269,7 @@ async function executeRender(job, source, plan) {
         part,
         totalParts: plan.parts.length,
         outputPath,
+        signal,
         onProgress: (partProgress) => {
           job.progress = Math.round(((index + partProgress) / plan.parts.length) * 100);
         },
@@ -1131,14 +1286,15 @@ async function executeRender(job, source, plan) {
     job.state = "done";
     job.finishedAt = new Date().toISOString();
   } catch (error) {
-    job.state = "error";
-    job.error = error instanceof Error ? error.message : String(error);
+    job.state = signal?.aborted ? "cancelled" : "error";
+    job.error = signal?.aborted ? null : error instanceof Error ? error.message : String(error);
     job.finishedAt = new Date().toISOString();
   }
 }
 
-async function startRender(body) {
+async function startRender(body, parentSignal) {
   const source = await loadSource(body.sourceId);
+  parentSignal?.throwIfAborted();
   validatePlan(body.plan, source);
   const job = {
     id: randomUUID(),
@@ -1152,8 +1308,80 @@ async function startRender(body) {
     createdAt: new Date().toISOString(),
   };
   jobs.set(job.id, job);
-  void executeRender(job, source, body.plan);
+  const controller = new AbortController();
+  renderControllers.set(job.id, controller);
+  const abort = () => cancelRender(job);
+  parentSignal?.addEventListener("abort", abort, { once: true });
+  if (parentSignal?.aborted) abort();
+  renderQueue = renderQueue.then(() => executeRender(job, source, body.plan, controller.signal)).catch((error) => {
+    job.state = "error";
+    job.error = error instanceof Error ? error.message : String(error);
+  }).finally(() => {
+    renderControllers.delete(job.id);
+    parentSignal?.removeEventListener("abort", abort);
+    void persistBatchHistory();
+  });
   return job;
+}
+
+function cancelRender(job) {
+  if (!job) return;
+  if (["done", "error", "cancelled"].includes(job.state)) return;
+  job.state = "cancelled";
+  job.error = null;
+  job.finishedAt = new Date().toISOString();
+  renderControllers.get(job.id)?.abort();
+}
+
+function cancelBatch(batch) {
+  batchControllers.get(batch.id)?.abort();
+  for (const item of batch.items) {
+    if (item.jobId) cancelRender(jobs.get(item.jobId));
+    if (!["done", "error"].includes(item.state)) { item.state = "cancelled"; item.error = null; }
+  }
+}
+
+async function prepareBatch(batch, body) {
+  const signal = batchControllers.get(batch.id).signal;
+  for (const item of batch.items) {
+    if (item.deleted) continue;
+    if (signal.aborted) break;
+    try {
+      item.state = "downloading";
+      const source = await importYouTube(item.url, signal);
+      signal.throwIfAborted();
+      item.title = source.title;
+      item.sourceId = source.id;
+      if (!source.transcript?.trim()) throw new Error("Video không có transcript. Hãy dùng Manual cut cho video này.");
+      item.state = "analyzing";
+      const input = body.promptTemplate
+        .replace("__BATCH_TITLE__", source.title)
+        .replace("__BATCH_DURATION__", String(source.duration))
+        .replace("__BATCH_TRANSCRIPT__", source.transcript);
+      const result = body.provider === "gemini" ? await gemini.analyze({ input, schema: body.schema }, signal) : await analyzeWithChatGPTPlan({ input, schema: body.schema }, signal);
+      signal.throwIfAborted();
+      item.plan = { ...result.plan, originalTitle: source.title, providerUsed: body.provider === "gemini" ? "gemini" : "chatgpt" };
+      item.plan.parts?.forEach((part, index) => { part.id = index + 1; });
+      if (item.plan.parts?.length !== 2 || item.plan.parts.some((part) => !Array.isArray(part.hashtags) || new Set(part.hashtags).size !== 10)) {
+        throw new Error("AI phải trả về đúng 2 part và 10 hashtag khác nhau cho mỗi part. Thử lại video này.");
+      }
+      const job = await startRender({ sourceId: source.id, plan: item.plan }, signal);
+      item.jobId = job.id;
+      item.state = "queued";
+    } catch (error) {
+      item.state = signal.aborted ? "cancelled" : "error";
+      item.error = signal.aborted ? null : error instanceof Error ? error.message : String(error);
+    }
+  }
+}
+
+function batchSnapshot(batch) {
+  const items = batch.items.filter((item) => !item.deleted).map((item) => {
+    const job = item.jobId ? jobs.get(item.jobId) : null;
+    return { ...item, state: job?.state || item.state, error: job?.error || item.error, job };
+  });
+  void persistBatchHistory();
+  return { id: batch.id, items, finished: items.every((item) => ["done", "error", "cancelled"].includes(item.state)) };
 }
 
 function mediaContentType(target) {
@@ -1211,14 +1439,14 @@ async function serveMediaPath(request, response, target, { download = false } = 
   createReadStream(target).pipe(response);
 }
 
-async function serveFile(request, response, pathname) {
+async function serveFile(request, response, pathname, { download = true } = {}) {
   const relative = decodeURIComponent(pathname.slice("/files/".length));
   const target = path.resolve(sourcesRoot, relative);
   if (!target.startsWith(`${sourcesRoot}${path.sep}`) || !existsSync(target) || !statSync(target).isFile()) {
     sendJson(request, response, 404, { error: "Không tìm thấy output." });
     return;
   }
-  await serveMediaPath(request, response, target, { download: true });
+  await serveMediaPath(request, response, target, { download });
 }
 
 async function serveSourceMedia(request, response, sourceId) {
@@ -1271,6 +1499,18 @@ const server = createServer(async (request, response) => {
       }
       return;
     }
+    if (request.method === "GET" && requestUrl.pathname === "/api/gemini/session") {
+      sendJson(request, response, 200, { session: await gemini.session() }); return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/gemini/auth/start") {
+      sendJson(request, response, 202, { session: await gemini.connect() }); return;
+    }
+    if (request.method === "DELETE" && requestUrl.pathname === "/api/gemini/session") {
+      sendJson(request, response, 200, { session: await gemini.disconnect() }); return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/gemini/analyze") {
+      sendJson(request, response, 200, await gemini.analyze(await readJson(request))); return;
+    }
     if (request.method === "GET" && requestUrl.pathname === "/api/chatgpt/session") {
       sendJson(request, response, 200, { session: publicChatGPTSession(readChatGPTCredentials()) });
       return;
@@ -1312,6 +1552,69 @@ const server = createServer(async (request, response) => {
       sendJson(request, response, 201, { source });
       return;
     }
+    if (request.method === "GET" && requestUrl.pathname === "/api/batches") {
+      sendJson(request, response, 200, { batches: [...batches.values()].reverse().map(batchSnapshot).filter((batch) => batch.items.length) });
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/batches") {
+      const body = await readJson(request);
+      if (!Array.isArray(body.urls) || body.urls.length < 1 || body.urls.length > 20 || !body.schema || typeof body.promptTemplate !== "string") {
+        sendJson(request, response, 400, { error: "Nhập từ 1 đến 20 link YouTube cùng cấu hình chia part." });
+        return;
+      }
+      const urls = [...new Set(body.urls.map((value) => String(value).trim()))];
+      for (const value of urls) {
+        const url = new URL(value);
+        if (!["https:", "http:"].includes(url.protocol) || !/^(www\.|m\.)?(youtube\.com|youtu\.be)$/.test(url.hostname)) {
+          sendJson(request, response, 400, { error: `Không phải link YouTube: ${value}` });
+          return;
+        }
+      }
+      if (body.provider === "gemini") {
+        const status = await gemini.session();
+        if (!status.connected) throw new Error(status.error || "Chưa kết nối Antigravity.");
+        if (!status.quota || status.quota.remainingPercent <= 0) throw new Error("Gemini hết quota trong Antigravity. Chờ reset hoặc chọn ChatGPT; chưa tải video hàng loạt.");
+      } else await activeChatGPTCredentials();
+      const batch = { id: randomUUID(), items: urls.map((url) => ({ id: randomUUID(), url, state: "pending", error: null })) };
+      batches.set(batch.id, batch);
+      batchControllers.set(batch.id, new AbortController());
+      batchPreparationQueue = batchPreparationQueue.then(() => prepareBatch(batch, body));
+      sendJson(request, response, 202, { batch: batchSnapshot(batch) });
+      return;
+    }
+    const deleteBatchItemMatch = requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})$/i);
+    if (request.method === "DELETE" && deleteBatchItemMatch) {
+      const batch = batches.get(assertId(deleteBatchItemMatch[1]));
+      if (!batch) { sendJson(request, response, 404, { error: "Hàng đợi không tồn tại." }); return; }
+      try {
+        const result = await removeBatchItem({ batch, itemId: assertId(deleteBatchItemMatch[2]), jobs, renderControllers, dataRoot });
+        sendJson(request, response, 200, { batch: batchSnapshot(batch), ...result });
+      } catch (error) {
+        sendJson(request, response, error.status || 500, { error: error.message });
+      }
+      return;
+    }
+    const cancelBatchMatch = requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/cancel$/i);
+    if (request.method === "POST" && cancelBatchMatch) {
+      const batch = batches.get(assertId(cancelBatchMatch[1]));
+      if (!batch) { sendJson(request, response, 404, { error: "Hàng đợi không tồn tại." }); return; }
+      cancelBatch(batch);
+      sendJson(request, response, 200, { batch: batchSnapshot(batch) });
+      return;
+    }
+    const cancelJobMatch = requestUrl.pathname.match(/^\/api\/jobs\/([a-f0-9-]{16,64})\/cancel$/i);
+    if (request.method === "POST" && cancelJobMatch) {
+      const job = jobs.get(assertId(cancelJobMatch[1]));
+      if (!job) { sendJson(request, response, 404, { error: "Render job không tồn tại." }); return; }
+      cancelRender(job);
+      sendJson(request, response, 200, { job });
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname.startsWith("/api/batches/")) {
+      const batch = batches.get(assertId(requestUrl.pathname.slice("/api/batches/".length)));
+      sendJson(request, response, batch ? 200 : 404, batch ? { batch: batchSnapshot(batch) } : { error: "Hàng đợi không còn tồn tại (worker đã restart)." });
+      return;
+    }
     if (request.method === "POST" && requestUrl.pathname === "/api/render") {
       const body = await readJson(request);
       const job = await startRender(body);
@@ -1334,7 +1637,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (["GET", "HEAD"].includes(request.method || "") && requestUrl.pathname.startsWith("/files/")) {
-      await serveFile(request, response, requestUrl.pathname);
+      await serveFile(request, response, requestUrl.pathname, { download: requestUrl.searchParams.get("preview") !== "1" });
       return;
     }
     sendJson(request, response, 404, { error: "Route không tồn tại." });
@@ -1349,6 +1652,7 @@ const server = createServer(async (request, response) => {
   }
 });
 
+await restoreBatchHistory();
 server.listen(port, host, () => {
   process.stdout.write(`\nShortCut media worker listening at http://${host}:${port}\n`);
   process.stdout.write(`FFmpeg: ${ffmpeg || "missing"}\nyt-dlp: ${ytDlp || "missing"}\n\n`);

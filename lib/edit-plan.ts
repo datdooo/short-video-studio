@@ -1,4 +1,4 @@
-export type AiProvider = "mock" | "chatgpt" | "openai" | "qwen";
+export type AiProvider = "mock" | "chatgpt" | "gemini" | "openai" | "qwen";
 export type PlanSource = AiProvider | "manual";
 
 export type Segment = {
@@ -68,7 +68,7 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
   const parts = plan.parts.slice(0, 2).map((part, index) => ({
     ...part,
     id: index + 1,
-    hashtags: part.hashtags.slice(0, 7),
+    hashtags: [...new Set(part.hashtags.map((tag) => `#${tag.trim().replace(/^#+/, "").replace(/\s+/g, "")}`).filter((tag) => tag.length > 1))].slice(0, 10),
     segments: [...part.segments]
       .map((segment) => ({
         ...segment,
@@ -81,6 +81,9 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
 
   if (parts.length !== 2 || parts.some((part) => part.segments.length === 0 || !isChronological(part))) {
     throw new Error("AI returned an invalid or non-chronological edit plan.");
+  }
+  if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => part.hashtags.length !== 10)) {
+    throw new Error("AI chưa trả về đủ 10 hashtag khác nhau cho mỗi part. Hãy Generate lại.");
   }
   const lastPartOneEnd = parts[0].segments.at(-1)?.end ?? 0;
   const firstPartTwoStart = parts[1].segments[0]?.start ?? 0;
@@ -241,7 +244,7 @@ export const EDIT_PLAN_SCHEMA = {
           id: { type: "number" },
           title: { type: "string" },
           hook: { type: "string" },
-          hashtags: { type: "array", items: { type: "string" }, minItems: 5, maxItems: 7 },
+          hashtags: { type: "array", items: { type: "string" }, minItems: 10, maxItems: 10 },
           segments: {
             type: "array",
             minItems: 1,
@@ -274,7 +277,7 @@ Hard rules:
 - Follow the user's rules for what may be cut. Do not remove slow material, travel, music, technical details, or filler unless the user permits it.
 - Each part needs its own strong hook. Quote the actual transcript in the hook field.
 - Titles and hashtags must use the source video's language (DE, EN, FR, JA, or KO).
-- Return exactly two parts and 5-7 hashtags per part.
+- Return exactly two parts and exactly 10 distinct hashtags per part, each prefixed with # and without spaces. Generate hashtags from the actual subject, actions and details in that part's retained transcript segments, not discarded footage or unrelated trending topics. Do not invent details. Prioritize topic-specific tags in the source language.
 - Segment start/end values must be seconds as numbers.
 - For the two-entry-point workflow: Part 1 spans Hook 1 to Hook 2, and Part 2 spans Hook 2 to the source duration. Keep these ranges continuous except for explicitly permitted promotional cuts. Use multiple retained segments only around those cuts and explain each excluded gap in the adjacent segment reason. The first/last segment boundaries represent each part's start/end.
 

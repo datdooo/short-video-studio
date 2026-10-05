@@ -3,14 +3,14 @@ import { EditPart, RENDER_PRESET } from "@/lib/edit-plan";
 export type ScriptPreset = "latin" | "japanese" | "korean";
 
 export const FONT_PRESETS: Record<ScriptPreset, string[]> = {
-  latin: ["Arial Black", "Avenir Next", "Montserrat ExtraBold", "Noto Sans"],
-  japanese: ["Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "sans-serif"],
-  korean: ["Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "sans-serif"],
+  latin: ["Studio Noto Sans", "Studio Noto Sans JP", "Studio Noto Sans KR", "sans-serif"],
+  japanese: ["Studio Noto Sans JP", "Studio Noto Sans", "Studio Noto Sans KR", "sans-serif"],
+  korean: ["Studio Noto Sans KR", "Studio Noto Sans", "Studio Noto Sans JP", "sans-serif"],
 };
 
 export function detectScript(text: string): ScriptPreset {
-  const japanese = (text.match(/[\u3040-\u30ff]/g) || []).length;
-  const korean = (text.match(/[\uac00-\ud7af]/g) || []).length;
+  const japanese = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+  const korean = (text.match(/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/g) || []).length;
   if (japanese > korean && japanese > 0) return "japanese";
   if (korean > 0) return "korean";
   return "latin";
@@ -38,7 +38,7 @@ const OVERLAY_FIT: Record<OverlayRole, OverlayFitConfig> = {
     maxLines: 3,
     maxWidth: 900,
     maxHeight: 220,
-    lineSpacing: -2,
+    lineSpacing: 4,
   },
   part: {
     maxFontSize: 82,
@@ -46,7 +46,7 @@ const OVERLAY_FIT: Record<OverlayRole, OverlayFitConfig> = {
     maxLines: 4,
     maxWidth: 900,
     maxHeight: 244,
-    lineSpacing: -4,
+    lineSpacing: 6,
   },
 };
 
@@ -186,9 +186,9 @@ export function buildFfmpegArgs(input: RenderSpecInput) {
     `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=${RENDER_PRESET.width}:${RENDER_PRESET.height}:flags=bilinear,eq=brightness=-0.5[bg]`,
     `[mainsrc]crop=w='min(iw,1080)':h='min(ih,1080)':x='max((iw-1080)/2,0)':y='max((ih-1080)/2,0)',pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black[main]`,
     `[bg][main]overlay=0:360[layout]`,
-    `[layout]drawtext=fontfile='${font}':text='${originalTitle}':fontcolor=white:fontsize=${originalFit.fontSize}:borderw=5:bordercolor=#c82018:shadowcolor=black@0.75:shadowx=3:shadowy=4:x=(w-text_w)/2:y=338-text_h:line_spacing=${originalFit.lineSpacing}[t1]`,
-    `[t1]drawtext=fontfile='${font}':text='${partTitle}':fontcolor=white:fontsize=${partFit.fontSize}:borderw=7:bordercolor=#d52b20:shadowcolor=#ff2a20@0.55:shadowx=2:shadowy=3:x=(w-text_w)/2:y=1472:line_spacing=${partFit.lineSpacing}[t2]`,
-    `[t2]drawtext=fontfile='${font}':text='${indicator}':fontcolor=white:fontsize=58:borderw=5:bordercolor=#c82018:shadowcolor=black@0.75:shadowx=3:shadowy=4:x=(w-text_w)/2:y=1804[titled]`,
+    `[layout]drawtext=fontfile='${font}':text='${originalTitle}':fontcolor=white:fontsize=${originalFit.fontSize}:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=338-text_h:line_spacing=${originalFit.lineSpacing}[t1]`,
+    `[t1]drawtext=fontfile='${font}':text='${partTitle}':fontcolor=white:fontsize=${partFit.fontSize}:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=1472:line_spacing=${partFit.lineSpacing}[t2]`,
+    `[t2]drawtext=fontfile='${font}':text='${indicator}':fontcolor=white:fontsize=58:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=1804[titled]`,
     `[titled]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,setpts=PTS/${RENDER_PRESET.speed}[vout]`,
     `[cuta]atempo=${RENDER_PRESET.speed}[aout]`,
   ].join(";");
@@ -247,9 +247,10 @@ export function buildRenderManifest(input: Omit<RenderSpecInput, "fontFile">) {
     typography: {
       script: detectScript(`${input.originalTitle} ${input.part.title}`),
       fontFallbacks: fonts,
-      fill: "#fffdfb",
-      stroke: "#a81524",
-      shadow: "rgba(0,0,0,.75)",
+      fill: "#ffffff",
+      stroke: "none",
+      glow: ["rgba(255,255,255,.85)", "rgba(229,239,255,.55)"],
+      shadow: ["rgba(5,8,15,.95)", "rgba(5,8,15,.90)", "rgba(5,8,15,.70)"],
       maxWidthPercent: 83.3,
       autoScale: true,
       fixedZones: {

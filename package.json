@@ -14,7 +14,9 @@
     "db:generate": "drizzle-kit generate",
     "setup:media": "node scripts/setup-media-tools.mjs",
     "worker": "node worker/server.mjs",
-    "personal": "node scripts/personal-dev.mjs"
+    "personal": "node scripts/personal-dev.mjs",
+    "install:antigravity": "node scripts/install-antigravity.mjs",
+    "package:mac": "node scripts/package-macos.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

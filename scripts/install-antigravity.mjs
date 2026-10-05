@@ -1,0 +1,28 @@
+import { createHash } from "node:crypto";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("This installer targets Apple Silicon Macs.");
+const manifestUrl = "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/darwin_arm64.json";
+const response = await fetch(manifestUrl);
+if (!response.ok) throw new Error(`Antigravity manifest failed: ${response.status}`);
+const manifest = await response.json();
+const url = new URL(manifest.url);
+if (url.protocol !== "https:" || url.hostname !== "storage.googleapis.com" || !url.pathname.startsWith("/antigravity-public/antigravity-cli/")) throw new Error("Unexpected official download URL.");
+const archiveResponse = await fetch(url);
+if (!archiveResponse.ok) throw new Error(`Antigravity download failed: ${archiveResponse.status}`);
+const archive = Buffer.from(await archiveResponse.arrayBuffer());
+if (createHash("sha512").update(archive).digest("hex") !== manifest.sha512) throw new Error("Antigravity checksum mismatch. Nothing installed.");
+const scratch = await mkdtemp(path.join(tmpdir(), "shortcut-agy-download-"));
+const archivePath = path.join(scratch, "cli.tar.gz");
+await writeFile(archivePath, archive);
+const extraction = spawnSync("/usr/bin/tar", ["-xzf", archivePath, "-C", scratch, "antigravity"], { encoding: "utf8" });
+if (extraction.status !== 0) throw new Error(extraction.stderr || "Cannot extract Antigravity.");
+const toolsRoot = path.resolve(import.meta.dirname, "../.local-tools");
+await mkdir(toolsRoot, { recursive: true });
+await copyFile(path.join(scratch, "antigravity"), path.join(toolsRoot, "agy"));
+await chmod(path.join(toolsRoot, "agy"), 0o755);
+await writeFile(path.join(toolsRoot, "agy-release.json"), JSON.stringify({ ...manifest, binarySha512: createHash("sha512").update(await readFile(path.join(toolsRoot, "agy"))).digest("hex") }, null, 2));
+console.log(`Verified official Antigravity CLI ${manifest.version}: ${path.join(toolsRoot, "agy")}. No shell profiles or global settings modified.`);

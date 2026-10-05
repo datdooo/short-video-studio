@@ -70,8 +70,33 @@ Chi tiết kỹ thuật và xử lý lỗi nằm trong [`docs/AI_PROVIDERS.md`](
 - Original title: sát cạnh trên của main video.
 - New part title: sát cạnh dưới và nổi bật nhất.
 - Part indicator: `1/2`, `2/2` ở bottom safe area.
-- Text: white fill, thick red stroke, soft red glow, dark shadow.
-- Font mapping: Latin / Japanese / Korean theo dominant script với system fallback.
+- Text: pure white fill, no outline, two-layer white/cool-white glow and three independent dark shadows. Preview allows effects beyond the text box; export bakes every layer into the title PNG.
+- Batch video cards include a confirmed Delete action for finished/failed/stopped items. It moves only that render job's outputs into `worker-data/trash/renders` for recovery, removes the card, and cancels pending auto-download requests. Sources and browser Downloads are untouched; active jobs cannot be deleted.
+- Batch history/results are persisted in `worker-data/batch-history.json` so older videos remain available for manual download/deletion after launching a new batch or reopening the app. Interrupted work is marked stopped, not silently resumed.
+- The batch tab includes a small portrait preview with native playback/seek controls. Select View Part on any completed output; it plays the actual cut/rendered MP4 (including the final 1.25× speed), never the uncut source. Preview requests use inline video responses; download links remain attachments.
+- Final publishing titles/copy text include the part suffix: `Original title | New title (1/2)` or `(2/2)`. Short language-code export filenames are unchanged.
+
+## Antigravity / Gemini Pro / Google AI Pro
+
+Select **Antigravity · Gemini Pro** in editor or batch mode, then click **Kết nối Antigravity**. The official native `agy` CLI replaces the retired Gemini CLI consumer login. An existing Google session is reused; otherwise Terminal opens for the user to complete Antigravity's sign-in/onboarding (including any Google consent). No API key, browser cookie extraction, or separately billed API fallback is used. The model is pinned to `gemini-3.1-pro-high`; quotas and availability are determined by Google. The UI displays Gemini's actual remaining quota/reset time. An exhausted quota blocks generation before the transcript is submitted. ChatGPT remains independently available.
+
+Antigravity manages credentials in its native Keychain/session store. This app does not read/copy tokens. **Ngắt app** unlinks ShortCut Studio only; it does not log out the shared Antigravity/IDE account. Sign out from Antigravity itself with `/logout` if desired. Old Gemini credentials are not migrated or deleted. Each analysis uses stdin, structured JSON output and a dedicated primary agent in a separate workspace under `worker-data/antigravity-profile/workspace`. An official workspace PreToolUse hook denies every external tool action (only inert `finish` is allowed); no `--dangerously-skip-permissions`. Slash-command expansion is disabled for supplied transcripts. The adapter checks `/config` and refuses API-provider or enabled AI-credit fallback settings; it does not modify shared global preferences. Real AI generation needs an authenticated account with quota available.
+
+The packaged Mac app includes the official Antigravity CLI. For source development, run `npm run install:antigravity` first (Google download + SHA512 verification; no shell-profile changes). Override the binary path with `ANTIGRAVITY_CLI_PATH` if needed. The old `gemini` provider ID and `/api/gemini/*` URLs remain for compatibility; the implementation uses Antigravity exclusively.
+
+## macOS one-click app (Apple Silicon)
+
+Run `npm run package:mac` to produce `release/ShortCut Studio.app`. Double-click it in Finder: the bundled production server and media worker start, then the default browser opens at `http://127.0.0.1:5173/`. The menu-bar film icon provides Open, View Log, and Quit; Quit asks before stopping any render. Closing the browser tab does not stop the app.
+
+The bundle includes Node, FFmpeg/ffprobe (VideoToolbox enabled), their non-system dynamic libraries, and official standalone macOS yt-dlp. No Terminal/npm/Homebrew/Python setup is needed to launch the completed bundle. This is an ad-hoc-signed personal build, not a notarized public release. Apple Silicon only; moving it to a different Mac may require macOS approval for an unsigned developer.
+
+Media is never copied into the app bundle. On this machine it continues using the existing project `worker-data`; if that directory is unavailable, it uses `~/Library/Application Support/ShortCut Studio/media`. Logs are in `~/Library/Logs/ShortCut Studio/launcher.log`. No credentials or media exports are bundled. Render/source data is not automatically purged; moving outputs to the recovery folder does not free disk space.
+- Font title: Noto Sans (EN/FR/DE), Noto Sans JP và Noto Sans KR được đóng gói local; original title Bold 700, part title ExtraBold 800. Tự chọn theo script của từng title, fallback cùng họ Noto cho nội dung trộn ngôn ngữ.
+- Mỗi part có TITLE SAU CÙNG = title gốc + ` | ` + title mới, cùng đúng 10 hashtag do ChatGPT tạo từ nội dung được giữ lại.
+- File tải xuống dùng mã ngôn ngữ/quốc gia: ko→kr, ja→jp, en→us, de→de, fr→fr. Video đầu: kr1/kr2.mp4; video thứ hai: kr11/kr22.mp4; thứ ba: kr111/kr222.mp4. Bộ đếm riêng theo mã, lưu qua restart. Lượt đã bắt đầu rồi bị dừng vẫn chiếm số đó; không đổi tên file đã xuất trước đây.
+- Hàng đợi personal: nhập tối đa 20 link YouTube, tự tải/transcript → ChatGPT chia part → render. Chuẩn bị source tiếp theo song song với render; render jobs chạy tuần tự. Link lỗi không chặn link tiếp theo. Có thể refresh/đóng tab và quay lại cùng trình duyệt; giữ worker chạy vì hàng đợi nằm trong RAM và mất khi restart. File đã render vẫn nằm trên ổ đĩa.
+- Tab Xử lý hàng loạt có Dừng hàng đợi: hủy tải/ChatGPT/render đang chạy và các link chờ; giữ file đã xuất hoàn tất. Tab chỉnh từng video có Dừng render. Pipeline thu gọn mặc định.
+- Mỗi part hoàn tất được tự gửi yêu cầu tải xuống lần lượt khi trang còn mở. Lịch sử yêu cầu lưu theo output để refresh không tự tải trùng. Trình duyệt có thể chặn tải nhiều file; thông báo chỉ xác nhận đã gửi yêu cầu, không khẳng định file đã lưu. Luôn có nút Tải lại từng part. Khi đóng trang, worker vẫn render; mở lại sẽ yêu cầu tải những output chưa từng được yêu cầu.
 - Final pass: `setpts=PTS/1.25` và `atempo=1.25` để audio giữ pitch tự nhiên.
 
 ## Kiểm tra code
