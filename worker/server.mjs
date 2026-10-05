@@ -32,6 +32,7 @@ const sourcesRoot = path.join(dataRoot, "sources");
 const port = Number(process.env.MEDIA_WORKER_PORT || 8787);
 const host = "127.0.0.1";
 const jobs = new Map();
+const transcriptRequests = new Map();
 const pendingChatGPTAuth = new Map();
 const chatGPTRefreshes = new Map();
 const chatGPTHostPath = path.join(dataRoot, "chatgpt-host.json");
@@ -556,7 +557,7 @@ async function run(binary, args, options = {}) {
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {
-      stdout = `${stdout}${chunk}`.slice(-100_000);
+      stdout = `${stdout}${chunk}`.slice(-(options.maxStdout || 100_000));
       options.onStdout?.(chunk.toString());
     });
     child.stderr.on("data", (chunk) => {
@@ -630,6 +631,12 @@ function vttToTranscript(vtt) {
     const start = lines[timingIndex].split("-->")[0].trim();
     const text = decodeEntities(lines.slice(timingIndex + 1).join(" ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
     if (!text || cues.at(-1)?.text === text) continue;
+    const previous = cues.at(-1);
+    if (previous && text.startsWith(previous.text)) {
+      previous.text = text;
+      continue;
+    }
+    if (previous && previous.text.endsWith(text)) continue;
     cues.push({ at: compactTimestamp(start), text });
   }
   return cues.map((cue) => `${cue.at} ${cue.text}`).join("\n");
@@ -647,6 +654,57 @@ async function findSourceMedia(directory) {
 async function saveSourceMetadata(directory, source) {
   await writeFile(path.join(directory, "source.json"), JSON.stringify(source, null, 2));
   return source;
+}
+
+function validateYouTubeUrl(url) {
+  if (!/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i.test(url)) {
+    throw new Error("URL phải thuộc YouTube.");
+  }
+}
+
+async function fetchYouTubeTranscript(url) {
+  validateYouTubeUrl(url);
+  if (!ytDlp) throw new Error("Chưa có yt-dlp. Chạy npm run setup:media.");
+  if (transcriptRequests.has(url)) return transcriptRequests.get(url);
+  const request = (async () => {
+    const metadata = await run(ytDlp, [
+      "--no-playlist", "--skip-download", "--dump-single-json",
+      "--js-runtimes", `node:${process.execPath}`, url,
+    ], { maxStdout: 10 * 1024 * 1024 });
+    const info = JSON.parse(metadata.stdout);
+    const manual = Object.keys(info.subtitles || {}).filter((key) => key !== "live_chat");
+    const automatic = Object.keys(info.automatic_captions || {});
+    const titleScriptLanguage = /[\uac00-\ud7af]/.test(info.title || "") ? "ko"
+      : /[\u3040-\u30ff]/.test(info.title || "") ? "ja" : "";
+    const original = automatic.find((key) => key.endsWith("-orig") && (!titleScriptLanguage || key.startsWith(titleScriptLanguage)))
+      || automatic.find((key) => key.endsWith("-orig"));
+    const language = String(titleScriptLanguage || info.language || original?.replace(/-orig$/, "") || "");
+    const matching = (keys) => keys.find((key) => key === language)
+      || keys.find((key) => language && key.split("-")[0] === language.split("-")[0]);
+    const originalMatching = automatic.find((key) => key.endsWith("-orig") && language && key.split("-")[0] === language.split("-")[0]);
+    const selected = matching(manual) || originalMatching || matching(automatic) || original || manual[0] || automatic[0];
+    if (!selected) return { title: String(info.title || "YouTube video"), transcript: "", language, message: "YouTube không cung cấp phụ đề cho video này. Có thể dùng Manual cut hoặc nhập transcript." };
+    const directory = path.join(sourcesRoot, randomUUID());
+    await mkdir(directory, { recursive: true });
+    await run(ytDlp, [
+      "--no-playlist", "--skip-download", "--write-subs", "--write-auto-subs",
+      "--sub-langs", selected, "--sub-format", "vtt",
+      "--js-runtimes", `node:${process.execPath}`,
+      "-o", path.join(directory, "transcript.%(ext)s"), url,
+    ]);
+    const files = await readdir(directory);
+    const subtitle = files.find((name) => name.endsWith(".vtt"));
+    if (!subtitle) throw new Error("YouTube có phụ đề nhưng tải transcript chưa thành công. Hãy thử lại.");
+    return {
+      title: String(info.title || "YouTube video"),
+      transcript: vttToTranscript(await readFile(path.join(directory, subtitle), "utf8")),
+      language: selected,
+      message: "",
+    };
+  })();
+  transcriptRequests.set(url, request);
+  request.then((result) => { if (!result.transcript) transcriptRequests.delete(url); }, () => transcriptRequests.delete(url));
+  return request;
 }
 
 async function importYouTube(url) {
@@ -669,20 +727,9 @@ async function importYouTube(url) {
     url,
   ], { missingMessage: "Chưa có yt-dlp. Chạy `npm run setup:media`." });
 
-  // Subtitles are best-effort: a throttled subtitle endpoint must never block
-  // manual timestamp editing or the downloaded source video.
-  await run(ytDlp, [
-    "--no-playlist",
-    "--js-runtimes", `node:${process.execPath}`,
-    "--skip-download",
-    "--write-subs",
-    "--write-auto-subs",
-    "--sub-langs", "de,en,fr,ja,ko",
-    "--sub-format", "vtt",
-    "--convert-subs", "vtt",
-    "-o", outputTemplate,
-    url,
-  ]).catch(() => undefined);
+  const captions = await fetchYouTubeTranscript(url).catch((error) => ({
+    transcript: "", message: `Không tải được transcript: ${error.message}`,
+  }));
 
   const mediaPath = await findSourceMedia(directory);
   const media = await probeMedia(mediaPath);
@@ -693,9 +740,7 @@ async function importYouTube(url) {
     const priority = (name) => /\.(de|en|fr|ja|ko)(?:[-.]|$)/i.test(name) ? 0 : 1;
     return priority(a) - priority(b);
   });
-  const transcript = subtitleNames[0]
-    ? vttToTranscript(await readFile(path.join(directory, subtitleNames[0]), "utf8"))
-    : "";
+  const transcript = captions.transcript || "";
   const source = {
     id,
     kind: "youtube",
@@ -706,6 +751,7 @@ async function importYouTube(url) {
     height: media.height,
     hasAudio: media.hasAudio,
     transcript,
+    transcriptMessage: captions.message,
     subtitleFound: Boolean(transcript),
     subtitleFile: subtitleNames[0] || null,
     createdAt: new Date().toISOString(),
@@ -763,7 +809,7 @@ function fontFamilyFor(text) {
   if (configured) return configured;
   if (script === "japanese") return "Hiragino Kaku Gothic ProN, Hiragino Sans, Noto Sans CJK JP, sans-serif";
   if (script === "korean") return "Apple SD Gothic Neo, Noto Sans CJK KR, Malgun Gothic, sans-serif";
-  return "Arial Rounded MT Bold, Arial, DejaVu Sans, sans-serif";
+  return "Arial Black, Avenir Next, Arial, DejaVu Sans, sans-serif";
 }
 
 const overlayFitConfig = {
@@ -900,10 +946,10 @@ function svgTextLines(lines, { fontFamily, fontSize, firstBaseline, lineHeight, 
   }).join("");
   return `
     <g font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="900" letter-spacing="-1.2"
-       fill="white" stroke="#ff2a20" stroke-width="${strokeWidth + 9}" stroke-linejoin="round" paint-order="stroke fill"
-       opacity="0.62" filter="url(#glow)">${textNodes}</g>
+       fill="#fffdfb" stroke="#ff4438" stroke-width="${strokeWidth + 6}" stroke-linejoin="round" paint-order="stroke fill"
+       opacity="0.32" filter="url(#glow)">${textNodes}</g>
     <g font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="900" letter-spacing="-1.2"
-       fill="white" stroke="#d52b20" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"
+       fill="#fffdfb" stroke="#a81524" stroke-width="${strokeWidth}" stroke-linejoin="round" paint-order="stroke fill"
        filter="url(#shadow)">${textNodes}</g>`;
 }
 
@@ -919,10 +965,10 @@ async function renderTitleOverlay({ outputPath, originalTitle, partTitle, partId
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
       <defs>
         <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="8" />
+          <feGaussianBlur stdDeviation="5" />
         </filter>
         <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="3" dy="5" stdDeviation="4" flood-color="#000000" flood-opacity="0.82" />
+          <feDropShadow dx="0" dy="6" stdDeviation="3" flood-color="#09090b" flood-opacity="0.9" />
         </filter>
       </defs>
       ${svgTextLines(originalFit.lines, { fontFamily: family, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, strokeWidth: 5 })}
@@ -1054,7 +1100,15 @@ async function executeRender(job, source, plan) {
     await mkdir(outputDirectory, { recursive: true });
     for (const [index, part] of plan.parts.entries()) {
       job.currentPart = part.id;
-      const outputPath = path.join(outputDirectory, `part-${part.id}.mp4`);
+      const cleanTitle = (title) => {
+        let result = String(title || "Untitled").replace(/[\/\\\u0000-\u001f]/g, "-").trim();
+        while (Buffer.byteLength(result, "utf8") > 115) result = Array.from(result).slice(0, -1).join("");
+        return result || "Untitled";
+      };
+      const filename = `${cleanTitle(plan.originalTitle)} | ${cleanTitle(part.title)}.mp4`;
+      const partDirectory = path.join(outputDirectory, `part-${part.id}`);
+      await mkdir(partDirectory, { recursive: true });
+      const outputPath = path.join(partDirectory, filename);
       job.encoder = await renderPart({
         source,
         plan,
@@ -1068,9 +1122,9 @@ async function executeRender(job, source, plan) {
       const outputStat = await stat(outputPath);
       job.outputs.push({
         part: part.id,
-        filename: `part-${part.id}.mp4`,
+        filename,
         size: outputStat.size,
-        url: `/files/${source.id}/outputs/${job.id}/part-${part.id}.mp4`,
+        url: `/files/${source.id}/outputs/${job.id}/part-${part.id}/${encodeURIComponent(filename)}`,
       });
     }
     job.progress = 100;
@@ -1121,7 +1175,7 @@ async function serveMediaPath(request, response, target, { download = false } = 
     "Content-Type": mediaContentType(target),
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=0, must-revalidate",
-    ...(download ? { "Content-Disposition": `attachment; filename="${path.basename(target)}"` } : {}),
+    ...(download ? { "Content-Disposition": `attachment; filename="video.mp4"; filename*=UTF-8''${encodeURIComponent(path.basename(target)).replace(/'/g, "%27")}` } : {}),
   };
   if (range) {
     const match = range.match(/bytes=(\d+)-(\d*)/);
@@ -1246,6 +1300,11 @@ const server = createServer(async (request, response) => {
       const body = await readJson(request);
       const source = await importYouTube(String(body.url || "").trim());
       sendJson(request, response, 201, { source });
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/youtube/transcript") {
+      const body = await readJson(request);
+      sendJson(request, response, 200, await fetchYouTubeTranscript(String(body.url || "").trim()));
       return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/upload") {

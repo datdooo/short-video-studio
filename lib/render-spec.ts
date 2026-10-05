@@ -3,9 +3,9 @@ import { EditPart, RENDER_PRESET } from "@/lib/edit-plan";
 export type ScriptPreset = "latin" | "japanese" | "korean";
 
 export const FONT_PRESETS: Record<ScriptPreset, string[]> = {
-  latin: ["Montserrat ExtraBold", "Poppins ExtraBold", "Inter Black", "Noto Sans"],
-  japanese: ["Noto Sans JP Bold", "Zen Kaku Gothic New Bold", "Noto Sans"],
-  korean: ["Pretendard Bold", "Noto Sans KR Bold", "Noto Sans"],
+  latin: ["Arial Black", "Avenir Next", "Montserrat ExtraBold", "Noto Sans"],
+  japanese: ["Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "sans-serif"],
+  korean: ["Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "sans-serif"],
 };
 
 export function detectScript(text: string): ScriptPreset {
@@ -247,8 +247,8 @@ export function buildRenderManifest(input: Omit<RenderSpecInput, "fontFile">) {
     typography: {
       script: detectScript(`${input.originalTitle} ${input.part.title}`),
       fontFallbacks: fonts,
-      fill: "#ffffff",
-      stroke: "#d52b20",
+      fill: "#fffdfb",
+      stroke: "#a81524",
       shadow: "rgba(0,0,0,.75)",
       maxWidthPercent: 83.3,
       autoScale: true,

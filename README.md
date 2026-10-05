@@ -35,12 +35,13 @@ Media worker chỉ lắng nghe trên `127.0.0.1:8787`. Video nguồn và output 
 ## Workflow
 
 1. Chọn **YouTube** hoặc **Local video**.
-2. Bấm **Chuẩn bị source để render**.
+2. Khi paste YouTube URL, app tự lấy timestamped transcript bằng phụ đề gốc (manual/auto, gồm mã ngôn ngữ có hậu tố như `ko-orig`). Lỗi tải phụ đề được hiển thị rõ; video không có phụ đề vẫn dùng được Manual cut.
+3. Bấm **Chuẩn bị source để render**.
    - YouTube: tải video tối đa 1080p, title gốc và thử lấy subtitle DE/EN/FR/JA/KO.
    - Local: upload file trực tiếp vào worker.
-3. Chọn **AI plan** hoặc **Manual cut**.
-4. Phát source ngay trong portrait preview, dùng thanh timeline để seek, rồi kiểm tra 2 Part và title.
-5. Bấm **Render 2 MP4 files** rồi tải Part 1 / Part 2 khi progress đạt 100%.
+4. Chọn **AI plan** hoặc **Manual cut**. Your instruction đã có sẵn yêu cầu editor chi tiết, vẫn có thể sửa.
+5. Sau khi Generate/Apply plan, preview chỉ phát các đoạn đã chọn của part đang mở, bỏ qua khoảng footage bị loại, ở tốc độ 1.25×. Thanh seek là timeline đã cắt; timestamp trong edit plan vẫn theo source.
+6. Bấm **Render 2 MP4 files** rồi tải Part 1 / Part 2 khi progress đạt 100%. Tên file: `TITLE GỐC | TITLE MỚI.mp4` (giữ Unicode; thay dấu slash và giới hạn tên quá dài theo filesystem).
 
 Nếu YouTube không có subtitle hoặc endpoint subtitle bị giới hạn, video vẫn được chuẩn bị bình thường; chuyển sang **Manual cut** và nhập mỗi đoạn theo format:
 

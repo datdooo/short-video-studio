@@ -112,7 +112,32 @@ const DEMO_TRANSCRIPT = `00:00 Willkommen zurück auf dem Kanal.
 const DEFAULT_REQUEST: AnalyzeRequest = {
   originalTitle: "Umbau völlig ESKALIERT — Audi A2 1.9 TDI",
   transcript: DEMO_TRANSCRIPT,
-  instruction: "Intro ngắn, vào thẳng phần mở nắp capo. Part 2 bắt đầu bằng sự cố.",
+  instruction: `Hãy phân tích transcript như một editor short-form chuyên nghiệp và chia video thành đúng 2 part.
+
+QUAN TRỌNG NHẤT: tuyệt đối không được đảo thứ tự footage. Các đoạn được chọn trong mỗi part phải luôn đi từ timestamp nhỏ đến lớn theo đúng timeline gốc. Được phép bỏ qua bất kỳ đoạn nào ở giữa nhưng không được lấy đoạn sau đưa lên trước.
+
+Không cần giữ toàn bộ video. Hãy mạnh tay bỏ những phần dài dòng hoặc ít giá trị như intro/chào hỏi, giới thiệu kênh, quảng bá subscribe, đi đường, chuẩn bị trước khi vào nội dung chính, music-only dài, ăn uống không liên quan, hội thoại filler, nội dung lặp lại và outro không cần thiết.
+
+Part 1 phải vào việc nhanh, bắt đầu bằng một hook tự nhiên mạnh và có một chủ đề rõ ràng. Không bắt buộc phải bắt đầu từ 00:00.
+
+Part 2 phải được xem như một video độc lập, có hook riêng và không được trở thành nơi chứa các đoạn thừa của Part 1. Ưu tiên bắt đầu Part 2 ở một chuyển cảnh/chủ đề tự nhiên như sự cố mới, reveal, mở capo, test, soundcheck, kết quả, giải pháp hoặc một hành động mới.
+
+Ưu tiên giữ các đoạn có khả năng giữ chân người xem cao: sự cố, vấn đề, reveal, reaction, before/after, thử nghiệm, kết quả, con số đáng chú ý, âm thanh hay, chi tiết hiếm, phần sửa chữa/thay đổi quan trọng và payoff.
+
+Nếu một nội dung được nói nhiều lần, chỉ giữ phiên bản rõ nhất hoặc thú vị nhất.
+
+Không cắt giữa câu nếu có thể. Chọn điểm bắt đầu/kết thúc tự nhiên theo câu nói hoặc chuyển chủ đề.
+
+Mỗi part phải có mạch nội dung dễ hiểu:
+Hook → nội dung chính → payoff.
+
+Title của Part 1 và Part 2 phải viết bằng đúng ngôn ngữ gốc của video. Tạo 5–7 hashtag phù hợp với nội dung và thị trường của video. Không bịa thông tin, thông số hoặc chi tiết không có trong transcript.
+
+Không cần chia hai part có thời lượng bằng nhau. Chất lượng và retention quan trọng hơn độ dài.
+
+Nếu phần đầu video dài dòng nhưng phần hay nằm ở giữa hoặc cuối, hãy bỏ toàn bộ phần đầu và bắt đầu ở đoạn hay.
+
+Mục tiêu cuối cùng là chọn ra 2 video ngắn hấp dẫn nhất từ video gốc, không phải chia video gốc thành hai nửa.`,
   provider: "mock",
 };
 
@@ -134,7 +159,9 @@ export default function Home() {
   const [isChatGPTConnecting, setIsChatGPTConnecting] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState(DEFAULT_REQUEST.originalTitle);
-  const [transcript, setTranscript] = useState(DEMO_TRANSCRIPT);
+  const [transcript, setTranscript] = useState("");
+  const [transcriptStatus, setTranscriptStatus] = useState("");
+  const [hasEditPlan, setHasEditPlan] = useState(false);
   const [instruction, setInstruction] = useState(DEFAULT_REQUEST.instruction || "");
   const [plan, setPlan] = useState<EditPlan>(() => mockPlan(DEFAULT_REQUEST));
   const [activePartIndex, setActivePartIndex] = useState(0);
@@ -164,6 +191,8 @@ export default function Home() {
   const backgroundVideoRef = useRef<HTMLVideoElement>(null);
 
   const activePart = plan.parts[activePartIndex];
+  const partDuration = durationOf(activePart) / 1.25;
+  const timelineDuration = hasEditPlan ? partDuration : previewDuration;
   const fontStack = useMemo(
     () => fontStackFor(`${plan.originalTitle} ${activePart.title}`),
     [activePart.title, plan.originalTitle],
@@ -183,6 +212,71 @@ export default function Home() {
   );
   const renderJobId = renderJob?.id;
   const renderJobState = renderJob?.state;
+
+  useEffect(() => {
+    if (!hasEditPlan || !previewVideoUrl) return;
+    const video = previewVideoRef.current;
+    const background = backgroundVideoRef.current;
+    if (!video) return;
+    video.pause();
+    background?.pause();
+    video.currentTime = activePart.segments[0]?.start || 0;
+    video.playbackRate = 1.25;
+    video.preservesPitch = true;
+    if (background) {
+      background.currentTime = video.currentTime;
+      background.playbackRate = 1.25;
+    }
+    const timer = window.setTimeout(() => setPreviewCurrentTime(0), 0);
+    return () => window.clearTimeout(timer);
+  }, [hasEditPlan, activePart.segments, previewVideoUrl]);
+
+  useEffect(() => {
+    let frame = 0;
+    const tick = () => {
+      const video = previewVideoRef.current;
+      if (video && hasEditPlan && !video.paused && !video.seeking) {
+        const segments = activePart.segments;
+        const index = segments.findIndex((segment) => video.currentTime >= segment.start - 0.05 && video.currentTime < segment.end);
+        if (index < 0) {
+          const next = segments.find((segment) => segment.start > video.currentTime);
+          if (next) {
+            video.currentTime = next.start;
+            if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = next.start;
+          } else {
+            video.pause();
+            backgroundVideoRef.current?.pause();
+          }
+        }
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [hasEditPlan, activePart.segments]);
+
+  useEffect(() => {
+    if (sourceMode !== "youtube" || !sourceUrl.trim() || !workerHealth?.ok) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setTranscript("");
+      setTranscriptStatus("Đang tự lấy phụ đề gốc từ YouTube…");
+      try {
+        const response = await fetch(`${WORKER_ORIGIN}/api/youtube/transcript`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: sourceUrl.trim() }), signal: controller.signal,
+        });
+        const data = await response.json() as { transcript?: string; title?: string; message?: string; error?: string };
+        if (!response.ok) throw new Error(data.error || "Không lấy được transcript.");
+        if (controller.signal.aborted) return;
+        setTranscript(data.transcript || "");
+        setTranscriptStatus(data.transcript ? "Đã tự lấy transcript theo ngôn ngữ gốc." : data.message || "Video không có phụ đề.");
+      } catch (caughtError) {
+        if (!controller.signal.aborted) setTranscriptStatus(caughtError instanceof Error ? caughtError.message : "Không lấy được transcript.");
+      }
+    }, 700);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [sourceUrl, sourceMode, workerHealth?.ok]);
 
   useEffect(() => () => {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
@@ -343,6 +437,7 @@ export default function Home() {
           setManualPart2Title(values.part2Title);
           setManualPart2Ranges(values.part2Ranges);
           setPlan(nextPlan);
+          setHasEditPlan(true);
           setEditMode("manual");
           setActivePartIndex(0);
           setError("");
@@ -415,7 +510,7 @@ export default function Home() {
   async function analyze() {
     setError("");
     if (!transcript.trim()) {
-      setError("Hãy paste transcript có timestamp trước.");
+      setError(transcriptStatus || "Đang chờ transcript từ YouTube. Video không có phụ đề thì dùng Manual cut hoặc nhập transcript.");
       return;
     }
     if (provider === "chatgpt" && !chatGPTSession?.sharing) {
@@ -426,7 +521,9 @@ export default function Home() {
     try {
       if (provider === "mock") {
         setPlan(mockPlan({ provider: "mock", originalTitle: sourceTitle, transcript, instruction }));
+        setHasEditPlan(true);
         setActivePartIndex(0);
+        if (!preparedSource) await prepareSource();
         return;
       }
       const request = { provider, originalTitle: sourceTitle, transcript, instruction } satisfies AnalyzeRequest;
@@ -442,7 +539,9 @@ export default function Home() {
       const data = (await response.json()) as { plan?: Omit<EditPlan, "providerUsed" | "render">; model?: string; error?: string };
       if (!response.ok || !data.plan) throw new Error(data.error || "Không thể tạo edit plan.");
       setPlan(normalizePlan(data.plan, "chatgpt"));
+      setHasEditPlan(true);
       setActivePartIndex(0);
+      if (!preparedSource) await prepareSource();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Không thể tạo edit plan.");
     } finally {
@@ -466,6 +565,7 @@ export default function Home() {
         part2Ranges: manualPart2Ranges,
       });
       setPlan(nextPlan);
+      setHasEditPlan(true);
       setActivePartIndex(0);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Timestamp không hợp lệ.");
@@ -480,6 +580,7 @@ export default function Home() {
     setLocalFileName(file.name);
     setLocalFile(file);
     setPreparedSource(null);
+    setHasEditPlan(false);
     setRenderJob(null);
     setTranscript("");
     const fileTitle = file.name.replace(/\.[^.]+$/, "");
@@ -493,9 +594,15 @@ export default function Home() {
     setPreviewError("");
     if (video.paused) {
       try {
+        if (hasEditPlan) {
+          const last = activePart.segments.at(-1);
+          if (last && video.currentTime >= last.end - 0.05) video.currentTime = activePart.segments[0].start;
+          video.playbackRate = 1.25;
+        }
         await video.play();
         if (backgroundVideoRef.current) {
           backgroundVideoRef.current.currentTime = video.currentTime;
+          backgroundVideoRef.current.playbackRate = video.playbackRate;
           await backgroundVideoRef.current.play().catch(() => undefined);
         }
       } catch {
@@ -510,15 +617,34 @@ export default function Home() {
   function seekPreview(value: number) {
     const video = previewVideoRef.current;
     if (!video || !Number.isFinite(value)) return;
-    video.currentTime = value;
-    if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = value;
+    let sourceTime = value;
+    if (hasEditPlan) {
+      let remaining = value * 1.25;
+      for (const segment of activePart.segments) {
+        const duration = segment.end - segment.start;
+        sourceTime = segment.start + Math.min(remaining, duration);
+        if (remaining < duration) break;
+        remaining -= duration;
+      }
+    }
+    video.currentTime = sourceTime;
+    if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = sourceTime;
     setPreviewCurrentTime(value);
   }
 
   function updatePreviewClock() {
     const video = previewVideoRef.current;
     if (!video) return;
-    setPreviewCurrentTime(video.currentTime);
+    let timelineTime = video.currentTime;
+    if (hasEditPlan) {
+      timelineTime = 0;
+      for (const segment of activePart.segments) {
+        timelineTime += Math.max(0, Math.min(video.currentTime - segment.start, segment.end - segment.start));
+        if (video.currentTime < segment.end) break;
+      }
+      timelineTime /= 1.25;
+    }
+    setPreviewCurrentTime(timelineTime);
     const background = backgroundVideoRef.current;
     if (background && Math.abs(background.currentTime - video.currentTime) > 0.3) {
       background.currentTime = video.currentTime;
@@ -559,7 +685,7 @@ export default function Home() {
       setPreparedSource(data.source);
       setSourceTitle(data.source.title);
       setPlan((current) => ({ ...current, originalTitle: data.source!.title }));
-      setTranscript(data.source.transcript || "");
+      if (data.source.transcript) setTranscript(data.source.transcript);
       return data.source;
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Không chuẩn bị được source.");
@@ -662,7 +788,7 @@ export default function Home() {
               <label htmlFor="youtube-url" className="field-label">YouTube URL</label>
               <div className="relative mt-2">
                 <Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
-                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { setSourceUrl(event.target.value); setPreparedSource(null); setRenderJob(null); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
+                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { setSourceUrl(event.target.value); setPreparedSource(null); setRenderJob(null); setHasEditPlan(false); setTranscript(""); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
               </div>
               <p className="mt-2 text-[11px] leading-5 text-zinc-600">
                 {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
@@ -686,7 +812,7 @@ export default function Home() {
                 <p className="flex items-center gap-2 text-xs font-semibold text-zinc-300"><ServerCog className="size-3.5" /> Media worker</p>
                 <p className="mt-1 truncate text-[10px] leading-4 text-zinc-600">
                   {workerHealth?.ok
-                    ? `FFmpeg ready · ${workerHealth.render?.hardwareAccelerated ? `${workerHealth.render.label} GPU` : "CPU render"} · ${workerHealth.render?.colorSpace || "Rec.709"}`
+                    ? `FFmpeg ready · ${workerHealth.render?.hardwareAccelerated ? workerHealth.render.label : "CPU render"} · ${workerHealth.render?.colorSpace || "Rec.709"}`
                     : "Chạy npm run personal để upload / render MP4"}
                 </p>
               </div>
@@ -783,10 +909,11 @@ export default function Home() {
                   <span className="text-[10px] text-zinc-600">{transcript.length.toLocaleString()} chars</span>
                 </div>
                 <Textarea id="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} className="studio-textarea studio-transcript mt-2 font-mono text-[12px] leading-5" placeholder="00:00 Transcript..." />
+                <p className="mt-2 text-xs leading-5 text-zinc-500">{transcriptStatus}</p>
               </div>
               <div>
                 <label htmlFor="instruction" className="field-label">Your instruction</label>
-                <Textarea id="instruction" value={instruction} onChange={(event) => setInstruction(event.target.value)} className="studio-textarea mt-2 min-h-[72px]" placeholder="Ví dụ: bỏ intro, Part 2 mở bằng sự cố..." />
+                <Textarea id="instruction" value={instruction} onChange={(event) => setInstruction(event.target.value)} className="studio-textarea studio-transcript mt-2" placeholder="Ví dụ: bỏ intro, Part 2 mở bằng sự cố..." />
               </div>
               <Button onClick={analyze} disabled={isAnalyzing} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
                 {isAnalyzing ? <><Loader2 className="animate-spin" /> Building edit plan…</> : <><WandSparkles /> Generate 2-part plan</>}
@@ -822,7 +949,7 @@ export default function Home() {
           <div className="mb-5 flex w-full max-w-[520px] items-center justify-between">
             <div>
               <p className="eyebrow">02 / PORTRAIT PREVIEW</p>
-              <p className="mt-1 text-xs text-zinc-500">Native 100% · center crop horizontal overflow</p>
+              <p className="mt-1 text-xs text-zinc-500">{hasEditPlan ? "Preview các đoạn đã chọn · 1.25×" : "Source preview · native 100%"}</p>
             </div>
             <div className="flex rounded-xl border border-white/8 bg-black/25 p-1">
               {plan.parts.map((part, index) => (
@@ -846,6 +973,7 @@ export default function Home() {
               <p
                 className="social-copy overlay-copy-block"
                 style={{
+                  fontFamily: fontStack.join(", "),
                   fontSize: `${(originalTitleFit.fontSize * previewScale).toFixed(2)}px`,
                   lineHeight: (originalTitleFit.fontSize + originalTitleFit.lineSpacing) / originalTitleFit.fontSize,
                 }}
@@ -865,6 +993,10 @@ export default function Home() {
                   onLoadedMetadata={(event) => {
                     const duration = Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : preparedSource?.duration || 0;
                     setPreviewDuration(duration);
+                    if (hasEditPlan) {
+                      event.currentTarget.currentTime = activePart.segments[0]?.start || 0;
+                      event.currentTarget.playbackRate = 1.25;
+                    }
                     setPreviewError("");
                   }}
                   onTimeUpdate={updatePreviewClock}
@@ -883,6 +1015,7 @@ export default function Home() {
               <p
                 className="social-copy social-copy-main overlay-copy-block"
                 style={{
+                  fontFamily: fontStack.join(", "),
                   fontSize: `${(partTitleFit.fontSize * previewScale).toFixed(2)}px`,
                   lineHeight: (partTitleFit.fontSize + partTitleFit.lineSpacing) / partTitleFit.fontSize,
                 }}
@@ -903,14 +1036,14 @@ export default function Home() {
               className="preview-seek"
               type="range"
               min={0}
-              max={Math.max(previewDuration, 0)}
+              max={Math.max(timelineDuration, 0)}
               step={0.05}
-              value={Math.min(previewCurrentTime, previewDuration || 0)}
+              value={Math.min(previewCurrentTime, timelineDuration || 0)}
               onChange={(event) => seekPreview(Number(event.target.value))}
-              disabled={!previewVideoUrl || previewDuration <= 0}
-              aria-label="Seek source video"
+              disabled={!previewVideoUrl || timelineDuration <= 0}
+              aria-label={hasEditPlan ? "Seek edited part" : "Seek source video"}
             />
-            <span>{formatTime(previewDuration)}</span>
+            <span>{formatTime(timelineDuration)}</span>
           </div>
           {previewError && <p className="mt-2 max-w-[520px] text-center text-[11px] leading-5 text-red-300">{previewError}</p>}
 
