@@ -35,6 +35,7 @@ export type AnalyzeRequest = {
   originalTitle: string;
   transcript: string;
   instruction?: string;
+  sourceDuration?: number;
   provider: AiProvider;
 };
 
@@ -265,20 +266,22 @@ export const EDIT_PLAN_SCHEMA = {
 } as const;
 
 export function buildPrompt(request: AnalyzeRequest) {
-  return `Create a 2-part short-video edit plan from the timestamped transcript below.
+  return `Create a 2-part video edit plan from the complete timestamped transcript below, following the user's editing instructions.
 
 Hard rules:
 - Preserve source chronology inside every part. Never reorder footage.
 - Use source timestamps exactly; do not compensate for the final speed-up.
-- Remove intros, channel promotion, filler, long music, travel, and unrelated material.
-- Each part needs its own strong hook, coherent topic, and payoff.
+- Follow the user's rules for what may be cut. Do not remove slow material, travel, music, technical details, or filler unless the user permits it.
+- Each part needs its own strong hook. Quote the actual transcript in the hook field.
 - Titles and hashtags must use the source video's language (DE, EN, FR, JA, or KO).
 - Return exactly two parts and 5-7 hashtags per part.
 - Segment start/end values must be seconds as numbers.
+- For the two-entry-point workflow: Part 1 spans Hook 1 to Hook 2, and Part 2 spans Hook 2 to the source duration. Keep these ranges continuous except for explicitly permitted promotional cuts. Use multiple retained segments only around those cuts and explain each excluded gap in the adjacent segment reason. The first/last segment boundaries represent each part's start/end.
 
 Original title: ${request.originalTitle || "Untitled"}
+Source duration in seconds: ${request.sourceDuration ?? "unknown; do not invent an end beyond the available source"}
 User instruction: ${request.instruction || "No extra instruction"}
 
 Transcript:
-${request.transcript.slice(0, 60000)}`;
+${request.transcript}`;
 }

@@ -112,32 +112,104 @@ const DEMO_TRANSCRIPT = `00:00 Willkommen zurück auf dem Kanal.
 const DEFAULT_REQUEST: AnalyzeRequest = {
   originalTitle: "Umbau völlig ESKALIERT — Audi A2 1.9 TDI",
   transcript: DEMO_TRANSCRIPT,
-  instruction: `Hãy phân tích transcript như một editor short-form chuyên nghiệp và chia video thành đúng 2 part.
+  instruction: `Hãy chia video thành đúng 2 part theo quy tắc sau.
 
-QUAN TRỌNG NHẤT: tuyệt đối không được đảo thứ tự footage. Các đoạn được chọn trong mỗi part phải luôn đi từ timestamp nhỏ đến lớn theo đúng timeline gốc. Được phép bỏ qua bất kỳ đoạn nào ở giữa nhưng không được lấy đoạn sau đưa lên trước.
+QUY TẮC QUAN TRỌNG NHẤT:
 
-Không cần giữ toàn bộ video. Hãy mạnh tay bỏ những phần dài dòng hoặc ít giá trị như intro/chào hỏi, giới thiệu kênh, quảng bá subscribe, đi đường, chuẩn bị trước khi vào nội dung chính, music-only dài, ăn uống không liên quan, hội thoại filler, nội dung lặp lại và outro không cần thiết.
+1. Phân tích toàn bộ transcript và xác định điểm bắt đầu hấp dẫn nhất của video.
+Điểm này sẽ là START của PART 1.
 
-Part 1 phải vào việc nhanh, bắt đầu bằng một hook tự nhiên mạnh và có một chủ đề rõ ràng. Không bắt buộc phải bắt đầu từ 00:00.
+2. Sau đó, trong phần video nằm SAU điểm bắt đầu Part 1, hãy xác định một điểm bắt đầu hấp dẫn mạnh thứ hai.
+Điểm này sẽ là START của PART 2.
 
-Part 2 phải được xem như một video độc lập, có hook riêng và không được trở thành nơi chứa các đoạn thừa của Part 1. Ưu tiên bắt đầu Part 2 ở một chuyển cảnh/chủ đề tự nhiên như sự cố mới, reveal, mở capo, test, soundcheck, kết quả, giải pháp hoặc một hành động mới.
+Hai điểm bắt đầu nên là những đoạn có khả năng giữ chân người xem tốt nhất, ví dụ:
+- sự cố
+- reveal
+- hành động mới
+- câu nói gây tò mò
+- kết quả bất ngờ
+- reaction
+- soundcheck
+- mở capo
+- test
+- before/after
+- phát hiện quan trọng
+- con số đáng chú ý
+- một chủ đề mới đủ mạnh để mở video độc lập
 
-Ưu tiên giữ các đoạn có khả năng giữ chân người xem cao: sự cố, vấn đề, reveal, reaction, before/after, thử nghiệm, kết quả, con số đáng chú ý, âm thanh hay, chi tiết hiếm, phần sửa chữa/thay đổi quan trọng và payoff.
+PART 1:
+- Bắt đầu tại Hook 1.
+- Kết thúc ngay trước Hook 2.
+- Giữ TOÀN BỘ nội dung nằm giữa Hook 1 và Hook 2.
+- Không tự ý bỏ các đoạn chỉ vì chúng hơi chậm, dài dòng, technical, đi đường, ăn uống hoặc ít hấp dẫn.
+- Chỉ được loại quảng cáo, sponsor, quảng bá sản phẩm không liên quan, kêu gọi subscribe, like, follow hoặc quảng bá channel.
 
-Nếu một nội dung được nói nhiều lần, chỉ giữ phiên bản rõ nhất hoặc thú vị nhất.
+PART 2:
+- Bắt đầu chính xác tại Hook 2.
+- Chạy từ Hook 2 đến HẾT VIDEO.
+- Giữ TOÀN BỘ nội dung còn lại.
+- Không tự ý rút gọn nội dung.
+- Chỉ được loại quảng cáo, sponsor, quảng bá sản phẩm không liên quan, kêu gọi subscribe, like, follow hoặc quảng bá channel.
 
-Không cắt giữa câu nếu có thể. Chọn điểm bắt đầu/kết thúc tự nhiên theo câu nói hoặc chuyển chủ đề.
+Phần video nằm trước Hook 1 được bỏ hoàn toàn.
 
-Mỗi part phải có mạch nội dung dễ hiểu:
-Hook → nội dung chính → payoff.
+TUYỆT ĐỐI KHÔNG:
+- đảo thứ tự footage
+- gom những đoạn rời rạc lại
+- lấy đoạn sau đưa lên trước
+- tự cắt các đoạn “nhàm chán”
+- tối ưu retention bằng cách bỏ nội dung ở giữa
+- chia video thành hai phần bằng nhau theo thời lượng
 
-Title của Part 1 và Part 2 phải viết bằng đúng ngôn ngữ gốc của video. Tạo 5–7 hashtag phù hợp với nội dung và thị trường của video. Không bịa thông tin, thông số hoặc chi tiết không có trong transcript.
+Mục tiêu không phải tìm những đoạn hay nhất rồi ghép lại.
 
-Không cần chia hai part có thời lượng bằng nhau. Chất lượng và retention quan trọng hơn độ dài.
+Mục tiêu là tìm 2 ĐIỂM VÀO tốt nhất, sau đó dùng chúng làm hai mốc chia video.
 
-Nếu phần đầu video dài dòng nhưng phần hay nằm ở giữa hoặc cuối, hãy bỏ toàn bộ phần đầu và bắt đầu ở đoạn hay.
+Cấu trúc bắt buộc:
 
-Mục tiêu cuối cùng là chọn ra 2 video ngắn hấp dẫn nhất từ video gốc, không phải chia video gốc thành hai nửa.`,
+SOURCE VIDEO:
+
+[Bỏ phần trước Hook 1]
+
+HOOK 1
+↓
+PART 1 giữ liên tục
+↓
+HOOK 2
+↓
+PART 2 giữ liên tục
+↓
+END
+
+Ngoại lệ duy nhất được phép cắt bên trong Part 1 hoặc Part 2:
+- quảng cáo
+- sponsor
+- self-promotion
+- kêu gọi like
+- kêu gọi subscribe
+- kêu gọi follow
+- quảng bá channel
+
+Khi chọn Hook 2, Hook 2 phải:
+- nằm sau Hook 1 trên timeline
+- đủ mạnh để Part 2 có thể xem như một video riêng
+- ưu tiên bắt đầu tại một chủ đề, hành động hoặc tình huống mới
+
+Không cần Part 1 và Part 2 có thời lượng giống nhau.
+
+Sau khi chọn xong, trả về:
+- Part 1 start
+- Part 1 end
+- Part 2 start
+- Part 2 end
+- Hook quote của từng part
+- các đoạn quảng cáo/sub cần loại
+- title Part 1
+- title Part 2
+- 5–7 hashtag cho mỗi part
+
+Title và hashtag phải dùng ngôn ngữ gốc của video.
+Không được bịa thông tin không có trong transcript.`,
   provider: "mock",
 };
 
@@ -526,7 +598,9 @@ export default function Home() {
         if (!preparedSource) await prepareSource();
         return;
       }
-      const request = { provider, originalTitle: sourceTitle, transcript, instruction } satisfies AnalyzeRequest;
+      const source = preparedSource || await prepareSource();
+      if (!source) return;
+      const request = { provider, originalTitle: source.title, transcript, instruction, sourceDuration: source.duration } satisfies AnalyzeRequest;
       const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -541,7 +615,6 @@ export default function Home() {
       setPlan(normalizePlan(data.plan, "chatgpt"));
       setHasEditPlan(true);
       setActivePartIndex(0);
-      if (!preparedSource) await prepareSource();
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Không thể tạo edit plan.");
     } finally {
