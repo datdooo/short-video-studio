@@ -3,7 +3,6 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
-  ChevronRight,
   Clapperboard,
   Clock3,
   Download,
@@ -1145,14 +1144,16 @@ export default function Home() {
           <div className="mt-5 space-y-2">
             {activePart.segments.map((segment, index) => (
               <article key={`${segment.start}-${segment.end}`} className="group rounded-2xl border border-white/8 bg-white/[.025] p-4 transition hover:border-white/15 hover:bg-white/[.045]">
-                <div className="flex items-center gap-3">
+                <div className="flex items-start gap-3">
                   <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#ff4d2e]/10 text-xs font-bold text-[#ff6b50]">{String(index + 1).padStart(2, "0")}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-zinc-200">{segment.label}</p>
-                    <div className="mt-1 flex items-center gap-2 text-[11px] text-zinc-600"><Clock3 className="size-3" /> {formatTime(segment.start)} — {formatTime(segment.end)}</div>
+                    <p className="break-words text-sm font-semibold leading-6 text-zinc-200 [overflow-wrap:anywhere]">{segment.label}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+                      <Clock3 className="size-3 shrink-0" />
+                      <span className="whitespace-nowrap tabular-nums">{formatTime(segment.start)} — {formatTime(segment.end)}</span>
+                    </div>
+                    {segment.reason && <p className="mt-3 break-words text-xs leading-6 text-zinc-500 [overflow-wrap:anywhere]">{segment.reason}</p>}
                   </div>
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-600">{segment.reason}</span>
-                  <ChevronRight className="size-4 text-zinc-700" />
                 </div>
               </article>
             ))}
