@@ -134,12 +134,6 @@ await copyFile(bundledYtDlp, path.join(binRoot, "yt-dlp"));
 await chmod(path.join(binRoot, "yt-dlp"), 0o755);
 run(path.join(binRoot, "yt-dlp"), ["--version"]);
 
-const antigravity = path.join(projectRoot, ".local-tools", "agy");
-if (!existsSync(antigravity)) throw new Error("Run npm run install:antigravity to fetch the official verified Antigravity CLI before packaging.");
-await copyFile(antigravity, path.join(binRoot, "agy"));
-await chmod(path.join(binRoot, "agy"), 0o755);
-run(path.join(binRoot, "agy"), ["--help"]);
-
 console.log("Compiling macOS launcher…");
 const scratch = await mkdtemp(path.join(tmpdir(), "shortcut-mac-build-"));
 run("/usr/bin/swiftc", ["-O", "-target", "arm64-apple-macosx13.0", "-module-cache-path", path.join(scratch, "swift-cache"), path.join(projectRoot, "desktop", "Launcher.swift"), "-o", path.join(contents, "MacOS", "ShortCut Studio")]);

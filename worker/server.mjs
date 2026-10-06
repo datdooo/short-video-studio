@@ -26,13 +26,11 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import { removeBatchItem } from "./batch-cleanup.mjs";
-import { createAntigravityBridge } from "./antigravity-bridge.mjs";
 import { validatePlan } from "./plan-validation.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
 const sourcesRoot = path.join(dataRoot, "sources");
-const gemini = createAntigravityBridge(dataRoot);
 const port = Number(process.env.MEDIA_WORKER_PORT || 8787);
 const host = "127.0.0.1";
 const jobs = new Map();
@@ -1339,9 +1337,9 @@ async function prepareBatch(batch, body) {
         .replace("__BATCH_TITLE__", source.title)
         .replace("__BATCH_DURATION__", String(source.duration))
         .replace("__BATCH_TRANSCRIPT__", source.transcript);
-      const result = body.provider === "gemini" ? await gemini.analyze({ input, schema: body.schema }, signal) : await analyzeWithChatGPTPlan({ input, schema: body.schema }, signal);
+      const result = await analyzeWithChatGPTPlan({ input, schema: body.schema }, signal);
       signal.throwIfAborted();
-      item.plan = { ...result.plan, originalTitle: source.title, providerUsed: body.provider === "gemini" ? "gemini" : "chatgpt" };
+      item.plan = { ...result.plan, originalTitle: source.title, providerUsed: "chatgpt" };
       item.plan.parts?.forEach((part, index) => { part.id = index + 1; });
       if (item.plan.parts?.length !== 2 || item.plan.parts.some((part) => !Array.isArray(part.hashtags) || new Set(part.hashtags).size !== 10)) {
         throw new Error("AI phải trả về đúng 2 part và 10 hashtag khác nhau cho mỗi part. Thử lại video này.");
@@ -1481,17 +1479,8 @@ const server = createServer(async (request, response) => {
       }
       return;
     }
-    if (request.method === "GET" && requestUrl.pathname === "/api/gemini/session") {
-      sendJson(request, response, 200, { session: await gemini.session() }); return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/gemini/auth/start") {
-      sendJson(request, response, 202, { session: await gemini.connect() }); return;
-    }
-    if (request.method === "DELETE" && requestUrl.pathname === "/api/gemini/session") {
-      sendJson(request, response, 200, { session: await gemini.disconnect() }); return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/gemini/analyze") {
-      sendJson(request, response, 200, await gemini.analyze(await readJson(request))); return;
+    if (requestUrl.pathname.startsWith("/api/gemini/")) {
+      sendJson(request, response, 400, { error: "Gemini Pro dùng chế độ copy/dán JSON trong tab chỉnh từng video. Không còn kết nối Antigravity hoặc gọi Gemini CLI/API." }); return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/chatgpt/session") {
       sendJson(request, response, 200, { session: publicChatGPTSession(readChatGPTCredentials()) });
@@ -1540,6 +1529,10 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/batches") {
       const body = await readJson(request);
+      if (body.provider && body.provider !== "chatgpt") {
+        sendJson(request, response, 400, { error: "Hàng loạt tự động chỉ dùng ChatGPT. Gemini Pro và Muse cần copy/dán JSON từng video." });
+        return;
+      }
       if (!Array.isArray(body.urls) || body.urls.length < 1 || body.urls.length > 20 || !body.schema || typeof body.promptTemplate !== "string") {
         sendJson(request, response, 400, { error: "Nhập từ 1 đến 20 link YouTube cùng cấu hình chia part." });
         return;
@@ -1552,11 +1545,7 @@ const server = createServer(async (request, response) => {
           return;
         }
       }
-      if (body.provider === "gemini") {
-        const status = await gemini.session();
-        if (!status.connected) throw new Error(status.error || "Chưa kết nối Antigravity.");
-        if (!status.quota || status.quota.remainingPercent <= 0) throw new Error("Gemini hết quota trong Antigravity. Chờ reset hoặc chọn ChatGPT; chưa tải video hàng loạt.");
-      } else await activeChatGPTCredentials();
+      await activeChatGPTCredentials();
       const batch = { id: randomUUID(), items: urls.map((url) => ({ id: randomUUID(), url, state: "pending", error: null })) };
       batches.set(batch.id, batch);
       batchControllers.set(batch.id, new AbortController());

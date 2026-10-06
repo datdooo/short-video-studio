@@ -23,7 +23,6 @@ const childEnv = {
   MEDIA_WORKER_PORT: "8787", MEDIA_WORKER_DATA_DIR: dataRoot,
   FFMPEG_PATH: path.join(runtimeBin, "ffmpeg"), FFPROBE_PATH: path.join(runtimeBin, "ffprobe"),
   YT_DLP_PATH: path.join(runtimeBin, "yt-dlp"),
-  ANTIGRAVITY_CLI_PATH: path.join(runtimeBin, "agy"),
   FONTCONFIG_FILE: fontConfig,
 };
 

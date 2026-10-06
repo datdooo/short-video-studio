@@ -76,14 +76,6 @@ type ChatGPTSession = {
   name?: string | null;
   expiresAt?: string | null;
 };
-type GeminiSession = { connected: boolean; connecting: boolean; installed?: boolean; model?: string; quota?: { remainingPercent: number; resetAt: string | null } | null; error?: string | null };
-
-function antigravityQuotaText(session: GeminiSession | null) {
-  if (!session?.quota) return "";
-  const reset = session.quota.resetAt ? new Date(session.quota.resetAt).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "chưa rõ";
-  return `Quota Gemini còn ${session.quota.remainingPercent}% · reset ${reset} (giờ VN). Không tự dùng API/AI Credits.`;
-}
-
 type WorkerSource = {
   id: string;
   kind: "youtube" | "upload";
@@ -246,8 +238,6 @@ export default function Home() {
   const [editMode, setEditMode] = useState<"ai" | "manual">("ai");
   const [sourceMode, setSourceMode] = useState<"youtube" | "local">("youtube");
   const [provider, setProvider] = useState<AiProvider>("chatgpt");
-  const [geminiSession, setGeminiSession] = useState<GeminiSession | null>(null);
-  const [isStartingGeminiAuth, setIsStartingGeminiAuth] = useState(false);
   const [chatGPTSession, setChatGPTSession] = useState<ChatGPTSession | null>(null);
   const [isChatGPTConnecting, setIsChatGPTConnecting] = useState(false);
   const [sourceUrl, setSourceUrl] = useState("");
@@ -259,11 +249,11 @@ export default function Home() {
   const [plan, setPlan] = useState<EditPlan>(() => mockPlan(DEFAULT_REQUEST));
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [musePrompt, setMusePrompt] = useState("");
-  const [museResult, setMuseResult] = useState("");
-  const [museContext, setMuseContext] = useState<{ sourceId: string; transcript: string; instruction: string } | null>(null);
-  const [museNotice, setMuseNotice] = useState("");
-  const [museError, setMuseError] = useState("");
+  const [webAiPrompt, setWebAiPrompt] = useState("");
+  const [webAiResult, setWebAiResult] = useState("");
+  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider } | null>(null);
+  const [webAiNotice, setWebAiNotice] = useState("");
+  const [webAiError, setWebAiError] = useState("");
   const [error, setError] = useState("");
   const [localVideoUrl, setLocalVideoUrl] = useState("");
   const [localFileName, setLocalFileName] = useState("");
@@ -579,42 +569,6 @@ export default function Home() {
     return () => lifecycle.abort();
   }, []);
 
-  useEffect(() => {
-    if (!workerHealth?.ok) return;
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function poll() {
-      try {
-        const response = await fetch(`${WORKER_ORIGIN}/api/gemini/session`, { cache: "no-store" });
-        const data = await response.json() as { session?: GeminiSession };
-        if (disposed) return;
-        if (data.session) setGeminiSession(data.session);
-        timer = setTimeout(() => void poll(), data.session?.connecting ? 2000 : 10000);
-      } catch { if (!disposed) timer = setTimeout(() => void poll(), 10000); }
-    }
-    void poll();
-    return () => { disposed = true; clearTimeout(timer); };
-  }, [workerHealth?.ok]);
-
-  async function connectGemini() {
-    setError(""); setIsStartingGeminiAuth(true);
-    try {
-      const response = await fetch(`${WORKER_ORIGIN}/api/gemini/auth/start`, { method: "POST" });
-      const data = await response.json() as { session?: GeminiSession; error?: string };
-      if (!response.ok || !data.session) throw new Error(data.error || "Không mở được đăng nhập Google.");
-      setGeminiSession(data.session);
-    } catch (error) { setError(error instanceof Error ? error.message : "Không kết nối được Gemini."); }
-    finally { setIsStartingGeminiAuth(false); }
-  }
-  async function disconnectGemini() {
-    try {
-      const response = await fetch(`${WORKER_ORIGIN}/api/gemini/session`, { method: "DELETE" });
-      const data = await response.json() as { session?: GeminiSession; error?: string };
-      if (!response.ok) throw new Error(data.error || "Không ngắt được Gemini.");
-      setGeminiSession(data.session || null);
-    } catch (error) { setError(error instanceof Error ? error.message : "Không ngắt được Gemini."); }
-  }
-
   async function readChatGPTSession() {
     const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store" });
     const data = (await response.json()) as { session?: ChatGPTSession; error?: string };
@@ -757,10 +711,10 @@ export default function Home() {
     setBatchNotice("");
     setIsStartingBatch(true);
     try {
-      if (provider !== "chatgpt" && provider !== "gemini") throw new Error("Hàng loạt tự động chỉ dùng ChatGPT hoặc Antigravity. Muse cần copy/dán kết quả trong tab chỉnh từng video.");
+      if (provider !== "chatgpt") throw new Error("Hàng loạt tự động chỉ dùng ChatGPT. Gemini Pro và Muse cần copy/dán JSON trong tab chỉnh từng video.");
       const urls = [...new Set(batchUrls.split(/\s+/).filter(Boolean))];
       if (!urls.length || urls.length > 20) throw new Error("Nhập từ 1 đến 20 link, mỗi link một dòng.");
-      const batchProvider = provider === "gemini" ? "gemini" : "chatgpt";
+      const batchProvider = "chatgpt";
       const promptTemplate = buildPrompt({ provider: batchProvider, originalTitle: "__BATCH_TITLE__", transcript: "__BATCH_TRANSCRIPT__", instruction })
         .replace("Source duration in seconds: unknown; do not invent an end beyond the available source", "Source duration in seconds: __BATCH_DURATION__");
       const response = await fetch(`${WORKER_ORIGIN}/api/batches`, {
@@ -824,7 +778,7 @@ export default function Home() {
   }
 
   async function analyze() {
-    if (provider === "muse") return;
+    if (isWebAi) return;
     setError("");
     if (!transcript.trim()) {
       setError(transcriptStatus || "Đang chờ transcript từ YouTube. Video không có phụ đề thì dùng Manual cut hoặc nhập transcript.");
@@ -833,9 +787,6 @@ export default function Home() {
     if (provider === "chatgpt" && !chatGPTSession?.sharing) {
       setError("Hãy bấm Continue with ChatGPT và cho phép dùng ChatGPT plan trước.");
       return;
-    }
-    if (provider === "gemini" && !geminiSession?.connected) {
-      setError("Bấm Kết nối Google AI Pro và đăng nhập Google trước."); return;
     }
     setIsAnalyzing(true);
     try {
@@ -849,7 +800,7 @@ export default function Home() {
       const source = preparedSource || await prepareSource();
       if (!source) return;
       const request = { provider, originalTitle: source.title, transcript, instruction, sourceDuration: source.duration } satisfies AnalyzeRequest;
-      const response = await fetch(`${WORKER_ORIGIN}/api/${provider === "gemini" ? "gemini" : "chatgpt"}/analyze`, {
+      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -860,7 +811,7 @@ export default function Home() {
       });
       const data = (await response.json()) as { plan?: Omit<EditPlan, "providerUsed" | "render">; model?: string; error?: string };
       if (!response.ok || !data.plan) throw new Error(data.error || "Không thể tạo edit plan.");
-      setPlan(normalizePlan(data.plan, provider === "gemini" ? "gemini" : "chatgpt"));
+      setPlan(normalizePlan(data.plan, "chatgpt"));
       setHasEditPlan(true);
       setActivePartIndex(0);
     } catch (caughtError) {
@@ -875,48 +826,53 @@ export default function Home() {
     setError("");
   }
 
-  async function createMusePrompt() {
-    setMuseError(""); setMuseNotice("");
+  const isWebAi = provider === "muse" || provider === "gemini";
+  const webAiName = provider === "gemini" ? "Gemini Pro" : "Muse";
+  const webAiUrl = provider === "gemini" ? "https://gemini.google.com/app" : "https://muse.ai/";
+
+  async function createWebAiPrompt() {
+    if (!isWebAi) return;
+    setWebAiError(""); setWebAiNotice("");
     setIsAnalyzing(true);
     try {
       const source = preparedSource || await prepareSource();
       if (!source) return;
       const content = preparedSource ? transcript : source.transcript || transcript;
       if (!content.trim()) throw new Error("Chưa có transcript. Nhập transcript có timestamp trong mục Transcript trước; video không có phụ đề có thể dùng Manual cut.");
-      const request = { provider: "muse", originalTitle: source.title, transcript: content, instruction, sourceDuration: source.duration } satisfies AnalyzeRequest;
-      setMusePrompt(buildMusePrompt(buildPrompt(request), EDIT_PLAN_SCHEMA, source));
-      setMuseContext({ sourceId: source.id, transcript: content, instruction });
-      setMuseResult("");
-      setMuseNotice("Prompt đã sẵn sàng. Copy rồi mở Muse, dán vào cuộc trò chuyện và gửi. App chưa gửi dữ liệu tới Muse.");
+      const request = { provider, originalTitle: source.title, transcript: content, instruction, sourceDuration: source.duration } satisfies AnalyzeRequest;
+      setWebAiPrompt(buildMusePrompt(buildPrompt(request), EDIT_PLAN_SCHEMA, source));
+      setWebAiContext({ sourceId: source.id, transcript: content, instruction, provider });
+      setWebAiResult("");
+      setWebAiNotice(`Prompt đã sẵn sàng. Copy rồi mở ${webAiName}, dán vào cuộc trò chuyện và gửi. App chưa gửi dữ liệu tới ${webAiName}.`);
     } catch (caughtError) {
-      setMuseError(caughtError instanceof Error ? caughtError.message : "Không tạo được prompt Muse.");
+      setWebAiError(caughtError instanceof Error ? caughtError.message : `Không tạo được prompt ${webAiName}.`);
     } finally { setIsAnalyzing(false); }
   }
 
-  async function copyMusePrompt() {
-    setMuseError("");
+  async function copyWebAiPrompt() {
+    setWebAiError("");
     try {
-      await navigator.clipboard.writeText(musePrompt);
-      setMuseNotice("Đã copy prompt + transcript. Mở Muse và dán để phân tích.");
-    } catch { setMuseError("Trình duyệt chưa cho copy. Mở mục Prompt bên dưới, chọn toàn bộ và copy bằng tay."); }
+      await navigator.clipboard.writeText(webAiPrompt);
+      setWebAiNotice(`Đã copy prompt + transcript. Mở ${webAiName} và dán để phân tích.`);
+    } catch { setWebAiError("Trình duyệt chưa cho copy. Mở mục Prompt bên dưới, chọn toàn bộ và copy bằng tay."); }
   }
 
-  const musePromptIsCurrent = Boolean(museContext && preparedSource && museContext.sourceId === preparedSource.id && museContext.transcript === transcript && museContext.instruction === instruction);
+  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.provider === provider && webAiContext.sourceId === preparedSource.id && webAiContext.transcript === transcript && webAiContext.instruction === instruction);
 
-  function applyMuseResult() {
-    setMuseError(""); setMuseNotice("");
+  function applyWebAiResult() {
+    setWebAiError(""); setWebAiNotice("");
     try {
-      if (renderJob?.state === "queued" || renderJob?.state === "rendering") throw new Error("Chờ render hoàn tất hoặc dừng render trước khi áp dụng kết quả Muse mới.");
-      if (!musePromptIsCurrent || !preparedSource) throw new Error("Video, transcript hoặc quy tắc đã đổi. Tạo prompt mới và gửi lại Muse trước khi nhập kết quả.");
-      const nextPlan = normalizePlan(parseMusePlan(museResult, preparedSource), "muse");
+      if (renderJob?.state === "queued" || renderJob?.state === "rendering") throw new Error(`Chờ render hoàn tất hoặc dừng render trước khi áp dụng kết quả ${webAiName} mới.`);
+      if (!webAiPromptIsCurrent || !preparedSource) throw new Error(`Video, provider, transcript hoặc quy tắc đã đổi. Tạo prompt mới và gửi lại ${webAiName} trước khi nhập kết quả.`);
+      const nextPlan = normalizePlan(parseMusePlan(webAiResult, preparedSource, webAiName), provider);
       setPlan(nextPlan);
       setHasEditPlan(true);
       setActivePartIndex(0);
       setRenderJob(null);
       setError("");
-      setMuseNotice("Đã áp dụng 2 part từ Muse. Preview phát footage đã cắt; title/hashtag và nút render đã sẵn sàng.");
+      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}. Preview phát footage đã cắt; title/hashtag và nút render đã sẵn sàng.`);
     } catch (caughtError) {
-      setMuseError(caughtError instanceof Error ? caughtError.message : "Không nhập được JSON Muse.");
+      setWebAiError(caughtError instanceof Error ? caughtError.message : `Không nhập được JSON ${webAiName}.`);
     }
   }
 
@@ -1141,13 +1097,11 @@ export default function Home() {
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Select value={provider === "muse" ? "muse" : provider === "gemini" ? "gemini" : "chatgpt"} onValueChange={changeProvider}>
             <SelectTrigger aria-label="AI provider hàng loạt" className="studio-input w-[220px]"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem><SelectItem value="gemini">Antigravity · Gemini Pro</SelectItem><SelectItem value="muse" disabled>Muse · chỉ chỉnh từng video</SelectItem></SelectContent>
+            <SelectContent><SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem><SelectItem value="gemini" disabled>Gemini Pro · chỉ chỉnh từng video</SelectItem><SelectItem value="muse" disabled>Muse · chỉ chỉnh từng video</SelectItem></SelectContent>
           </Select>
-          <Badge variant="outline" className={(provider === "gemini" ? geminiSession?.connected : provider === "chatgpt" && chatGPTSession?.sharing) ? "text-emerald-300" : "text-zinc-400"}>{provider === "muse" ? "Muse bán tự động" : provider === "gemini" ? geminiSession?.connected ? "Antigravity đã kết nối" : "Chưa kết nối Antigravity" : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
-          {provider !== "muse" && (provider === "gemini" ? !geminiSession?.connected && <Button onClick={() => void connectGemini()} disabled={isStartingGeminiAuth || geminiSession?.connecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> {geminiSession?.connecting ? "Đang chờ đăng nhập Google…" : "Kết nối Antigravity"}</Button> : !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>)}
-          {provider === "muse" && <p className="w-full text-xs leading-5 text-amber-200/80">Muse cần nhập JSON từng video. <button onClick={() => setWorkspace("editor")} className="underline">Về tab chỉnh từng video</button>, hoặc chọn ChatGPT/Antigravity để chạy hàng loạt tự động.</p>}
-          {provider === "gemini" && geminiSession?.connected && <p className="w-full text-xs text-amber-200/80">{antigravityQuotaText(geminiSession)}</p>}
-          {provider === "gemini" && geminiSession?.error && <p className="w-full text-xs text-red-300">{geminiSession.error}</p>}
+          <Badge variant="outline" className={provider === "chatgpt" && chatGPTSession?.sharing ? "text-emerald-300" : "text-zinc-400"}>{isWebAi ? `${webAiName} bán tự động` : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
+          {provider === "chatgpt" && !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
+          {isWebAi && <p className="w-full text-xs leading-5 text-amber-200/80">{webAiName} cần nhập JSON từng video. <button onClick={() => setWorkspace("editor")} className="underline">Về tab chỉnh từng video</button>, hoặc chọn ChatGPT để chạy hàng loạt tự động.</p>}
         </div>
         <details className="mt-4 rounded-xl border border-white/8 p-4">
           <summary className="cursor-pointer text-sm text-zinc-300">Quy tắc chia part · xem / sửa</summary>
@@ -1155,10 +1109,10 @@ export default function Home() {
           <p className="mt-2 text-xs text-zinc-500">Dùng chung quy tắc với tab chỉnh từng video. Thay đổi chỉ áp dụng cho lượt chạy mới.</p>
         </details>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-            <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {provider === "muse" ? "Muse không hỗ trợ tự động" : provider === "gemini" ? "Gemini Pro" : "ChatGPT"}</label>
+            <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {isWebAi ? `${webAiName} không hỗ trợ tự động` : "ChatGPT"}</label>
             <Textarea id="batch-urls" value={batchUrls} onChange={(event) => setBatchUrls(event.target.value)} placeholder={"https://www.youtube.com/watch?v=...\nhttps://youtu.be/..."} className="studio-textarea mt-2 min-h-[100px] text-xs leading-6" />
             <p className="mt-2 text-[11px] leading-5 text-zinc-500">Tối đa 20 link, mỗi dòng một link. Tự tải → chia 2 part theo Your instruction → render. Chuẩn bị video tiếp theo trong lúc render video trước; chỉ render một video mỗi lần để tránh quá tải máy.</p>
-            <Button onClick={() => void startBatch()} disabled={provider === "muse" || isStartingBatch || !workerHealth?.ok || !(provider === "gemini" ? geminiSession?.connected && (geminiSession.quota?.remainingPercent || 0) > 0 : chatGPTSession?.sharing) || Boolean(batch && !batch.finished)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
+            <Button onClick={() => void startBatch()} disabled={provider !== "chatgpt" || isStartingBatch || !workerHealth?.ok || !chatGPTSession?.sharing || Boolean(batch && !batch.finished)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
               {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />} Chạy hàng đợi tự động
             </Button>
             <Button variant="outline" onClick={() => void stopBatch()} disabled={!batch || batch.finished || isStoppingBatch} className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10">
@@ -1317,22 +1271,12 @@ export default function Home() {
                   </SelectTrigger>
                   <SelectContent className="border-white/10 bg-[#17181d] text-zinc-200">
                     <SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem>
-                    <SelectItem value="gemini">Antigravity · Gemini Pro</SelectItem>
+                    <SelectItem value="gemini">Gemini Pro · copy / dán JSON</SelectItem>
                     <SelectItem value="muse">Muse · copy / dán JSON</SelectItem>
                     <SelectItem value="mock">Mock · fast</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {provider === "gemini" && <div className="rounded-2xl border border-white/8 bg-white/[.025] p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0"><p className="text-xs font-semibold text-zinc-200">{geminiSession?.connected ? "Antigravity connected" : "Connect Google AI Pro"}</p><p className="mt-1 break-words text-[10px] leading-4 text-zinc-500">{geminiSession?.connected ? `Phiên Google trên máy · ${geminiSession.model || "Gemini Pro"}` : "Antigravity CLI chính thức · đăng nhập Google · không API key"}</p></div>
-                  {geminiSession?.connected && <button onClick={() => void disconnectGemini()} title="Ngắt app; không đăng xuất tài khoản dùng chung của Antigravity/IDE" className="shrink-0 text-[10px] text-zinc-500 hover:text-white">Ngắt app</button>}
-                </div>
-                <Button onClick={() => void connectGemini()} disabled={isStartingGeminiAuth || geminiSession?.connecting || !workerHealth?.ok} className="mt-3 h-9 w-full rounded-xl bg-white text-xs text-black hover:bg-zinc-200">{isStartingGeminiAuth || geminiSession?.connecting ? <Loader2 className="animate-spin" /> : <LogIn />}{geminiSession?.connecting ? "Đang chờ đăng nhập Google…" : geminiSession?.connected ? "Kiểm tra lại kết nối" : "Kết nối Antigravity"}</Button>
-                {geminiSession?.error && <p className="mt-2 break-words text-[11px] leading-5 text-red-300">{geminiSession.error}</p>}
-                {geminiSession?.connected && <p className="mt-2 text-[11px] leading-5 text-amber-200/80">{antigravityQuotaText(geminiSession)}</p>}
-                <p className="mt-2 text-[10px] leading-4 text-zinc-600">Dùng tài khoản Google AI Pro qua Antigravity. Có phiên sẵn sẽ kết nối ngay; nếu chưa có, hoàn tất đăng nhập/onboarding trong Terminal được mở. Ngắt app không đăng xuất Antigravity/IDE.</p>
-              </div>}
               {provider === "chatgpt" && (
                 <div className="rounded-2xl border border-white/8 bg-white/[.025] p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1378,24 +1322,25 @@ export default function Home() {
                 <label htmlFor="instruction" className="field-label mt-3 block">Your instruction</label>
                 <Textarea id="instruction" value={instruction} onChange={(event) => setInstruction(event.target.value)} className="studio-textarea studio-transcript mt-2" placeholder="Ví dụ: bỏ intro, Part 2 mở bằng sự cố..." />
               </details>
-              {provider === "muse" ? <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[.025] p-3">
-                <p className="text-sm font-semibold">Muse bán tự động</p>
-                <p className="text-xs leading-5 text-zinc-400">Tạo prompt → copy và gửi trong Muse → dán JSON bên dưới. Không API key, không gọi Meta API; app không đọc token hay tài khoản Muse.</p>
-                <Button onClick={() => void createMusePrompt()} disabled={isAnalyzing || isPreparingSource || !workerHealth?.ok} className="w-full rounded-xl bg-white text-xs text-black hover:bg-zinc-200">{isAnalyzing ? <Loader2 className="animate-spin" /> : <WandSparkles />}{isAnalyzing ? "Đang chuẩn bị prompt…" : "1. Tạo prompt cho Muse"}</Button>
-                {musePrompt && <>
+              {isWebAi ? <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[.025] p-3">
+                <p className="text-sm font-semibold">{webAiName} bán tự động</p>
+                <p className="text-xs leading-5 text-zinc-400">Tạo prompt → copy và gửi trong {webAiName} → dán JSON bên dưới. Không API key, không kết nối CLI; app không đọc token hay tài khoản {webAiName}.</p>
+                {provider === "gemini" && <p className="text-xs leading-5 text-zinc-400">Mở Gemini web bằng tài khoản Google AI Pro và tự chọn model Pro trước khi gửi prompt.</p>}
+                <Button onClick={() => void createWebAiPrompt()} disabled={isAnalyzing || isPreparingSource || !workerHealth?.ok} className="w-full rounded-xl bg-white text-xs text-black hover:bg-zinc-200">{isAnalyzing ? <Loader2 className="animate-spin" /> : <WandSparkles />}{isAnalyzing ? "Đang chuẩn bị prompt…" : `1. Tạo prompt cho ${webAiName}`}</Button>
+                {webAiPrompt && <>
                   <div className="grid grid-cols-2 gap-2">
-                    <Button variant="outline" onClick={() => void copyMusePrompt()} disabled={!musePromptIsCurrent} className="rounded-xl border-white/10 bg-white/5 text-xs"><Copy /> Copy prompt</Button>
-                    <a href="https://muse.ai/" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs hover:bg-white/10"><Link2 className="size-4" /> Mở Muse ↗</a>
+                    <Button variant="outline" onClick={() => void copyWebAiPrompt()} disabled={!webAiPromptIsCurrent} className="rounded-xl border-white/10 bg-white/5 text-xs"><Copy /> Copy prompt</Button>
+                    <a href={webAiUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs hover:bg-white/10"><Link2 className="size-4" /> Mở {webAiName} ↗</a>
                   </div>
-                  {!musePromptIsCurrent && <p className="text-xs leading-5 text-amber-200">Source, transcript hoặc quy tắc đã đổi. Tạo prompt mới trước khi copy/nhập kết quả.</p>}
-                  <details className="rounded-xl border border-white/8 p-3"><summary className="cursor-pointer text-xs text-zinc-400">Prompt · xem / copy bằng tay</summary><Textarea aria-label="Prompt cho Muse" readOnly value={musePrompt} className="studio-textarea studio-transcript mt-2 font-mono text-[11px]" /></details>
+                  {!webAiPromptIsCurrent && <p className="text-xs leading-5 text-amber-200">Source, provider, transcript hoặc quy tắc đã đổi. Tạo prompt mới trước khi copy/nhập kết quả.</p>}
+                  <details className="rounded-xl border border-white/8 p-3"><summary className="cursor-pointer text-xs text-zinc-400">Prompt · xem / copy bằng tay</summary><Textarea aria-label={`Prompt cho ${webAiName}`} readOnly value={webAiPrompt} className="studio-textarea studio-transcript mt-2 font-mono text-[11px]" /></details>
                 </>}
-                <label htmlFor="muse-result" className="field-label block">2. JSON kết quả từ Muse</label>
-                <Textarea id="muse-result" value={museResult} onChange={(event) => setMuseResult(event.target.value)} placeholder={'Dán toàn bộ JSON Muse trả về, gồm sourceId, originalTitle, language và parts…'} className="studio-textarea studio-transcript min-h-[130px] font-mono text-[11px] leading-5" />
-                <Button onClick={applyMuseResult} disabled={!musePromptIsCurrent || !museResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check /> 3. Kiểm tra và áp dụng 2 part</Button>
-                {museError && <p role="alert" className="break-words text-xs leading-5 text-red-300">{museError}</p>}
-                {museNotice && <p role="status" className="text-xs leading-5 text-emerald-300">{museNotice}</p>}
-              </div> : <Button onClick={analyze} disabled={isAnalyzing || (provider === "gemini" && geminiSession?.connected && (geminiSession.quota?.remainingPercent || 0) <= 0)} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
+                <label htmlFor="web-ai-result" className="field-label block">2. JSON kết quả từ {webAiName}</label>
+                <Textarea id="web-ai-result" value={webAiResult} onChange={(event) => setWebAiResult(event.target.value)} placeholder={`Dán toàn bộ JSON ${webAiName} trả về, gồm sourceId, originalTitle, language và parts…`} className="studio-textarea studio-transcript min-h-[130px] font-mono text-[11px] leading-5" />
+                <Button onClick={applyWebAiResult} disabled={!webAiPromptIsCurrent || !webAiResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check /> 3. Kiểm tra và áp dụng 2 part</Button>
+                {webAiError && <p role="alert" className="break-words text-xs leading-5 text-red-300">{webAiError}</p>}
+                {webAiNotice && <p role="status" className="text-xs leading-5 text-emerald-300">{webAiNotice}</p>}
+              </div> : <Button onClick={analyze} disabled={isAnalyzing} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
                 {isAnalyzing ? <><Loader2 className="animate-spin" /> Building edit plan…</> : <><WandSparkles /> Generate 2-part plan</>}
               </Button>}
               <p className="text-center text-[10px] leading-5 text-zinc-600">Không muốn đăng nhập? Chọn Mock hoặc chuyển sang Manual cut.</p>
