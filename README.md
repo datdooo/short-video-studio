@@ -76,6 +76,16 @@ Chi tiết kỹ thuật và xử lý lỗi nằm trong [`docs/AI_PROVIDERS.md`](
 - The batch tab includes a small portrait preview with native playback/seek controls. Select View Part on any completed output; it plays the actual cut/rendered MP4 (including the final 1.25× speed), never the uncut source. Preview requests use inline video responses; download links remain attachments.
 - Final publishing titles/copy text include the part suffix: `Original title | New title (1/2)` or `(2/2)`. Short language-code export filenames are unchanged.
 
+## Muse — copy/dán JSON, không Meta API
+
+Trong **Chỉnh từng video → AI plan**, chọn **Muse · copy / dán JSON**. Bấm **Tạo prompt cho Muse** để chuẩn bị source và tạo prompt gồm transcript, quy tắc hiện tại, title gốc, thời lượng, mã source và JSON schema. **Copy prompt**, mở Muse, tự đăng nhập nếu cần và gửi prompt. App không tự gửi dữ liệu tới Muse, không đọc cookie/credential và không gọi API trả phí.
+
+Dán JSON Muse trả về (hoặc toàn bộ khối code `json`) vào **JSON kết quả từ Muse**, rồi bấm **Kiểm tra và áp dụng 2 part**. Kết quả phải đúng source/title, có đúng 2 part, DE/EN/FR/JA/KO, 10 hashtag khác nhau mỗi part, timestamp dạng số giây theo source gốc và không vượt thời lượng video. Nội dung chính giữ đúng thứ tự, không chồng nhau. JSON sai không thay đổi plan hiện tại. Không tự sửa/sắp xếp/lược bỏ timestamp sai. Nếu đổi source, transcript hoặc instruction, tạo/gửi lại prompt mới. Preview, title sau cùng, tên file và render 1.25× sử dụng workflow hiện có.
+
+Muse chỉ hỗ trợ từng video; hàng loạt tự động vẫn dùng ChatGPT hoặc Antigravity và không tự fallback khi đang chọn Muse. Token thưởng trong Muse không được coi là credit Meta Model API. App không đảm bảo chất lượng/chính xác nội dung AI; hãy xem lại hook và preview trước khi render.
+
+Quy tắc AI mặc định yêu cầu **mỗi part trên 1 phút sau khi xuất ở 1.25×**: tổng segment phải hơn 75 giây source/part. Nếu part/source quá ngắn, AI được chọn footage thật phù hợp từ bất kỳ vị trí nào trong source, kể cả lặp lại, và ghép vào CUỐI với `isPadding: true` + lý do. Nội dung chính (`isPadding: false`) vẫn giữ timeline và nằm trước mọi đoạn bổ sung. Không tạo lời nói/chi tiết giả hoặc timestamp vượt source. UI đánh dấu footage bổ sung; preview/render phát đúng thứ tự ghép, kể cả đoạn lặp. Kết quả AI chưa đủ thời lượng bị từ chối; Manual cut vẫn cho phép cắt ngắn bằng tay.
+
 ## Antigravity / Gemini Pro / Google AI Pro
 
 Select **Antigravity · Gemini Pro** in editor or batch mode, then click **Kết nối Antigravity**. The official native `agy` CLI replaces the retired Gemini CLI consumer login. An existing Google session is reused; otherwise Terminal opens for the user to complete Antigravity's sign-in/onboarding (including any Google consent). No API key, browser cookie extraction, or separately billed API fallback is used. The model is pinned to `gemini-3.1-pro-high`; quotas and availability are determined by Google. The UI displays Gemini's actual remaining quota/reset time. An exhausted quota blocks generation before the transcript is submitted. ChatGPT remains independently available.

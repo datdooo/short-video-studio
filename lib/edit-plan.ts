@@ -1,4 +1,4 @@
-export type AiProvider = "mock" | "chatgpt" | "gemini" | "openai" | "qwen";
+export type AiProvider = "mock" | "chatgpt" | "gemini" | "muse" | "openai" | "qwen";
 export type PlanSource = AiProvider | "manual";
 
 export type Segment = {
@@ -6,6 +6,7 @@ export type Segment = {
   end: number;
   label: string;
   reason: string;
+  isPadding?: boolean;
 };
 
 export type EditPart = {
@@ -57,11 +58,16 @@ export function finalDurationOf(part: EditPart) {
 }
 
 export function isChronological(part: EditPart) {
-  return part.segments.every((segment, index, list) => {
-    if (segment.end <= segment.start) return false;
-    if (index === 0) return true;
-    return segment.start >= list[index - 1].end;
-  });
+  let paddingStarted = false;
+  let previousEnd = 0;
+  let mainCount = 0;
+  return part.segments.every((segment) => {
+    if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.start < 0 || segment.end <= segment.start) return false;
+    if (segment.isPadding) { paddingStarted = true; return mainCount > 0; }
+    if (paddingStarted || segment.start < previousEnd) return false;
+    previousEnd = segment.end; mainCount += 1;
+    return true;
+  }) && mainCount > 0;
 }
 
 export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, providerUsed: PlanSource): EditPlan {
@@ -75,8 +81,7 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
         start: Math.max(0, Number(segment.start)),
         end: Math.max(0, Number(segment.end)),
       }))
-      .filter((segment) => Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start)
-      .sort((a, b) => a.start - b.start),
+      .filter((segment) => Number.isFinite(segment.start) && Number.isFinite(segment.end) && segment.end > segment.start),
   }));
 
   if (parts.length !== 2 || parts.some((part) => part.segments.length === 0 || !isChronological(part))) {
@@ -85,7 +90,10 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
   if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => part.hashtags.length !== 10)) {
     throw new Error("AI chưa trả về đủ 10 hashtag khác nhau cho mỗi part. Hãy Generate lại.");
   }
-  const lastPartOneEnd = parts[0].segments.at(-1)?.end ?? 0;
+  if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => finalDurationOf(part) <= 60)) {
+    throw new Error("Mỗi part phải trên 1 phút sau tua 1.25×: cần hơn 75 giây footage gốc. Nếu nội dung chính ngắn, yêu cầu AI chọn footage thật phù hợp và thêm segment isPadding: true ở cuối để đủ thời lượng.");
+  }
+  const lastPartOneEnd = parts[0].segments.filter((segment) => !segment.isPadding).at(-1)?.end ?? 0;
   const firstPartTwoStart = parts[1].segments[0]?.start ?? 0;
   if (firstPartTwoStart < lastPartOneEnd) {
     throw new Error("Part 2 phải bắt đầu sau segment cuối của Part 1 trên source timeline.");
@@ -256,8 +264,9 @@ export const EDIT_PLAN_SCHEMA = {
                 end: { type: "number" },
                 label: { type: "string" },
                 reason: { type: "string" },
+                isPadding: { type: "boolean" },
               },
-              required: ["start", "end", "label", "reason"],
+              required: ["start", "end", "label", "reason", "isPadding"],
             },
           },
         },
@@ -272,14 +281,15 @@ export function buildPrompt(request: AnalyzeRequest) {
   return `Create a 2-part video edit plan from the complete timestamped transcript below, following the user's editing instructions.
 
 Hard rules:
-- Preserve source chronology inside every part. Never reorder footage.
+- Preserve source chronology for the MAIN content inside every part. The only exception is explicitly marked supplemental footage appended at the very end to meet the minimum duration; never insert it into the main story.
 - Use source timestamps exactly; do not compensate for the final speed-up.
 - Follow the user's rules for what may be cut. Do not remove slow material, travel, music, technical details, or filler unless the user permits it.
 - Each part needs its own strong hook. Quote the actual transcript in the hook field.
 - Titles and hashtags must use the source video's language (DE, EN, FR, JA, or KO).
 - Return exactly two parts and exactly 10 distinct hashtags per part, each prefixed with # and without spaces. Generate hashtags from the actual subject, actions and details in that part's retained transcript segments, not discarded footage or unrelated trending topics. Do not invent details. Prioritize topic-specific tags in the source language.
 - Segment start/end values must be seconds as numbers.
-- For the two-entry-point workflow: Part 1 spans Hook 1 to Hook 2, and Part 2 spans Hook 2 to the source duration. Keep these ranges continuous except for explicitly permitted promotional cuts. Use multiple retained segments only around those cuts and explain each excluded gap in the adjacent segment reason. The first/last segment boundaries represent each part's start/end.
+- Each part's FINAL exported duration must be strictly greater than 60 seconds at 1.25x. The sum of segment durations (including supplemental footage) must therefore exceed 75 seconds per part, excluding removed gaps. First choose hooks that meet the minimum naturally. If a part or the source is too short, select a relevant real clip from anywhere in this source (prefer contextual action, visual detail, soundcheck or a recap; avoid ads/promotions) and append it at the END. You may reuse/repeat that actual clip if needed. Set isPadding: true on every appended segment; set isPadding: false on MAIN segments. Explain the choice and repetition in reason. Main segments must all precede padding segments. Do not invent speech, facts, timestamps outside the source, or fake new footage. Keep titles/hashtags factual, based on real content.
+- For the two-entry-point workflow: Part 1 MAIN content spans Hook 1 to Hook 2, and Part 2 MAIN content spans Hook 2 to the source duration. Keep these ranges continuous except for explicitly permitted promotional cuts. Use multiple retained MAIN segments only around those cuts and explain each excluded gap in the adjacent segment reason. The first/last MAIN segment boundaries represent each part's source start/end; padding is appended afterwards.
 
 Original title: ${request.originalTitle || "Untitled"}
 Source duration in seconds: ${request.sourceDuration ?? "unknown; do not invent an end beyond the available source"}

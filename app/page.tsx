@@ -5,6 +5,7 @@ import {
   Check,
   Clapperboard,
   Clock3,
+  Copy,
   Download,
   Film,
   Link2,
@@ -54,6 +55,8 @@ import {
 } from "@/lib/edit-plan";
 import { fitOverlayText, fontStackFor } from "@/lib/render-spec";
 import { collectBatchDownloads, createBatchDownloadQueue } from "@/lib/batch-downloads.mjs";
+import { buildMusePrompt, parseMusePlan } from "@/lib/muse-plan.mjs";
+import { locateTimelineTime, timelineTimeForSegment } from "@/lib/preview-timeline.mjs";
 
 const WORKER_ORIGIN = "http://127.0.0.1:8787";
 
@@ -220,6 +223,9 @@ Khi chọn Hook 2, Hook 2 phải:
 
 Không cần Part 1 và Part 2 có thời lượng giống nhau.
 
+Chia làm sao phải đảm bảo mỗi part phải trên 1 phút sau khi xuất video ở tốc độ 1.25× (tức hơn 75 giây footage gốc được giữ lại mỗi part, không tính các đoạn đã loại).
+Nếu part hoặc video quá ngắn, được phép chọn một đoạn footage có thật phù hợp nhất trong toàn clip và ghép vào CUỐI part, có thể lặp lại nếu cần để đủ thời lượng. Đây là ngoại lệ duy nhất cho thứ tự footage: phần nội dung chính vẫn giữ timeline gốc, đoạn bổ sung phải đánh dấu isPadding: true và giải thích rõ. Không bịa lời nói, thông tin hoặc footage không có trong source.
+
 Sau khi chọn xong, trả về:
 - Part 1 start
 - Part 1 end
@@ -253,6 +259,11 @@ export default function Home() {
   const [plan, setPlan] = useState<EditPlan>(() => mockPlan(DEFAULT_REQUEST));
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [musePrompt, setMusePrompt] = useState("");
+  const [museResult, setMuseResult] = useState("");
+  const [museContext, setMuseContext] = useState<{ sourceId: string; transcript: string; instruction: string } | null>(null);
+  const [museNotice, setMuseNotice] = useState("");
+  const [museError, setMuseError] = useState("");
   const [error, setError] = useState("");
   const [localVideoUrl, setLocalVideoUrl] = useState("");
   const [localFileName, setLocalFileName] = useState("");
@@ -293,6 +304,7 @@ export default function Home() {
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const previewSegmentIndex = useRef(0);
   const backgroundVideoRef = useRef<HTMLVideoElement>(null);
 
   const activePart = plan.parts[activePartIndex];
@@ -325,6 +337,7 @@ export default function Home() {
     if (!video) return;
     video.pause();
     background?.pause();
+    previewSegmentIndex.current = 0;
     video.currentTime = activePart.segments[0]?.start || 0;
     video.playbackRate = 1.25;
     video.preservesPitch = true;
@@ -340,14 +353,20 @@ export default function Home() {
     let frame = 0;
     const tick = () => {
       const video = previewVideoRef.current;
-      if (video && hasEditPlan && !video.paused && !video.seeking) {
+      if (video && hasEditPlan && (!video.paused || video.ended) && !video.seeking) {
         const segments = activePart.segments;
-        const index = segments.findIndex((segment) => video.currentTime >= segment.start - 0.05 && video.currentTime < segment.end);
-        if (index < 0) {
-          const next = segments.find((segment) => segment.start > video.currentTime);
+        const current = segments[previewSegmentIndex.current];
+        if (current && video.currentTime >= current.end - 0.025) {
+          const next = segments[previewSegmentIndex.current + 1];
           if (next) {
+            const resumeAfterSourceEnd = video.ended;
+            previewSegmentIndex.current += 1;
             video.currentTime = next.start;
             if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = next.start;
+            if (resumeAfterSourceEnd) {
+              void video.play().catch(() => setPreviewError("Bấm Play để tiếp tục footage bổ sung."));
+              void backgroundVideoRef.current?.play().catch(() => undefined);
+            }
           } else {
             video.pause();
             backgroundVideoRef.current?.pause();
@@ -738,6 +757,7 @@ export default function Home() {
     setBatchNotice("");
     setIsStartingBatch(true);
     try {
+      if (provider !== "chatgpt" && provider !== "gemini") throw new Error("Hàng loạt tự động chỉ dùng ChatGPT hoặc Antigravity. Muse cần copy/dán kết quả trong tab chỉnh từng video.");
       const urls = [...new Set(batchUrls.split(/\s+/).filter(Boolean))];
       if (!urls.length || urls.length > 20) throw new Error("Nhập từ 1 đến 20 link, mỗi link một dòng.");
       const batchProvider = provider === "gemini" ? "gemini" : "chatgpt";
@@ -804,6 +824,7 @@ export default function Home() {
   }
 
   async function analyze() {
+    if (provider === "muse") return;
     setError("");
     if (!transcript.trim()) {
       setError(transcriptStatus || "Đang chờ transcript từ YouTube. Video không có phụ đề thì dùng Manual cut hoặc nhập transcript.");
@@ -854,6 +875,51 @@ export default function Home() {
     setError("");
   }
 
+  async function createMusePrompt() {
+    setMuseError(""); setMuseNotice("");
+    setIsAnalyzing(true);
+    try {
+      const source = preparedSource || await prepareSource();
+      if (!source) return;
+      const content = preparedSource ? transcript : source.transcript || transcript;
+      if (!content.trim()) throw new Error("Chưa có transcript. Nhập transcript có timestamp trong mục Transcript trước; video không có phụ đề có thể dùng Manual cut.");
+      const request = { provider: "muse", originalTitle: source.title, transcript: content, instruction, sourceDuration: source.duration } satisfies AnalyzeRequest;
+      setMusePrompt(buildMusePrompt(buildPrompt(request), EDIT_PLAN_SCHEMA, source));
+      setMuseContext({ sourceId: source.id, transcript: content, instruction });
+      setMuseResult("");
+      setMuseNotice("Prompt đã sẵn sàng. Copy rồi mở Muse, dán vào cuộc trò chuyện và gửi. App chưa gửi dữ liệu tới Muse.");
+    } catch (caughtError) {
+      setMuseError(caughtError instanceof Error ? caughtError.message : "Không tạo được prompt Muse.");
+    } finally { setIsAnalyzing(false); }
+  }
+
+  async function copyMusePrompt() {
+    setMuseError("");
+    try {
+      await navigator.clipboard.writeText(musePrompt);
+      setMuseNotice("Đã copy prompt + transcript. Mở Muse và dán để phân tích.");
+    } catch { setMuseError("Trình duyệt chưa cho copy. Mở mục Prompt bên dưới, chọn toàn bộ và copy bằng tay."); }
+  }
+
+  const musePromptIsCurrent = Boolean(museContext && preparedSource && museContext.sourceId === preparedSource.id && museContext.transcript === transcript && museContext.instruction === instruction);
+
+  function applyMuseResult() {
+    setMuseError(""); setMuseNotice("");
+    try {
+      if (renderJob?.state === "queued" || renderJob?.state === "rendering") throw new Error("Chờ render hoàn tất hoặc dừng render trước khi áp dụng kết quả Muse mới.");
+      if (!musePromptIsCurrent || !preparedSource) throw new Error("Video, transcript hoặc quy tắc đã đổi. Tạo prompt mới và gửi lại Muse trước khi nhập kết quả.");
+      const nextPlan = normalizePlan(parseMusePlan(museResult, preparedSource), "muse");
+      setPlan(nextPlan);
+      setHasEditPlan(true);
+      setActivePartIndex(0);
+      setRenderJob(null);
+      setError("");
+      setMuseNotice("Đã áp dụng 2 part từ Muse. Preview phát footage đã cắt; title/hashtag và nút render đã sẵn sàng.");
+    } catch (caughtError) {
+      setMuseError(caughtError instanceof Error ? caughtError.message : "Không nhập được JSON Muse.");
+    }
+  }
+
   function applyManualPlan() {
     setError("");
     try {
@@ -896,7 +962,10 @@ export default function Home() {
       try {
         if (hasEditPlan) {
           const last = activePart.segments.at(-1);
-          if (last && video.currentTime >= last.end - 0.05) video.currentTime = activePart.segments[0].start;
+          if (last && previewSegmentIndex.current === activePart.segments.length - 1 && video.currentTime >= last.end - 0.05) {
+            previewSegmentIndex.current = 0;
+            video.currentTime = activePart.segments[0].start;
+          }
           video.playbackRate = 1.25;
         }
         await video.play();
@@ -919,13 +988,9 @@ export default function Home() {
     if (!video || !Number.isFinite(value)) return;
     let sourceTime = value;
     if (hasEditPlan) {
-      let remaining = value * 1.25;
-      for (const segment of activePart.segments) {
-        const duration = segment.end - segment.start;
-        sourceTime = segment.start + Math.min(remaining, duration);
-        if (remaining < duration) break;
-        remaining -= duration;
-      }
+      const position = locateTimelineTime(activePart.segments, value);
+      previewSegmentIndex.current = position.index;
+      sourceTime = position.sourceTime;
     }
     video.currentTime = sourceTime;
     if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = sourceTime;
@@ -937,12 +1002,7 @@ export default function Home() {
     if (!video) return;
     let timelineTime = video.currentTime;
     if (hasEditPlan) {
-      timelineTime = 0;
-      for (const segment of activePart.segments) {
-        timelineTime += Math.max(0, Math.min(video.currentTime - segment.start, segment.end - segment.start));
-        if (video.currentTime < segment.end) break;
-      }
-      timelineTime /= 1.25;
+      timelineTime = timelineTimeForSegment(activePart.segments, previewSegmentIndex.current, video.currentTime);
     }
     setPreviewCurrentTime(timelineTime);
     const background = backgroundVideoRef.current;
@@ -1079,12 +1139,13 @@ export default function Home() {
         <div className="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_240px]">
         <div className="min-w-0">
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Select value={provider === "gemini" ? "gemini" : "chatgpt"} onValueChange={changeProvider}>
+          <Select value={provider === "muse" ? "muse" : provider === "gemini" ? "gemini" : "chatgpt"} onValueChange={changeProvider}>
             <SelectTrigger aria-label="AI provider hàng loạt" className="studio-input w-[220px]"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem><SelectItem value="gemini">Antigravity · Gemini Pro</SelectItem></SelectContent>
+            <SelectContent><SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem><SelectItem value="gemini">Antigravity · Gemini Pro</SelectItem><SelectItem value="muse" disabled>Muse · chỉ chỉnh từng video</SelectItem></SelectContent>
           </Select>
-          <Badge variant="outline" className={(provider === "gemini" ? geminiSession?.connected : chatGPTSession?.sharing) ? "text-emerald-300" : "text-zinc-400"}>{provider === "gemini" ? geminiSession?.connected ? "Antigravity đã kết nối" : "Chưa kết nối Antigravity" : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
-          {provider === "gemini" ? !geminiSession?.connected && <Button onClick={() => void connectGemini()} disabled={isStartingGeminiAuth || geminiSession?.connecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> {geminiSession?.connecting ? "Đang chờ đăng nhập Google…" : "Kết nối Antigravity"}</Button> : !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
+          <Badge variant="outline" className={(provider === "gemini" ? geminiSession?.connected : provider === "chatgpt" && chatGPTSession?.sharing) ? "text-emerald-300" : "text-zinc-400"}>{provider === "muse" ? "Muse bán tự động" : provider === "gemini" ? geminiSession?.connected ? "Antigravity đã kết nối" : "Chưa kết nối Antigravity" : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
+          {provider !== "muse" && (provider === "gemini" ? !geminiSession?.connected && <Button onClick={() => void connectGemini()} disabled={isStartingGeminiAuth || geminiSession?.connecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> {geminiSession?.connecting ? "Đang chờ đăng nhập Google…" : "Kết nối Antigravity"}</Button> : !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>)}
+          {provider === "muse" && <p className="w-full text-xs leading-5 text-amber-200/80">Muse cần nhập JSON từng video. <button onClick={() => setWorkspace("editor")} className="underline">Về tab chỉnh từng video</button>, hoặc chọn ChatGPT/Antigravity để chạy hàng loạt tự động.</p>}
           {provider === "gemini" && geminiSession?.connected && <p className="w-full text-xs text-amber-200/80">{antigravityQuotaText(geminiSession)}</p>}
           {provider === "gemini" && geminiSession?.error && <p className="w-full text-xs text-red-300">{geminiSession.error}</p>}
         </div>
@@ -1094,10 +1155,10 @@ export default function Home() {
           <p className="mt-2 text-xs text-zinc-500">Dùng chung quy tắc với tab chỉnh từng video. Thay đổi chỉ áp dụng cho lượt chạy mới.</p>
         </details>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-            <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {provider === "gemini" ? "Gemini Pro" : "ChatGPT"}</label>
+            <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {provider === "muse" ? "Muse không hỗ trợ tự động" : provider === "gemini" ? "Gemini Pro" : "ChatGPT"}</label>
             <Textarea id="batch-urls" value={batchUrls} onChange={(event) => setBatchUrls(event.target.value)} placeholder={"https://www.youtube.com/watch?v=...\nhttps://youtu.be/..."} className="studio-textarea mt-2 min-h-[100px] text-xs leading-6" />
             <p className="mt-2 text-[11px] leading-5 text-zinc-500">Tối đa 20 link, mỗi dòng một link. Tự tải → chia 2 part theo Your instruction → render. Chuẩn bị video tiếp theo trong lúc render video trước; chỉ render một video mỗi lần để tránh quá tải máy.</p>
-            <Button onClick={() => void startBatch()} disabled={isStartingBatch || !workerHealth?.ok || !(provider === "gemini" ? geminiSession?.connected && (geminiSession.quota?.remainingPercent || 0) > 0 : chatGPTSession?.sharing) || Boolean(batch && !batch.finished)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
+            <Button onClick={() => void startBatch()} disabled={provider === "muse" || isStartingBatch || !workerHealth?.ok || !(provider === "gemini" ? geminiSession?.connected && (geminiSession.quota?.remainingPercent || 0) > 0 : chatGPTSession?.sharing) || Boolean(batch && !batch.finished)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
               {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />} Chạy hàng đợi tự động
             </Button>
             <Button variant="outline" onClick={() => void stopBatch()} disabled={!batch || batch.finished || isStoppingBatch} className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10">
@@ -1257,6 +1318,7 @@ export default function Home() {
                   <SelectContent className="border-white/10 bg-[#17181d] text-zinc-200">
                     <SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem>
                     <SelectItem value="gemini">Antigravity · Gemini Pro</SelectItem>
+                    <SelectItem value="muse">Muse · copy / dán JSON</SelectItem>
                     <SelectItem value="mock">Mock · fast</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1316,9 +1378,26 @@ export default function Home() {
                 <label htmlFor="instruction" className="field-label mt-3 block">Your instruction</label>
                 <Textarea id="instruction" value={instruction} onChange={(event) => setInstruction(event.target.value)} className="studio-textarea studio-transcript mt-2" placeholder="Ví dụ: bỏ intro, Part 2 mở bằng sự cố..." />
               </details>
-              <Button onClick={analyze} disabled={isAnalyzing || (provider === "gemini" && geminiSession?.connected && (geminiSession.quota?.remainingPercent || 0) <= 0)} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
+              {provider === "muse" ? <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[.025] p-3">
+                <p className="text-sm font-semibold">Muse bán tự động</p>
+                <p className="text-xs leading-5 text-zinc-400">Tạo prompt → copy và gửi trong Muse → dán JSON bên dưới. Không API key, không gọi Meta API; app không đọc token hay tài khoản Muse.</p>
+                <Button onClick={() => void createMusePrompt()} disabled={isAnalyzing || isPreparingSource || !workerHealth?.ok} className="w-full rounded-xl bg-white text-xs text-black hover:bg-zinc-200">{isAnalyzing ? <Loader2 className="animate-spin" /> : <WandSparkles />}{isAnalyzing ? "Đang chuẩn bị prompt…" : "1. Tạo prompt cho Muse"}</Button>
+                {musePrompt && <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button variant="outline" onClick={() => void copyMusePrompt()} disabled={!musePromptIsCurrent} className="rounded-xl border-white/10 bg-white/5 text-xs"><Copy /> Copy prompt</Button>
+                    <a href="https://muse.ai/" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs hover:bg-white/10"><Link2 className="size-4" /> Mở Muse ↗</a>
+                  </div>
+                  {!musePromptIsCurrent && <p className="text-xs leading-5 text-amber-200">Source, transcript hoặc quy tắc đã đổi. Tạo prompt mới trước khi copy/nhập kết quả.</p>}
+                  <details className="rounded-xl border border-white/8 p-3"><summary className="cursor-pointer text-xs text-zinc-400">Prompt · xem / copy bằng tay</summary><Textarea aria-label="Prompt cho Muse" readOnly value={musePrompt} className="studio-textarea studio-transcript mt-2 font-mono text-[11px]" /></details>
+                </>}
+                <label htmlFor="muse-result" className="field-label block">2. JSON kết quả từ Muse</label>
+                <Textarea id="muse-result" value={museResult} onChange={(event) => setMuseResult(event.target.value)} placeholder={'Dán toàn bộ JSON Muse trả về, gồm sourceId, originalTitle, language và parts…'} className="studio-textarea studio-transcript min-h-[130px] font-mono text-[11px] leading-5" />
+                <Button onClick={applyMuseResult} disabled={!musePromptIsCurrent || !museResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check /> 3. Kiểm tra và áp dụng 2 part</Button>
+                {museError && <p role="alert" className="break-words text-xs leading-5 text-red-300">{museError}</p>}
+                {museNotice && <p role="status" className="text-xs leading-5 text-emerald-300">{museNotice}</p>}
+              </div> : <Button onClick={analyze} disabled={isAnalyzing || (provider === "gemini" && geminiSession?.connected && (geminiSession.quota?.remainingPercent || 0) <= 0)} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
                 {isAnalyzing ? <><Loader2 className="animate-spin" /> Building edit plan…</> : <><WandSparkles /> Generate 2-part plan</>}
-              </Button>
+              </Button>}
               <p className="text-center text-[10px] leading-5 text-zinc-600">Không muốn đăng nhập? Chọn Mock hoặc chuyển sang Manual cut.</p>
             </TabsContent>
 
@@ -1488,7 +1567,8 @@ export default function Home() {
 
           <div className="mt-5 space-y-2">
             {activePart.segments.map((segment, index) => (
-              <article key={`${segment.start}-${segment.end}`} className="group rounded-2xl border border-white/8 bg-white/[.025] p-4 transition hover:border-white/15 hover:bg-white/[.045]">
+              <article key={`${index}-${segment.start}-${segment.end}`} className="group rounded-2xl border border-white/8 bg-white/[.025] p-4 transition hover:border-white/15 hover:bg-white/[.045]">
+                {segment.isPadding && <p className="mb-2 text-[11px] font-semibold text-amber-200">Footage bổ sung / lặp ở cuối để đủ thời lượng</p>}
                 <div className="flex items-start gap-3">
                   <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#ff4d2e]/10 text-xs font-bold text-[#ff6b50]">{String(index + 1).padStart(2, "0")}</span>
                   <div className="min-w-0 flex-1">

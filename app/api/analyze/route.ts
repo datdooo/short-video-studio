@@ -159,6 +159,7 @@ export async function POST(httpRequest: Request) {
   try {
     const suppliedApiKey = httpRequest.headers.get("x-provider-api-key")?.trim() || undefined;
     const request = (await httpRequest.json()) as AnalyzeRequest;
+    if (request.provider === "muse") return NextResponse.json({ error: "Muse dùng chế độ copy/dán JSON trong app, không gọi API hay fallback sang Mock." }, { status: 400 });
     if (!request.transcript?.trim()) {
       return NextResponse.json({ error: "Paste a timestamped transcript first." }, { status: 400 });
     }

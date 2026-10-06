@@ -27,6 +27,7 @@ import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import { removeBatchItem } from "./batch-cleanup.mjs";
 import { createAntigravityBridge } from "./antigravity-bridge.mjs";
+import { validatePlan } from "./plan-validation.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
@@ -1037,26 +1038,6 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-function validatePlan(plan, source) {
-  if (!plan || !Array.isArray(plan.parts) || plan.parts.length !== 2) throw new Error("Edit plan phải có đúng 2 Part.");
-  let previousPartEnd = 0;
-  for (const [partIndex, part] of plan.parts.entries()) {
-    if (!part.title?.trim() || !Array.isArray(part.segments) || !part.segments.length) {
-      throw new Error(`Part ${partIndex + 1} thiếu title hoặc segment.`);
-    }
-    let previousEnd = partIndex === 0 ? 0 : previousPartEnd;
-    for (const segment of part.segments) {
-      const start = Number(segment.start);
-      const end = Number(segment.end);
-      if (!Number.isFinite(start) || !Number.isFinite(end) || start < previousEnd || end <= start || end > source.duration + 0.5) {
-        throw new Error(`Timestamp Part ${partIndex + 1} không hợp lệ hoặc vượt duration source.`);
-      }
-      previousEnd = end;
-    }
-    previousPartEnd = previousEnd;
-  }
-}
-
 async function loadSource(sourceId) {
   const id = assertId(sourceId);
   const directory = path.join(sourcesRoot, id);
@@ -1365,6 +1346,7 @@ async function prepareBatch(batch, body) {
       if (item.plan.parts?.length !== 2 || item.plan.parts.some((part) => !Array.isArray(part.hashtags) || new Set(part.hashtags).size !== 10)) {
         throw new Error("AI phải trả về đúng 2 part và 10 hashtag khác nhau cho mỗi part. Thử lại video này.");
       }
+      validatePlan(item.plan, source);
       const job = await startRender({ sourceId: source.id, plan: item.plan }, signal);
       item.jobId = job.id;
       item.state = "queued";
