@@ -6,6 +6,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "youtube:cookies": "node scripts/configure-youtube-cookies.mjs",
     "install:ci": "node scripts/install-ci.mjs",
     "dev": "node scripts/run-framework.mjs dev",
     "build": "node scripts/run-framework.mjs build",
@@ -16,7 +17,9 @@
     "worker": "node worker/server.mjs",
     "personal": "node scripts/personal-dev.mjs",
     "install:antigravity": "node scripts/install-antigravity.mjs",
-    "package:mac": "node scripts/package-macos.mjs"
+    "package:mac": "node scripts/package-macos.mjs",
+    "setup:macos26": "node scripts/setup-macos26-runtime.mjs",
+    "package:macos26": "node scripts/package-macos.mjs --macos26"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -43,6 +46,7 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
+    "youtubei.js": "^18.1.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {

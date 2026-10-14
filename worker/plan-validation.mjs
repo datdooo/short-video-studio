@@ -1,3 +1,4 @@
+import { PLAYBACK_RATE } from '../lib/render-config.mjs';
 export function validatePlan(plan, source) {
   if (!plan || !Array.isArray(plan.parts) || plan.parts.length !== 2) throw new Error("Edit plan phải có đúng 2 Part.");
   let previousPartEnd = 0;
@@ -10,6 +11,8 @@ export function validatePlan(plan, source) {
     let mainCount = 0;
     let duration = 0;
     for (const segment of part.segments) {
+      if (segment.type && segment.type !== 'source') throw new Error('Loại segment không hợp lệ.');
+      if (segment.focus && (!Number.isFinite(segment.focus.scale) || segment.focus.scale < 1.05 || segment.focus.scale > 1.15)) throw new Error('Focus scale không hợp lệ.');
       const start = Number(segment.start);
       const end = Number(segment.end);
       if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > source.duration + 0.5 || (segment.isPadding !== undefined && typeof segment.isPadding !== "boolean")) {
@@ -24,7 +27,7 @@ export function validatePlan(plan, source) {
       }
       duration += end - start;
     }
-    if (plan.providerUsed && !["mock", "manual"].includes(plan.providerUsed) && duration / 1.25 <= 60) {
+    if (plan.providerUsed && !["mock", "manual"].includes(plan.providerUsed) && duration / PLAYBACK_RATE <= 60) {
       throw new Error(`Part ${partIndex + 1} phải trên 1 phút sau tua 1.25×; cần hơn 75 giây footage gốc. Yêu cầu AI bổ sung footage thật ở cuối (isPadding: true) nếu nội dung chính quá ngắn.`);
     }
     previousPartEnd = previousEnd;

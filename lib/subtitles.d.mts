@@ -1,0 +1,12 @@
+import type { EditPart } from "./edit-plan";
+export type Caption = { start: number; end: number; text: string };
+export type CaptionTrack = { sourceId: string; sourceDuration?: number; timeline?: string; cues: Caption[]; origin: string };
+export function sourceCaptionTrack(track: CaptionTrack, source: { id: string; duration: number }): CaptionTrack;
+export function isCurrentCaptionRequest(request: { sourceId?: string; serial: number; selectionEpoch: number }, current: { sourceId?: string; serial: number; selectionEpoch: number }): boolean;
+export type SubtitleStyle = { enabled: boolean; source?: string; font: string; size: number; color: string; outlineColor: string; outline: number; position: string };
+export const DEFAULT_SUBTITLE_STYLE: SubtitleStyle;
+export function subtitleStyle(value?: Partial<SubtitleStyle>): SubtitleStyle;
+export function subtitleY(style: SubtitleStyle, sourceHeight?: number): number;
+export function parseCaptions(value: string): Caption[];
+export function wrapCaption(text: string, size?: number): string[];
+export function partCaptions(cues: Caption[], part: EditPart, style?: SubtitleStyle): Caption[];

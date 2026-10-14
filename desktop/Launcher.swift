@@ -17,7 +17,13 @@ final class StudioApp: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Thoát ShortCut Studio…", action: #selector(quitApp), keyEquivalent: "q").target = self
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "film.stack", accessibilityDescription: "ShortCut Studio")
+        if let iconURL = Bundle.main.url(forResource: "StudioMenuTemplate", withExtension: "png"),
+           let icon = NSImage(contentsOf: iconURL) {
+            icon.size = NSSize(width: 18, height: 18)
+            icon.isTemplate = true
+            icon.accessibilityDescription = "ShortCut Studio"
+            item.button?.image = icon
+        }
         item.button?.toolTip = "ShortCut Studio — Đang khởi động"
         item.menu = menu
         statusItem = item

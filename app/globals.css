@@ -79,10 +79,11 @@ button, input, textarea { font: inherit; }
 @font-face { font-family: "Studio Noto Sans KR"; src: url("/NotoSansKR-Variable.ttf") format("truetype"); font-style: normal; font-weight: 100 900; font-display: swap; }
 .social-copy { font-family: "Studio Noto Sans", "Studio Noto Sans JP", "Studio Noto Sans KR", sans-serif; font-weight: 700; letter-spacing: 0; color: #fff; -webkit-text-stroke: 0; text-shadow: 0 0 .045em rgb(255 255 255 / 85%), 0 0 .16em rgb(229 239 255 / 55%), 0 .07em .04em rgb(5 8 15 / 95%), 0 .12em .20em rgb(5 8 15 / 90%), 0 .02em .36em rgb(5 8 15 / 70%); }
 .social-copy-main { font-weight: 800; }
+.title-shine { color: #e8f7ff; text-shadow: 0 0 .08em #b4e9ff, 0 0 .18em #b4e9ff; }
 .overlay-copy-block { width: 100%; max-width: 100%; white-space: pre-line; overflow-wrap: anywhere; }
 .native-preview-video { position: absolute; left: 50%; top: 50%; height: 100%; width: auto; max-width: none; transform: translate(-50%, -50%); }
-.preview-controls { display: grid; grid-template-columns: 38px 42px minmax(0, 1fr) 42px; align-items: center; gap: 9px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 14px; background: rgb(0 0 0 / 28%); padding: 9px 11px; }
-.preview-controls button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid rgb(255 255 255 / 12%); border-radius: 10px; background: rgb(255 255 255 / 7%); color: #fff; transition: .18s ease; }
+.preview-controls { display: grid; grid-template-columns: 28px 28px 28px 32px minmax(0, 1fr) 32px; align-items: center; gap: 4px; border: 1px solid rgb(255 255 255 / 8%); border-radius: 14px; background: rgb(0 0 0 / 28%); padding: 9px 8px; }
+.preview-controls button { display: grid; width: 26px; height: 30px; place-items: center; border: 1px solid rgb(255 255 255 / 12%); border-radius: 10px; background: rgb(255 255 255 / 7%); color: #fff; transition: .18s ease; }
 .preview-controls button:hover:not(:disabled) { border-color: rgb(255 77 46 / 45%); background: rgb(255 77 46 / 15%); }
 .preview-controls button:disabled { cursor: not-allowed; color: #52525b; }
 .preview-controls span { font-variant-numeric: tabular-nums; font-size: 10px; color: #71717a; text-align: center; }

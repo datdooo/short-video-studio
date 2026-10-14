@@ -1,15 +1,21 @@
 import { spawnSync } from "node:child_process";
 import { createRequire, isBuiltin } from "node:module";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { chmod, copyFile, cp, mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
+import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { trimRuntime } from "./trim-runtime.mjs";
+import { auditMacOSRuntime } from "./audit-macos-runtime.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("This packaging script targets Apple Silicon Macs.");
-const releaseRoot = path.join(projectRoot, "release");
+const compatible26 = process.argv.includes("--macos26");
+const runtimeManifestPath = path.join(projectRoot, ".local-tools/macos26/runtime-manifest.json");
+if (compatible26 && !existsSync(runtimeManifestPath)) throw new Error("Run npm run setup:macos26 first to fetch verified compatible runtime binaries.");
+const compatibleRuntime = compatible26 ? JSON.parse(readFileSync(runtimeManifestPath, "utf8")) : null;
+const minimumOS = compatible26 ? "26.0" : run("/usr/bin/sw_vers", ["-productVersion"]).trim().split(".")[0] + ".0";
+const releaseRoot = path.join(projectRoot, "release", ...(compatible26 ? ["macos-26"] : []));
 const outputAppPath = path.join(releaseRoot, "ShortCut Studio.app");
 await mkdir(releaseRoot, { recursive: true });
 const stageRoot = await mkdtemp(path.join(releaseRoot, ".build-"));
@@ -31,8 +37,11 @@ await mkdir(binRoot, { recursive: true });
 await mkdir(libRoot, { recursive: true });
 await cp(path.join(projectRoot, "dist", "standalone"), appRoot, { recursive: true, dereference: true });
 await cp(path.join(projectRoot, "worker"), path.join(appRoot, "worker"), { recursive: true });
+await mkdir(path.join(appRoot, "lib"), { recursive: true });
+await copyFile(path.join(projectRoot, "lib/subtitles.mjs"), path.join(appRoot, "lib/subtitles.mjs"));
+for (const file of ['render-config.mjs', 'legacy-plan.mjs']) await copyFile(path.join(projectRoot, 'lib', file), path.join(appRoot, 'lib', file));
 await cp(path.join(projectRoot, "desktop"), path.join(resources, "desktop"), { recursive: true });
-await writeFile(path.join(resources, "config.json"), JSON.stringify({ existingDataRoot: path.join(projectRoot, "worker-data") }, null, 2));
+await writeFile(path.join(resources, "config.json"), JSON.stringify({ existingDataRoot: compatible26 ? null : path.join(projectRoot, "worker-data") }, null, 2));
 
 // Only Sharp and its installed runtime dependencies are additional to vinext's standalone output.
 const resolver = createRequire(path.join(projectRoot, "package.json"));
@@ -65,6 +74,7 @@ async function copyPackage(name, from = resolver, optional = false) {
   for (const dependency of Object.keys(metadata.optionalDependencies || {})) await copyPackage(dependency, nextResolver, true);
 }
 await copyPackage("sharp");
+await copyPackage("youtubei.js");
 console.log(`Removed ${Math.round((await trimRuntime(path.join(appRoot, "node_modules"))) / 1e6)} MB of generated development metadata.`);
 
 // Relocate Homebrew dylibs so Node/FFmpeg do not depend on Homebrew after packaging.
@@ -74,6 +84,12 @@ function dependencies(binary) {
   return run("/usr/bin/otool", ["-L", binary]).split("\n").slice(1).map((line) => line.trim().split(" (compatibility")[0]).filter(Boolean);
 }
 function resolveDependency(dependency, source) {
+  if (compatibleRuntime && (dependency.startsWith("/opt/homebrew/") || dependency.startsWith("@@HOMEBREW_PREFIX@@/") || dependency.startsWith("@@HOMEBREW_CELLAR@@/"))) {
+    const relative = dependency.replace(/^\/opt\/homebrew\//, "").replace(/^@@HOMEBREW_PREFIX@@\//, "").replace(/^@@HOMEBREW_CELLAR@@\//, "cellar/").replace(/^Cellar\//, "cellar/");
+    const candidate = path.join(compatibleRuntime.prefix, relative);
+    if (!existsSync(candidate)) throw new Error(`Missing compatible bottle dependency: ${dependency}`);
+    return candidate;
+  }
   if (dependency.startsWith("@loader_path/")) return path.join(path.dirname(source), dependency.slice(13));
   if (dependency.startsWith("@rpath/")) {
     const loadCommands = run("/usr/bin/otool", ["-l", source]);
@@ -110,16 +126,39 @@ async function bundleBinary(source, destination, isLibrary = false) {
   }
 }
 console.log("Bundling Node and GPU-enabled FFmpeg…");
-await bundleBinary(process.execPath, path.join(binRoot, "node"));
+await bundleBinary(compatibleRuntime?.node || process.execPath, path.join(binRoot, "node"));
 for (const name of ["ffmpeg", "ffprobe"]) {
   const configured = process.env[name === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"];
-  const executable = configured || run("/usr/bin/which", [name]).trim();
+  const executable = compatibleRuntime?.[name] || configured || run("/usr/bin/which", [name]).trim();
   await bundleBinary(executable, path.join(binRoot, name));
+}
+if (compatibleRuntime?.whisper) await bundleBinary(compatibleRuntime.whisper, path.join(binRoot, "whisper-cli"));
+if (compatibleRuntime?.whisper) {
+  const ggml = compatibleRuntime.formulas.find((item) => item.name === "ggml");
+  for (const file of await readdir(path.join(ggml.directory, "libexec"))) {
+    if (/^libggml-.*\.so$/.test(file)) await bundleBinary(path.join(ggml.directory, "libexec", file), path.join(binRoot, file));
+  }
 }
 for (const binary of packagedBinaries.reverse()) run("/usr/bin/codesign", ["--force", "--sign", "-", binary]);
 run(path.join(binRoot, "node"), ["--version"]);
 run(path.join(binRoot, "ffmpeg"), ["-version"]);
 run(path.join(binRoot, "ffprobe"), ["-version"]);
+if (compatibleRuntime) {
+  const licenses = path.join(resources, "licenses");
+  await mkdir(licenses, { recursive: true });
+  await copyFile(compatibleRuntime.nodeSource.license, path.join(licenses, "Node-LICENSE.txt"));
+  const nodeSource = Object.fromEntries(Object.entries(compatibleRuntime.nodeSource).filter(([key]) => key !== "license"));
+  await writeFile(path.join(licenses, "runtime-sources.json"), JSON.stringify({
+    targetMacOS: minimumOS, node: nodeSource,
+    formulas: compatibleRuntime.formulas.map(({ name, version, tag, url, sha256, sourceUrl }) => ({ name, version, tag, url, sha256, sourceUrl })),
+  }, null, 2));
+  for (const item of compatibleRuntime.formulas) {
+    for (const folder of ["share/doc", "share/licenses", ".bottle"]) {
+      const source = path.join(item.directory, folder);
+      if (existsSync(source)) await cp(source, path.join(licenses, item.name, folder), { recursive: true });
+    }
+  }
+}
 
 const bundledYtDlp = path.join(projectRoot, ".local-tools", "yt-dlp-macos-bundle");
 if (!existsSync(bundledYtDlp)) {
@@ -136,10 +175,15 @@ run(path.join(binRoot, "yt-dlp"), ["--version"]);
 
 console.log("Compiling macOS launcher…");
 const scratch = await mkdtemp(path.join(tmpdir(), "shortcut-mac-build-"));
-run("/usr/bin/swiftc", ["-O", "-target", "arm64-apple-macosx13.0", "-module-cache-path", path.join(scratch, "swift-cache"), path.join(projectRoot, "desktop", "Launcher.swift"), "-o", path.join(contents, "MacOS", "ShortCut Studio")]);
+run("/usr/bin/swiftc", ["-O", "-target", `arm64-apple-macosx${minimumOS}`, "-module-cache-path", path.join(scratch, "swift-cache"), path.join(projectRoot, "desktop", "Launcher.swift"), "-o", path.join(contents, "MacOS", "ShortCut Studio")]);
 const iconset = path.join(scratch, "Studio.iconset");
 await mkdir(iconset);
 const icon = readFileSync(path.join(projectRoot, "public", "favicon.svg"));
+const mark = icon.toString().match(/<g id="studio-mark"[\s\S]*?<\/g>/)?.[0];
+if (!mark) throw new Error("Brand SVG must contain the shared studio-mark group.");
+const menuIcon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><circle cx="256" cy="256" r="224" fill="none" stroke="#000" stroke-width="32"/>${mark.replaceAll("#fff", "#000")}</svg>`;
+// Template image adapts to the macOS menu bar's light/dark appearance.
+await sharp(Buffer.from(menuIcon)).resize(36, 36, { fit: "contain" }).png().toFile(path.join(resources, "StudioMenuTemplate.png"));
 for (const size of [16, 32, 128, 256, 512]) {
   await sharp(icon).resize(size, size).png().toFile(path.join(iconset, `icon_${size}x${size}.png`));
   await sharp(icon).resize(size * 2, size * 2).png().toFile(path.join(iconset, `icon_${size}x${size}@2x.png`));
@@ -148,12 +192,21 @@ run("/usr/bin/iconutil", ["-c", "icns", iconset, "-o", path.join(resources, "Stu
 await writeFile(path.join(contents, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
 <key>CFBundleName</key><string>ShortCut Studio</string><key>CFBundleDisplayName</key><string>ShortCut Studio</string>
 <key>CFBundleIdentifier</key><string>local.datdo.shortcutstudio</string><key>CFBundleExecutable</key><string>ShortCut Studio</string>
-<key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>1.0.0</string><key>CFBundleVersion</key><string>1</string>
-<key>CFBundleIconFile</key><string>Studio.icns</string><key>LSMinimumSystemVersion</key><string>13.0</string><key>LSUIElement</key><true/>
+<key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>1.1.0</string><key>CFBundleVersion</key><string>2</string>
+<key>CFBundleIconFile</key><string>Studio.icns</string><key>LSMinimumSystemVersion</key><string>${minimumOS}</string><key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>`);
+console.log(`Auditing every native binary for macOS <= ${minimumOS} and external dependencies…`);
+const audit = await auditMacOSRuntime(appPath, minimumOS);
+await writeFile(path.join(resources, "compatibility-report.json"), JSON.stringify({ targetMacOS: minimumOS, architecture: "arm64", binaries: audit }, null, 2));
 run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appPath]);
 run("/usr/bin/codesign", ["--verify", "--deep", "--strict", appPath]);
 if (existsSync(outputAppPath)) await rename(outputAppPath, path.join(stageRoot, "previous-build.app"));
 await rename(appPath, outputAppPath);
+if (compatible26) {
+  const zip = path.join(releaseRoot, "ShortCut-Studio-macOS26-AppleSilicon.zip");
+  if (existsSync(zip)) await rename(zip, path.join(stageRoot, "previous-build.zip"));
+  run("/usr/bin/ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", outputAppPath, zip]);
+  console.log(`ZIP (app permissions and resource metadata preserved): ${zip}`);
+}
 console.log(`\nReady: ${outputAppPath}\nDouble-click the app to start and open your browser.\nMedia data is kept outside the app bundle.`);

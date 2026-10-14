@@ -1,4 +1,5 @@
 import { EditPart, RENDER_PRESET } from "@/lib/edit-plan";
+import { foregroundFilter, FOREGROUND_Y, TITLE_LAYOUT } from './render-config.mjs';
 
 export type ScriptPreset = "latin" | "japanese" | "korean";
 
@@ -33,20 +34,12 @@ type OverlayFitConfig = {
 
 const OVERLAY_FIT: Record<OverlayRole, OverlayFitConfig> = {
   original: {
-    maxFontSize: 54,
-    minFontSize: 32,
-    maxLines: 3,
-    maxWidth: 900,
-    maxHeight: 220,
-    lineSpacing: 4,
+    ...TITLE_LAYOUT,
+    maxHeight: TITLE_LAYOUT.original.bottom - TITLE_LAYOUT.original.top,
   },
   part: {
-    maxFontSize: 82,
-    minFontSize: 44,
-    maxLines: 4,
-    maxWidth: 900,
-    maxHeight: 244,
-    lineSpacing: 6,
+    ...TITLE_LAYOUT,
+    maxHeight: TITLE_LAYOUT.part.bottom - TITLE_LAYOUT.part.top,
   },
 };
 
@@ -116,11 +109,11 @@ function ellipsizeLine(value: string, maxWidthEm: number) {
   return `${result}…`;
 }
 
-export function fitOverlayText(value: string, role: OverlayRole) {
+export function fitOverlayText(value: string, role: OverlayRole, fontCap = TITLE_LAYOUT.maxFontSize) {
   const config = OVERLAY_FIT[role];
   const normalized = value.trim().replace(/\s+/g, " ") || "UNTITLED";
 
-  for (let fontSize = config.maxFontSize; fontSize >= config.minFontSize; fontSize -= 2) {
+  for (let fontSize = Math.min(config.maxFontSize, fontCap); fontSize >= config.minFontSize; fontSize -= 2) {
     const lines = wrapByVisualWidth(normalized, config.maxWidth / fontSize);
     const textHeight = lines.length * fontSize + Math.max(0, lines.length - 1) * config.lineSpacing;
     if (lines.length <= config.maxLines && textHeight <= config.maxHeight) {
@@ -148,6 +141,11 @@ export function fitOverlayText(value: string, role: OverlayRole) {
   };
 }
 
+export function fitTitlePair(original: string, part: string) {
+  const size = Math.min(fitOverlayText(original, 'original').fontSize, fitOverlayText(part, 'part').fontSize);
+  return { original: fitOverlayText(original, 'original', size), part: fitOverlayText(part, 'part', size) };
+}
+
 function escapeDrawText(value: string) {
   return value
     .replace(/\\/g, "\\\\")
@@ -171,8 +169,7 @@ export function buildFfmpegArgs(input: RenderSpecInput) {
     `[0:a]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS[a${index}]`,
   ]);
   const concatInputs = input.part.segments.map((_, index) => `[v${index}][a${index}]`).join("");
-  const originalFit = fitOverlayText(input.originalTitle, "original");
-  const partFit = fitOverlayText(input.part.title, "part");
+  const { original: originalFit, part: partFit } = fitTitlePair(input.originalTitle, input.part.title);
   const originalTitle = escapeDrawText(originalFit.text);
   const partTitle = escapeDrawText(partFit.text);
   const indicator = `${input.part.id}/${input.totalParts}`;
@@ -184,10 +181,10 @@ export function buildFfmpegArgs(input: RenderSpecInput) {
     `[cutv]eq=contrast=1.04:saturation=1.06[graded]`,
     `[graded]split=2[bgsrc][mainsrc]`,
     `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=${RENDER_PRESET.width}:${RENDER_PRESET.height}:flags=bilinear,eq=brightness=-0.5[bg]`,
-    `[mainsrc]crop=w='min(iw,1080)':h='min(ih,1080)':x='max((iw-1080)/2,0)':y='max((ih-1080)/2,0)',pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black[main]`,
-    `[bg][main]overlay=0:360[layout]`,
-    `[layout]drawtext=fontfile='${font}':text='${originalTitle}':fontcolor=white:fontsize=${originalFit.fontSize}:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=338-text_h:line_spacing=${originalFit.lineSpacing}[t1]`,
-    `[t1]drawtext=fontfile='${font}':text='${partTitle}':fontcolor=white:fontsize=${partFit.fontSize}:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=1472:line_spacing=${partFit.lineSpacing}[t2]`,
+    `[mainsrc]${foregroundFilter()}[main]`,
+    `[bg][main]overlay=0:${FOREGROUND_Y}[layout]`,
+    `[layout]drawtext=fontfile='${font}':text='${originalTitle}':fontcolor=white:fontsize=${originalFit.fontSize}:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=${TITLE_LAYOUT.original.bottom}-text_h:line_spacing=${originalFit.lineSpacing}[t1]`,
+    `[t1]drawtext=fontfile='${font}':text='${partTitle}':fontcolor=white:fontsize=${partFit.fontSize}:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=${TITLE_LAYOUT.part.top}:line_spacing=${partFit.lineSpacing}[t2]`,
     `[t2]drawtext=fontfile='${font}':text='${indicator}':fontcolor=white:fontsize=58:borderw=0:shadowcolor=black@0.85:shadowx=0:shadowy=3:x=(w-text_w)/2:y=1804[titled]`,
     `[titled]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,setpts=PTS/${RENDER_PRESET.speed}[vout]`,
     `[cuta]atempo=${RENDER_PRESET.speed}[aout]`,
@@ -231,8 +228,7 @@ export function buildFfmpegArgs(input: RenderSpecInput) {
 
 export function buildRenderManifest(input: Omit<RenderSpecInput, "fontFile">) {
   const fonts = fontStackFor(`${input.originalTitle} ${input.part.title}`);
-  const originalFit = fitOverlayText(input.originalTitle, "original");
-  const partFit = fitOverlayText(input.part.title, "part");
+  const { original: originalFit, part: partFit } = fitTitlePair(input.originalTitle, input.part.title);
   return {
     pipeline: [
       "select source-timestamp segments",
@@ -254,14 +250,14 @@ export function buildRenderManifest(input: Omit<RenderSpecInput, "fontFile">) {
       maxWidthPercent: 83.3,
       autoScale: true,
       fixedZones: {
-        originalTitle: { y: "94–338", align: "bottom", ...originalFit },
-        partTitle: { y: "1472–1716", align: "top", ...partFit },
+        originalTitle: { y: `${TITLE_LAYOUT.original.top}–${TITLE_LAYOUT.original.bottom}`, align: "bottom", ...originalFit },
+        partTitle: { y: `${TITLE_LAYOUT.part.top}–${TITLE_LAYOUT.part.bottom}`, align: "top", ...partFit },
         partIndicator: { y: 1804 },
       },
     },
     mainVideo: {
-      scale: "native 100%",
-      frame: "1080x1080",
+      scale: "native foreground × 1.25",
+      frame: "1080x1350",
       position: "center",
       overflow: "crop horizontally; pad only when source is smaller than the frame",
     },

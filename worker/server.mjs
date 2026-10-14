@@ -14,19 +14,32 @@ import {
 } from "node:fs";
 import {
   mkdir,
+  lstat,
   chmod,
   readFile,
   readdir,
+  rm,
   rename,
   stat,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
+import { homedir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import { removeBatchItem } from "./batch-cleanup.mjs";
+import { createBatchSubmissionQueue } from "./batch-queue.mjs";
+import { createMediaLibrary } from "./media-library.mjs";
 import { validatePlan } from "./plan-validation.mjs";
+import { trimPartStart } from "./part-start.mjs";
+import { createExportNameAllocator } from "./export-names.mjs";
+import { createSpeechService } from "./speech.mjs";
+import { smartCutPlan } from "./smart-cut.mjs";
+import { createYouTubeDownloader } from "./youtube-downloader.mjs";
+import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundFilter, timelineDuration } from '../lib/render-config.mjs';
+import { originalCutPlan } from '../lib/legacy-plan.mjs';
+import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack } from "../lib/subtitles.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
@@ -34,13 +47,14 @@ const sourcesRoot = path.join(dataRoot, "sources");
 const port = Number(process.env.MEDIA_WORKER_PORT || 8787);
 const host = "127.0.0.1";
 const jobs = new Map();
+const exportNameAllocator = createExportNameAllocator();
 const batches = new Map();
 const batchControllers = new Map();
 const renderControllers = new Map();
 const batchHistoryPath = path.join(dataRoot, "batch-history.json");
 let historyWriteQueue = Promise.resolve();
 function persistBatchHistory() {
-  const snapshot = JSON.stringify({ batches: [...batches.values()], jobs: [...jobs.values()].filter((job) => [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && item.jobId === job.id))) });
+  const snapshot = JSON.stringify({ batches: [...batches.values()], jobs: [...jobs.values()].filter((job) => job.origin === "editor" || [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && item.jobId === job.id))) });
   historyWriteQueue = historyWriteQueue.then(async () => {
     await mkdir(dataRoot, { recursive: true });
     const temporary = `${batchHistoryPath}.tmp`;
@@ -117,8 +131,55 @@ async function importLegacyRenderHistory() {
   }
 }
 let renderQueue = Promise.resolve();
-let batchPreparationQueue = Promise.resolve();
-const transcriptRequests = new Map();
+const batchPreparationQueue = createBatchSubmissionQueue({
+  batches, controllers: batchControllers, prepare: prepareBatch, onChange: persistBatchHistory,
+});
+const legacyDataRoot = process.env.MEDIA_WORKER_LEGACY_DATA_DIR || path.join(homedir(), "Documents", "tiktok-edit", "short-video-studio", "worker-data");
+const mediaLibrary = createMediaLibrary({
+  roots: [
+    { id: "current", label: "Dữ liệu app hiện tại", root: dataRoot },
+    ...(process.env.MEDIA_WORKER_DISABLE_LEGACY === "1" || path.resolve(legacyDataRoot) === dataRoot ? [] : [{ id: "legacy", label: "Dữ liệu cũ trong Documents", root: legacyDataRoot }]),
+  ],
+  isBusy: ({ storageId, sourceId }) => storageId === "current" && (
+    speech.isBusy(sourceId) ||
+    [...jobs.values()].some((job) => job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id))) ||
+    [...batches.values()].some((batch) => batch.items.some((item) => (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing"].includes(item.state))))
+  ),
+  onMoved: async (item) => {
+    if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
+    const job = jobs.get(item.jobId);
+    if (job) {
+      if (item.kind === "parts") { job.deleted = true; job.outputs = []; }
+      else job.outputs = job.outputs.filter((output) => output.url !== item.renderUrl);
+    }
+    await persistBatchHistory();
+  },
+  onRestored: async (item) => {
+    if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
+    const outputs = [];
+    for (const part of [1, 2]) {
+      const folder = path.join(sourcesRoot, item.sourceId, "outputs", item.jobId, `part-${part}`);
+      let files;
+      try {
+        const info = await lstat(folder);
+        if (!info.isDirectory() || info.isSymbolicLink()) continue;
+        files = await readdir(folder, { withFileTypes: true });
+      } catch { continue; }
+      for (const file of files.filter((file) => file.isFile() && /\.mp4$/i.test(file.name))) {
+        outputs.push({ part, filename: file.name, size: (await stat(path.join(folder, file.name))).size, url: `/files/${item.sourceId}/outputs/${item.jobId}/part-${part}/${encodeURIComponent(file.name)}` });
+      }
+    }
+    const job = jobs.get(item.jobId);
+    if (job) { job.outputs = outputs; delete job.deleted; }
+    else jobs.set(item.jobId, { id: item.jobId, sourceId: item.sourceId, state: "done", progress: 100, currentPart: null, outputs, error: null });
+    const restoredItemIds = [];
+    for (const batch of batches.values()) for (const candidate of batch.items) {
+      if (candidate.jobId === item.jobId && candidate.deleted) { delete candidate.deleted; candidate.state = "done"; candidate.error = null; restoredItemIds.push(candidate.id); }
+    }
+    await persistBatchHistory();
+    return { restoredItemIds, restoredUrls: outputs.map((output) => output.url) };
+  },
+});
 const pendingChatGPTAuth = new Map();
 const chatGPTRefreshes = new Map();
 const chatGPTHostPath = path.join(dataRoot, "chatgpt-host.json");
@@ -150,9 +211,12 @@ function resolveBinary(environmentName, name, fallbacks = []) {
 
 const ffmpeg = resolveBinary("FFMPEG_PATH", "ffmpeg", ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]);
 const ffprobe = resolveBinary("FFPROBE_PATH", "ffprobe", ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"]);
+const whisper = resolveBinary("WHISPER_PATH", "whisper-cli", ["/opt/homebrew/bin/whisper-cli"]);
+const speech = createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, run });
 const ytDlp = resolveBinary("YT_DLP_PATH", "yt-dlp", [
   path.join(projectRoot, ".local-tools", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
 ]);
+const youtube = createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMedia, upscaleEncoder: () => preferredVideoEncoder });
 
 function supportsEncoder(binary, encoder) {
   if (!binary) return false;
@@ -764,113 +828,38 @@ async function saveSourceMetadata(directory, source) {
   return source;
 }
 
-function validateYouTubeUrl(url) {
-  if (!/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i.test(url)) {
-    throw new Error("URL phải thuộc YouTube.");
-  }
-}
-
 async function fetchYouTubeTranscript(url, signal) {
-  signal?.throwIfAborted();
-  validateYouTubeUrl(url);
-  if (!ytDlp) throw new Error("Chưa có yt-dlp. Chạy npm run setup:media.");
-  if (!signal && transcriptRequests.has(url)) return transcriptRequests.get(url);
-  const request = (async () => {
-    const metadata = await run(ytDlp, [
-      "--no-playlist", "--skip-download", "--dump-single-json",
-      "--js-runtimes", `node:${process.execPath}`, url,
-    ], { maxStdout: 10 * 1024 * 1024, signal });
-    const info = JSON.parse(metadata.stdout);
-    const manual = Object.keys(info.subtitles || {}).filter((key) => key !== "live_chat");
-    const automatic = Object.keys(info.automatic_captions || {});
-    const titleScriptLanguage = /[\uac00-\ud7af]/.test(info.title || "") ? "ko"
-      : /[\u3040-\u30ff]/.test(info.title || "") ? "ja" : "";
-    const original = automatic.find((key) => key.endsWith("-orig") && (!titleScriptLanguage || key.startsWith(titleScriptLanguage)))
-      || automatic.find((key) => key.endsWith("-orig"));
-    const language = String(titleScriptLanguage || info.language || original?.replace(/-orig$/, "") || "");
-    const matching = (keys) => keys.find((key) => key === language)
-      || keys.find((key) => language && key.split("-")[0] === language.split("-")[0]);
-    const originalMatching = automatic.find((key) => key.endsWith("-orig") && language && key.split("-")[0] === language.split("-")[0]);
-    const selected = matching(manual) || originalMatching || matching(automatic) || original || manual[0] || automatic[0];
-    if (!selected) return { title: String(info.title || "YouTube video"), transcript: "", language, message: "YouTube không cung cấp phụ đề cho video này. Có thể dùng Manual cut hoặc nhập transcript." };
-    const directory = path.join(sourcesRoot, randomUUID());
-    await mkdir(directory, { recursive: true });
-    await run(ytDlp, [
-      "--no-playlist", "--skip-download", "--write-subs", "--write-auto-subs",
-      "--sub-langs", selected, "--sub-format", "vtt",
-      "--js-runtimes", `node:${process.execPath}`,
-      "-o", path.join(directory, "transcript.%(ext)s"), url,
-    ], { signal });
-    const files = await readdir(directory);
-    const subtitle = files.find((name) => name.endsWith(".vtt"));
-    if (!subtitle) throw new Error("YouTube có phụ đề nhưng tải transcript chưa thành công. Hãy thử lại.");
-    return {
-      title: String(info.title || "YouTube video"),
-      transcript: vttToTranscript(await readFile(path.join(directory, subtitle), "utf8")),
-      language: selected,
-      message: "",
-    };
-  })();
-  if (!signal) {
-    transcriptRequests.set(url, request);
-    request.then((result) => { if (!result.transcript) transcriptRequests.delete(url); }, () => transcriptRequests.delete(url));
-  }
-  return request;
+  const info = await youtube.transcript(url, signal);
+  return {
+    title: String(info.title || "YouTube video"),
+    transcript: vttToTranscript(info.vtt || ""), captions: parseCaptions(info.vtt || ""),
+    language: info.language || "",
+    message: info.vtt ? "" : "YouTube không cung cấp phụ đề cho video này. Có thể dùng Manual cut hoặc Auto Subtitle.",
+  };
 }
 
 async function importYouTube(url, signal) {
-  signal?.throwIfAborted();
-  if (!ytDlp) throw new Error("Chưa có yt-dlp. Chạy `npm run setup:media` rồi thử lại.");
-  if (!/^https?:\/\/(?:www\.|m\.)?(?:youtube\.com|youtu\.be)\//i.test(url)) {
-    throw new Error("URL phải thuộc YouTube.");
-  }
-  const id = randomUUID();
-  const directory = path.join(sourcesRoot, id);
-  await mkdir(directory, { recursive: true });
-  const outputTemplate = path.join(directory, "source.%(ext)s");
-  await run(ytDlp, [
-    "--no-playlist",
-    "--newline",
-    "--js-runtimes", `node:${process.execPath}`,
-    "--write-info-json",
-    "-S", "res:1080,ext:mp4:m4a",
-    "--merge-output-format", "mp4",
-    "-o", outputTemplate,
-    url,
-  ], { missingMessage: "Chưa có yt-dlp. Chạy `npm run setup:media`.", signal });
-
-  const captions = await fetchYouTubeTranscript(url, signal).catch((error) => ({
-    transcript: "", message: `Không tải được transcript: ${error.message}`,
-  }));
-  signal?.throwIfAborted();
-
-  const mediaPath = await findSourceMedia(directory);
-  const media = await probeMedia(mediaPath);
-  const entries = await readdir(directory);
-  const infoName = entries.find((name) => name.endsWith(".info.json"));
-  const info = infoName ? JSON.parse(await readFile(path.join(directory, infoName), "utf8")) : {};
-  const subtitleNames = entries.filter((name) => name.endsWith(".vtt")).sort((a, b) => {
-    const priority = (name) => /\.(de|en|fr|ja|ko)(?:[-.]|$)/i.test(name) ? 0 : 1;
-    return priority(a) - priority(b);
-  });
-  const transcript = captions.transcript || "";
-  const source = {
-    id,
-    kind: "youtube",
-    title: String(info.title || "YouTube video"),
-    originalFilename: path.basename(mediaPath),
-    duration: media.duration,
-    width: media.width,
-    height: media.height,
-    hasAudio: media.hasAudio,
-    transcript,
-    transcriptMessage: captions.message,
-    language: captions.language || info.language || "",
-    subtitleFound: Boolean(transcript),
-    subtitleFile: subtitleNames[0] || null,
-    createdAt: new Date().toISOString(),
-  };
-  return saveSourceMetadata(directory, source);
+  return youtube.download(url, async ({ info, media, mediaPath, parsed, signal: activeSignal }) => {
+    const id = randomUUID(), directory = path.join(sourcesRoot, id);
+    let captions;
+    try { captions = await fetchYouTubeTranscript(parsed.url, activeSignal); }
+    catch (error) { activeSignal.throwIfAborted(); captions = { transcript: "", message: error.message }; }
+    activeSignal.throwIfAborted();
+    await mkdir(directory, { recursive: true });
+    try {
+      const filename = `source${path.extname(mediaPath)}`;
+      await rename(mediaPath, path.join(directory, filename));
+      return await saveSourceMetadata(directory, {
+        id, kind: "youtube", title: String(info.title || "YouTube video"), sourceUrl: `https://www.youtube.com/watch?v=${parsed.id}`,
+        originalFilename: filename, ...media, transcript: captions.transcript || "",
+        transcriptMessage: captions.message || "", captions: captions.captions || [],
+        language: captions.language || info.language || "", subtitleFound: Boolean(captions.transcript),
+        subtitleFile: null, youtubeVideoId: parsed.id, createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      await rm(directory, { recursive: true, force: true }); throw error;
+    }
+  }, signal);
 }
 
 async function importUpload(request, url) {
@@ -939,8 +928,8 @@ function registerOverlayFonts() {
 }
 
 const overlayFitConfig = {
-  original: { maxFontSize: 54, minFontSize: 32, maxLines: 3, maxWidth: 900, maxHeight: 220, lineSpacing: 4 },
-  part: { maxFontSize: 82, minFontSize: 44, maxLines: 4, maxWidth: 900, maxHeight: 244, lineSpacing: 6 },
+  original: { ...TITLE_LAYOUT, maxHeight: TITLE_LAYOUT.original.bottom - TITLE_LAYOUT.original.top },
+  part: { ...TITLE_LAYOUT, maxHeight: TITLE_LAYOUT.part.bottom - TITLE_LAYOUT.part.top },
 };
 
 function characterWidthEm(character) {
@@ -1009,11 +998,11 @@ function ellipsizeLine(value, maxWidthEm) {
   return `${result}…`;
 }
 
-function fitOverlayText(value, role) {
+function fitOverlayText(value, role, fontCap = TITLE_LAYOUT.maxFontSize) {
   const config = overlayFitConfig[role];
   const normalized = String(value || "").trim().replace(/\s+/g, " ") || "UNTITLED";
 
-  for (let fontSize = config.maxFontSize; fontSize >= config.minFontSize; fontSize -= 2) {
+  for (let fontSize = Math.min(config.maxFontSize, fontCap); fontSize >= config.minFontSize; fontSize -= 2) {
     const lines = wrapByVisualWidth(normalized, config.maxWidth / fontSize);
     const textHeight = lines.length * fontSize + Math.max(0, lines.length - 1) * config.lineSpacing;
     if (lines.length <= config.maxLines && textHeight <= config.maxHeight) {
@@ -1064,32 +1053,84 @@ function svgTextLines(lines, { fontFamily, fontSize, firstBaseline, lineHeight, 
   </g>`;
 }
 
-async function renderTitleOverlay({ outputPath, originalTitle, partTitle, partId, totalParts }) {
+async function renderTitleOverlay({ outputPath, shineOutputPath, originalTitle, partTitle, partId, totalParts }) {
   await registerOverlayFonts();
-  const originalFit = fitOverlayText(originalTitle, "original");
-  const partFit = fitOverlayText(partTitle, "part");
+  const size = Math.min(fitOverlayText(originalTitle, 'original').fontSize, fitOverlayText(partTitle, 'part').fontSize);
+  const originalFit = fitOverlayText(originalTitle, "original", size);
+  const partFit = fitOverlayText(partTitle, "part", size);
   const originalLineHeight = originalFit.fontSize + originalFit.lineSpacing;
-  const originalLastBaseline = 332 - originalFit.fontSize * 0.2;
+  const originalLastBaseline = TITLE_LAYOUT.original.bottom - originalFit.fontSize * 0.2;
   const originalFirstBaseline = originalLastBaseline - (originalFit.lines.length - 1) * originalLineHeight;
   const partLineHeight = partFit.fontSize + partFit.lineSpacing;
   const originalFamily = fontFamilyFor(originalTitle);
   const partFamily = fontFamilyFor(partTitle);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
-      ${svgTextLines(originalFit.lines, { fontFamily: originalFamily, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, fontWeight: 700 })}
-      ${svgTextLines(partFit.lines, { fontFamily: partFamily, fontSize: partFit.fontSize, firstBaseline: 1472 + partFit.fontSize * 0.82, lineHeight: partLineHeight })}
+      <defs><clipPath id="top-title-zone"><rect x="0" y="0" width="1080" height="${FOREGROUND_Y}" /></clipPath><clipPath id="bottom-title-zone"><rect x="0" y="${TITLE_LAYOUT.part.top - 24}" width="1080" height="${1800 - (TITLE_LAYOUT.part.top - 24)}" /></clipPath></defs>
+      <g clip-path="url(#top-title-zone)">${svgTextLines(originalFit.lines, { fontFamily: originalFamily, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, fontWeight: 700 })}</g>
+      <g clip-path="url(#bottom-title-zone)">${svgTextLines(partFit.lines, { fontFamily: partFamily, fontSize: partFit.fontSize, firstBaseline: TITLE_LAYOUT.part.top + partFit.fontSize * 0.82, lineHeight: partLineHeight, fontWeight: 700 })}</g>
       ${svgTextLines([`${partId}/${totalParts}`], { fontFamily: partFamily, fontSize: 58, firstBaseline: 1850, lineHeight: 60 })}
     </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outputPath);
+  if (shineOutputPath) {
+    const shineText = (fit, family, baseline) => `<g font-family="${escapeXml(family)}" font-size="${fit.fontSize}" font-weight="700"><g fill="#b4e9ff" filter="url(#shine-glow)">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g><g fill="#e8f7ff">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g></g>`;
+    const shineSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><defs><filter id="shine-glow"><feGaussianBlur stdDeviation="${size * .08}"/></filter><clipPath id="top"><rect width="1080" height="${FOREGROUND_Y}"/></clipPath><clipPath id="bottom"><rect y="${TITLE_LAYOUT.part.top - 24}" width="1080" height="${1800 - TITLE_LAYOUT.part.top + 24}"/></clipPath></defs><g clip-path="url(#top)">${shineText(originalFit, originalFamily, originalFirstBaseline)}</g><g clip-path="url(#bottom)">${shineText(partFit, partFamily, TITLE_LAYOUT.part.top + size * .82)}</g></svg>`;
+    await sharp(Buffer.from(shineSvg)).png().toFile(shineOutputPath);
+  }
 }
+
+async function subtitleFrames(source, plan, part, directory, signal) {
+  const style = subtitleStyle(plan.subtitles);
+  if (!style.enabled) return null;
+  const supplied = plan.captionCues;
+  let cues;
+  if (!style.enabled) cues = [];
+  else if (supplied) {
+    cues = sourceCaptionTrack(supplied, source).cues;
+  } else cues = (await speech.captions(source, signal, { provider: style.source })).cues;
+  if (style.enabled && !cues.length) {
+    if (!source.hasAudio) return null;
+    throw new Error("Không nhận diện được lời nói để tạo phụ đề. Kiểm tra audio hoặc tắt Auto Subtitle.");
+  }
+  await registerOverlayFonts();
+  const captions = partCaptions(cues, part, style);
+  const blank = path.join(directory, "subtitle-blank.png");
+  await sharp({ create: { width: 1080, height: 1920, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toFile(blank);
+  const frames = []; let position = 0;
+  const add = (file, duration) => { if (duration > 0.001) frames.push(`file '${path.basename(file)}'\nduration ${duration.toFixed(6)}`); };
+  for (const [index, cue] of captions.entries()) {
+    signal?.throwIfAborted();
+    const start = Math.max(position, cue.start), end = Math.min(cue.end, captions[index + 1]?.start ?? Infinity);
+    if (end <= start) continue;
+    add(blank, start - position);
+    const file = path.join(directory, `subtitle-${index}.png`);
+    const size = style.size;
+    const lines = cue.text.split("\n"), family = style.font === "auto" ? fontFamilyFor(cue.text) : `${style.font}, Noto Sans JP, Noto Sans KR, sans-serif`;
+    const y = subtitleY(style, source.height);
+    const text = lines.map((line, lineIndex) => `<text x="540" y="${y - (lines.length - lineIndex - 1) * size * 1.2}" text-anchor="middle">${escapeXml(line)}</text>`).join("");
+    const graphic = `<g font-family="${escapeXml(family)}" font-size="${size}" font-weight="700" stroke-linejoin="round" paint-order="stroke fill"><g transform="translate(2,3)" fill="#000" stroke="#000" stroke-width="${style.outline * 2 + 2}" opacity=".6">${text}</g><g fill="${style.color}" stroke="${style.outlineColor}" stroke-width="${style.outline * 2}">${text}</g></g>`;
+    const svg = (opacity) => `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><g opacity="${opacity}">${graphic}</g></svg>`;
+    await sharp(Buffer.from(svg(1))).png().toFile(file);
+    add(file, end - start);
+    position = end;
+  }
+  const duration = timelineDuration(part.segments);
+  add(blank, Math.max(0.04, duration - position));
+  const list = path.join(directory, "subtitles.ffconcat");
+  await writeFile(list, `ffconcat version 1.0\n${frames.join("\n")}\nfile '${path.basename(blank)}'\n`);
+  return list;
+}
+
 
 async function renderPart({ source, plan, part, totalParts, outputPath, onProgress, signal }) {
   signal?.throwIfAborted();
   if (!ffmpeg) throw new Error("Không tìm thấy FFmpeg. macOS: brew install ffmpeg");
   const workDirectory = path.dirname(outputPath);
   const titleOverlayPath = path.join(workDirectory, `part-${part.id}-titles.png`);
+  const titleShinePath = path.join(workDirectory, `part-${part.id}-shine.png`);
   await renderTitleOverlay({
     outputPath: titleOverlayPath,
+    shineOutputPath: titleShinePath,
     originalTitle: plan.originalTitle,
     partTitle: part.title,
     partId: part.id,
@@ -1097,12 +1138,14 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
   });
 
   const audioInput = source.hasAudio ? "0:a" : "1:a";
+  const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
   const segmentFilters = part.segments.flatMap((segment, index) => [
     `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS,fps=30,setsar=1[v${index}]`,
     `[${audioInput}]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${index}]`,
   ]);
   const concatInputs = part.segments.map((_, index) => `[v${index}][a${index}]`).join("");
   const overlayInput = source.hasAudio ? 1 : 2;
+  const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t/${PLAYBACK_RATE},${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
   const filters = [
     ...segmentFilters,
     `${concatInputs}concat=n=${part.segments.length}:v=1:a=1[cutv][cuta]`,
@@ -1111,12 +1154,15 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
     `color=c=black:s=1080x1920:r=30[black]`,
     `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=1080:1920:flags=bilinear,format=rgba,colorchannelmixer=aa=0.5[bgvideo]`,
     `[black][bgvideo]overlay=shortest=1[bg]`,
-    `[mainsrc]crop=w='min(iw,1080)':h='min(ih,1080)':x='max((iw-1080)/2,0)':y='max((ih-1080)/2,0)',pad=1080:1080:(ow-iw)/2:(oh-ih)/2:black[main]`,
-    `[bg][main]overlay=0:360:shortest=1[layout]`,
+    `[mainsrc]${foregroundFilter()}[main]`,
+    `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1[layout]`,
     `[${overlayInput}:v]format=rgba[titlecard]`,
-    `[layout][titlecard]overlay=0:0:shortest=1[titled]`,
-    `[titled]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,setpts=PTS/1.25[vout]`,
-    `[cuta]atempo=1.25[aout]`,
+    `[layout][titlecard]overlay=0:0:shortest=1[baseTitles]`,
+    `[${overlayInput + 1}:v]format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
+    `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1[titled]`,
+    ...(subtitlesPath ? [`[${overlayInput + 2}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0[subtitled]`] : []),
+    `[${subtitlesPath ? "subtitled" : "titled"}]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,setpts=PTS/${PLAYBACK_RATE}[vout]`,
+    `[cuta]atempo=${PLAYBACK_RATE}[aout]`,
   ];
 
   const buildArgs = (videoEncoder) => {
@@ -1128,6 +1174,8 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
     args.push("-i", source.mediaPath);
     if (!source.hasAudio) args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo");
     args.push("-loop", "1", "-framerate", "30", "-i", titleOverlayPath);
+    args.push("-loop", "1", "-framerate", "30", "-i", titleShinePath);
+    if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
     args.push(
       "-filter_complex", filters.join(";"),
       "-map", "[vout]",
@@ -1171,7 +1219,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
     return args;
   };
 
-  const expectedMicroseconds = part.segments.reduce((sum, segment) => sum + segment.end - segment.start, 0) / 1.25 * 1_000_000;
+  const expectedMicroseconds = timelineDuration(part.segments) / PLAYBACK_RATE * 1_000_000;
   let progressBuffer = "";
   const renderOptions = {
     signal,
@@ -1210,21 +1258,8 @@ function exportPrefixFor(plan, source) {
   return aliases[String(plan.language || "").toLowerCase()] || "us";
 }
 
-async function reserveExportNames(plan, source) {
-  const filename = path.join(dataRoot, "export-name-counters.json");
-  let counters;
-  try { counters = JSON.parse(await readFile(filename, "utf8")); }
-  catch (error) { if (error.code !== "ENOENT") throw error; counters = {}; }
-  const prefix = exportPrefixFor(plan, source);
-  const previous = counters[prefix] ?? 0;
-  if (!Number.isInteger(previous) || previous < 0) throw new Error("Bộ đếm tên file không hợp lệ.");
-  const index = previous + 1;
-  if (index > 240) throw new Error(`Tên ${prefix} đã quá dài sau 240 video. Cần đổi quy tắc đặt tên.`);
-  counters[prefix] = index;
-  const temporary = `${filename}.${randomUUID()}.tmp`;
-  await writeFile(temporary, JSON.stringify(counters, null, 2));
-  await rename(temporary, filename);
-  return plan.parts.map((_, partIndex) => `${prefix}${String(partIndex + 1).repeat(index)}.mp4`);
+function reserveExportNames(plan, source) {
+  return exportNameAllocator.reserve(exportPrefixFor(plan, source), plan.parts.length);
 }
 
 async function executeRender(job, source, plan, signal) {
@@ -1234,7 +1269,8 @@ async function executeRender(job, source, plan, signal) {
     job.startedAt = new Date().toISOString();
     const outputDirectory = path.join(source.directory, "outputs", job.id);
     await mkdir(outputDirectory, { recursive: true });
-    const exportNames = await reserveExportNames(plan, source);
+    const exportNames = job.exportNames || await reserveExportNames(plan, source);
+    job.exportNames = exportNames;
     for (const [index, part] of plan.parts.entries()) {
       signal?.throwIfAborted();
       job.currentPart = part.id;
@@ -1272,12 +1308,26 @@ async function executeRender(job, source, plan, signal) {
 }
 
 async function startRender(body, parentSignal) {
+  if (mediaLibrary.isLocked(body.sourceId)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
   const source = await loadSource(body.sourceId);
   parentSignal?.throwIfAborted();
+  body.plan = originalCutPlan(body.plan, source.id);
   validatePlan(body.plan, source);
+  let originalPlan = structuredClone({ ...body.plan, originalTitle: source.title, parts: body.plan.parts.map(trimPartStart) });
+  if (!["manual", "mock"].includes(originalPlan.providerUsed) && originalPlan.parts.some((part) => !part.smartCutApplied)) {
+    originalPlan = smartCutPlan(originalPlan, await speech.boundaries(source), source.duration);
+  }
+  originalPlan.subtitles = subtitleStyle(originalPlan.subtitles);
+  if (originalPlan.subtitles.enabled && originalPlan.captionCues) originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
+  const renderPlan = originalPlan;
+  validatePlan(renderPlan, source);
+  if (mediaLibrary.isLocked(source.id)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
   const job = {
     id: randomUUID(),
     sourceId: source.id,
+    origin: parentSignal ? "batch" : "editor",
+    plan: originalPlan,
+    startTrimSeconds: 1,
     state: "queued",
     progress: 0,
     currentPart: null,
@@ -1287,12 +1337,13 @@ async function startRender(body, parentSignal) {
     createdAt: new Date().toISOString(),
   };
   jobs.set(job.id, job);
+  void persistBatchHistory();
   const controller = new AbortController();
   renderControllers.set(job.id, controller);
   const abort = () => cancelRender(job);
   parentSignal?.addEventListener("abort", abort, { once: true });
   if (parentSignal?.aborted) abort();
-  renderQueue = renderQueue.then(() => executeRender(job, source, body.plan, controller.signal)).catch((error) => {
+  renderQueue = renderQueue.then(() => executeRender(job, source, renderPlan, controller.signal)).catch((error) => {
     job.state = "error";
     job.error = error instanceof Error ? error.message : String(error);
   }).finally(() => {
@@ -1310,6 +1361,11 @@ function cancelRender(job) {
   job.error = null;
   job.finishedAt = new Date().toISOString();
   renderControllers.get(job.id)?.abort();
+  void persistBatchHistory();
+}
+
+function renderSnapshot(job) {
+  return { ...job, stopping: job.state === "cancelled" && renderControllers.has(job.id) };
 }
 
 function cancelBatch(batch) {
@@ -1320,9 +1376,9 @@ function cancelBatch(batch) {
   }
 }
 
-async function prepareBatch(batch, body) {
+async function prepareBatch(batch, body, items) {
   const signal = batchControllers.get(batch.id).signal;
-  for (const item of batch.items) {
+  for (const item of items) {
     if (item.deleted) continue;
     if (signal.aborted) break;
     try {
@@ -1339,7 +1395,7 @@ async function prepareBatch(batch, body) {
         .replace("__BATCH_TRANSCRIPT__", source.transcript);
       const result = await analyzeWithChatGPTPlan({ input, schema: body.schema }, signal);
       signal.throwIfAborted();
-      item.plan = { ...result.plan, originalTitle: source.title, providerUsed: "chatgpt" };
+      item.plan = { ...result.plan, originalTitle: source.title, providerUsed: "chatgpt", subtitles: subtitleStyle(body.subtitles) };
       item.plan.parts?.forEach((part, index) => { part.id = index + 1; });
       if (item.plan.parts?.length !== 2 || item.plan.parts.some((part) => !Array.isArray(part.hashtags) || new Set(part.hashtags).size !== 10)) {
         throw new Error("AI phải trả về đúng 2 part và 10 hashtag khác nhau cho mỗi part. Thử lại video này.");
@@ -1444,13 +1500,24 @@ const server = createServer(async (request, response) => {
       response.end();
       return;
     }
+    if (requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
+      const origin = request.headers.origin;
+      let local = !origin;
+      try { const url = new URL(origin); local = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname); } catch { /* Missing/native origin only. */ }
+      if (!local) { sendJson(request, response, 403, { error: "Kho video chỉ cho phép thao tác từ app local trên máy này." }); return; }
+      if (["POST", "DELETE"].includes(request.method) && request.headers["content-type"]?.split(";")[0].trim() !== "application/json") {
+        sendJson(request, response, 415, { error: "Thao tác kho video yêu cầu JSON từ app." }); return;
+      }
+    }
     if (request.method === "GET" && requestUrl.pathname === "/health") {
       sendJson(request, response, 200, {
         ok: Boolean(ffmpeg && ffprobe),
-        readyForYouTube: Boolean(ffmpeg && ffprobe && ytDlp),
+        readyForYouTube: Boolean(ffmpeg && ffprobe),
         chatGPTAuthAvailable: process.platform === "darwin" && existsSync("/usr/bin/security"),
         tools: versions,
         render: {
+          playbackRate: PLAYBACK_RATE, foregroundScale: FOREGROUND_SCALE,
+          contrast: renderContrast, saturation: renderSaturation,
           encoder: preferredVideoEncoder,
           hardwareAccelerated: preferredVideoEncoder === "h264_videotoolbox",
           label: preferredVideoEncoder === "h264_videotoolbox" ? "Apple VideoToolbox" : preferredVideoEncoder,
@@ -1507,11 +1574,33 @@ const server = createServer(async (request, response) => {
       sendJson(request, response, 200, result);
       return;
     }
+    if (request.method === "GET" && requestUrl.pathname === "/api/youtube/metadata") {
+      sendJson(request, response, 200, await youtube.metadata(requestUrl.searchParams.get("url") || "")); return;
+    }
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/youtube") {
       const body = await readJson(request);
       const source = await importYouTube(String(body.url || "").trim());
       sendJson(request, response, 201, { source });
       return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/api/speech/status") {
+      sendJson(request, response, 200, await speech.status()); return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/speech/model") {
+      await readJson(request); await speech.installModel();
+      sendJson(request, response, 200, await speech.status()); return;
+    }
+    const speechSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/(smart-cut|captions)$/i);
+    if (request.method === "POST" && speechSource) {
+      const body = await readJson(request);
+      if (mediaLibrary.isLocked(speechSource[1])) throw new Error("Source đang được chuyển vào thùng rác.");
+      const source = await loadSource(speechSource[1]);
+      if (speechSource[2] === "captions") {
+        sendJson(request, response, 200, await speech.captions(source, undefined, { regenerate: body.regenerate === true, provider: body.provider || 'auto' })); return;
+      }
+      validatePlan(body.plan, source);
+      const next = smartCutPlan({ ...body.plan, parts: body.plan.parts.map(trimPartStart) }, await speech.boundaries(source), source.duration);
+      validatePlan(next, source); sendJson(request, response, 200, { plan: next }); return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/youtube/transcript") {
       const body = await readJson(request);
@@ -1525,6 +1614,31 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/batches") {
       sendJson(request, response, 200, { batches: [...batches.values()].reverse().map(batchSnapshot).filter((batch) => batch.items.length) });
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/api/storage") {
+      sendJson(request, response, 200, { library: await mediaLibrary.list() });
+      return;
+    }
+    const storageMediaMatch = requestUrl.pathname.match(/^\/api\/storage\/media\/([^/]+)$/);
+    if (["GET", "HEAD"].includes(request.method || "") && storageMediaMatch) {
+      const target = await mediaLibrary.media(decodeURIComponent(storageMediaMatch[1]));
+      await serveMediaPath(request, response, target, { download: requestUrl.searchParams.get("download") === "1" });
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/storage/trash") {
+      const body = await readJson(request);
+      sendJson(request, response, 200, await mediaLibrary.move(body.id));
+      return;
+    }
+    if (request.method === "POST" && requestUrl.pathname === "/api/storage/restore") {
+      const body = await readJson(request);
+      sendJson(request, response, 200, await mediaLibrary.restore(body.id));
+      return;
+    }
+    if (request.method === "DELETE" && requestUrl.pathname === "/api/storage/trash") {
+      const body = await readJson(request);
+      sendJson(request, response, 200, await mediaLibrary.purge(body.ids));
       return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/batches") {
@@ -1545,11 +1659,16 @@ const server = createServer(async (request, response) => {
           return;
         }
       }
+      if (body.batchId !== undefined) body.batchId = assertId(body.batchId);
       await activeChatGPTCredentials();
-      const batch = { id: randomUUID(), items: urls.map((url) => ({ id: randomUUID(), url, state: "pending", error: null })) };
-      batches.set(batch.id, batch);
-      batchControllers.set(batch.id, new AbortController());
-      batchPreparationQueue = batchPreparationQueue.then(() => prepareBatch(batch, body));
+      let batch;
+      try {
+        batch = batchPreparationQueue.submit({ ...body, urls });
+      } catch (error) {
+        if (!error.status) throw error;
+        sendJson(request, response, error.status, { error: error.message });
+        return;
+      }
       sendJson(request, response, 202, { batch: batchSnapshot(batch) });
       return;
     }
@@ -1558,6 +1677,8 @@ const server = createServer(async (request, response) => {
       const batch = batches.get(assertId(deleteBatchItemMatch[1]));
       if (!batch) { sendJson(request, response, 404, { error: "Hàng đợi không tồn tại." }); return; }
       try {
+        const item = batch.items.find((item) => item.id === deleteBatchItemMatch[2]);
+        if (mediaLibrary.isLocked(item?.sourceId || jobs.get(item?.jobId)?.sourceId)) throw Object.assign(new Error("Video đang được xử lý trong Thùng rác. Thử lại sau."), { status: 409 });
         const result = await removeBatchItem({ batch, itemId: assertId(deleteBatchItemMatch[2]), jobs, renderControllers, dataRoot });
         sendJson(request, response, 200, { batch: batchSnapshot(batch), ...result });
       } catch (error) {
@@ -1578,12 +1699,30 @@ const server = createServer(async (request, response) => {
       const job = jobs.get(assertId(cancelJobMatch[1]));
       if (!job) { sendJson(request, response, 404, { error: "Render job không tồn tại." }); return; }
       cancelRender(job);
-      sendJson(request, response, 200, { job });
+      sendJson(request, response, 200, { job: renderSnapshot(job) });
       return;
     }
     if (request.method === "GET" && requestUrl.pathname.startsWith("/api/batches/")) {
       const batch = batches.get(assertId(requestUrl.pathname.slice("/api/batches/".length)));
       sendJson(request, response, batch ? 200 : 404, batch ? { batch: batchSnapshot(batch) } : { error: "Hàng đợi không còn tồn tại (worker đã restart)." });
+      return;
+    }
+    if (request.method === "GET" && requestUrl.pathname === "/api/editor-renders") {
+      sendJson(request, response, 200, { jobs: [...jobs.values()].filter((job) => job.origin === "editor" && !job.deleted).reverse().map(renderSnapshot) });
+      return;
+    }
+    const deleteEditorMatch = requestUrl.pathname.match(/^\/api\/editor-renders\/([a-f0-9-]{16,64})$/i);
+    if (request.method === "DELETE" && deleteEditorMatch) {
+      const job = jobs.get(assertId(deleteEditorMatch[1]));
+      if (!job || job.origin !== "editor") { sendJson(request, response, 404, { error: "Không tìm thấy render trong tab chỉnh từng video." }); return; }
+      if (job.deleted) { sendJson(request, response, 200, { removed: true, trashId: null }); return; }
+      if (!["done", "error", "cancelled"].includes(job.state) || renderControllers.has(job.id)) {
+        sendJson(request, response, 409, { error: "Huỷ render và chờ tác vụ dừng hẳn trước khi xoá." }); return;
+      }
+      const result = await mediaLibrary.moveRender({ sourceId: job.sourceId, jobId: job.id });
+      job.deleted = true; job.outputs = [];
+      await persistBatchHistory();
+      sendJson(request, response, 200, result);
       return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/render") {
@@ -1614,11 +1753,11 @@ const server = createServer(async (request, response) => {
     sendJson(request, response, 404, { error: "Route không tồn tại." });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.startsWith("AUTH_REQUIRED") || message.startsWith("AUTH_EXPIRED") ? 401
+    const status = error.status || (message.startsWith("AUTH_REQUIRED") || message.startsWith("AUTH_EXPIRED") ? 401
       : message.startsWith("PLAN_USAGE_DISABLED") ? 403
         : message.startsWith("PLAN_LIMIT_REACHED") || message.startsWith("RATE_LIMITED") ? 429
           : message.startsWith("MODEL_UNAVAILABLE") ? 503
-            : 500;
+            : error.code === "ENOENT" ? 404 : 500);
     sendJson(request, response, status, { error: message });
   }
 });

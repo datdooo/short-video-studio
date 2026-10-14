@@ -1,7 +1,15 @@
+import { trimPartStart } from "../worker/part-start.mjs";
+import { PLAYBACK_RATE, FOREGROUND_SCALE, timelineDuration, isStillSegment } from "./render-config.mjs";
+import type { CaptionTrack } from "./subtitles.mjs";
+
 export type AiProvider = "mock" | "chatgpt" | "gemini" | "muse" | "openai" | "qwen";
 export type PlanSource = AiProvider | "manual";
 
 export type Segment = {
+  type?: "source" | "summary_card" | "freeze";
+  holdDuration?: number;
+  text?: string;
+  focus?: { scale: number };
   start: number;
   end: number;
   label: string;
@@ -10,6 +18,8 @@ export type Segment = {
 };
 
 export type EditPart = {
+  startTrimApplied?: boolean;
+  smartCutApplied?: boolean;
   id: number;
   title: string;
   hook: string;
@@ -18,6 +28,8 @@ export type EditPart = {
 };
 
 export type EditPlan = {
+  subtitles?: import("./subtitles.mjs").SubtitleStyle;
+  captionCues?: CaptionTrack;
   originalTitle: string;
   language: "de" | "en" | "fr" | "ja" | "ko";
   providerUsed: PlanSource;
@@ -26,6 +38,7 @@ export type EditPlan = {
     width: 1080;
     height: 1920;
     speed: 1.25;
+    foregroundScale?: 1.25;
     preservePitch: true;
     backgroundBlur: 50;
     backgroundOpacity: 50;
@@ -36,6 +49,7 @@ export type AnalyzeRequest = {
   originalTitle: string;
   transcript: string;
   instruction?: string;
+  supplementalPrompt?: string;
   sourceDuration?: number;
   provider: AiProvider;
 };
@@ -43,14 +57,15 @@ export type AnalyzeRequest = {
 export const RENDER_PRESET = {
   width: 1080,
   height: 1920,
-  speed: 1.25,
+  speed: PLAYBACK_RATE,
+  foregroundScale: FOREGROUND_SCALE,
   preservePitch: true,
   backgroundBlur: 50,
   backgroundOpacity: 50,
 } as const;
 
 export function durationOf(part: EditPart) {
-  return part.segments.reduce((total, segment) => total + segment.end - segment.start, 0);
+  return timelineDuration(part.segments);
 }
 
 export function finalDurationOf(part: EditPart) {
@@ -62,6 +77,7 @@ export function isChronological(part: EditPart) {
   let previousEnd = 0;
   let mainCount = 0;
   return part.segments.every((segment) => {
+    if (isStillSegment(segment)) return Number.isFinite(segment.start) && segment.start >= 0 && segment.end === segment.start && Number.isFinite(segment.holdDuration) && Number(segment.holdDuration) > 0;
     if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.start < 0 || segment.end <= segment.start) return false;
     if (segment.isPadding) { paddingStarted = true; return mainCount > 0; }
     if (paddingStarted || segment.start < previousEnd) return false;
@@ -71,7 +87,7 @@ export function isChronological(part: EditPart) {
 }
 
 export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, providerUsed: PlanSource): EditPlan {
-  const parts = plan.parts.slice(0, 2).map((part, index) => ({
+  let parts = plan.parts.slice(0, 2).map((part, index) => ({
     ...part,
     id: index + 1,
     hashtags: [...new Set(part.hashtags.map((tag) => `#${tag.trim().replace(/^#+/, "").replace(/\s+/g, "")}`).filter((tag) => tag.length > 1))].slice(0, 10),
@@ -90,8 +106,9 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
   if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => part.hashtags.length !== 10)) {
     throw new Error("AI chưa trả về đủ 10 hashtag khác nhau cho mỗi part. Hãy Generate lại.");
   }
-  if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => finalDurationOf(part) <= 60)) {
-    throw new Error("Mỗi part phải trên 1 phút sau tua 1.25×: cần hơn 75 giây footage gốc. Nếu nội dung chính ngắn, yêu cầu AI chọn footage thật phù hợp và thêm segment isPadding: true ở cuối để đủ thời lượng.");
+  if (!["mock", "manual"].includes(providerUsed)) parts = parts.map(trimPartStart);
+  if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => durationOf(part) / PLAYBACK_RATE <= 60)) {
+    throw new Error("Mỗi part phải trên 1 phút sau bỏ 1 giây đầu và tua 1.25×: cần hơn 76 giây footage gốc. Nếu nội dung chính ngắn, yêu cầu AI chọn footage thật phù hợp và thêm segment isPadding: true ở cuối để đủ thời lượng.");
   }
   const lastPartOneEnd = parts[0].segments.filter((segment) => !segment.isPadding).at(-1)?.end ?? 0;
   const firstPartTwoStart = parts[1].segments[0]?.start ?? 0;
@@ -212,19 +229,19 @@ export function mockPlan(request: AnalyzeRequest): EditPlan {
 
   return normalizePlan(
     {
-      originalTitle: request.originalTitle || "Untitled source video",
+      originalTitle: request.originalTitle || "YOUR STORY STARTS HERE",
       language: "en",
       parts: [
         {
           id: 1,
-          title: "THE DETAIL NOBODY EXPECTED",
+          title: "THE MOMENT THAT MATTERS",
           hook: chosen[0].text,
           hashtags: ["#shorts", "#videoedit", "#reveal", "#story", "#viral"],
           segments: toSegments(chosen.slice(0, 3), chosen[3].at),
         },
         {
           id: 2,
-          title: "THEN EVERYTHING CHANGED",
+          title: "SEE HOW THE STORY ENDS",
           hook: chosen[3].text,
           hashtags: ["#shorts", "#videoedit", "#transformation", "#result", "#viral"],
           segments: toSegments(chosen.slice(3, 6)),
@@ -284,16 +301,18 @@ Hard rules:
 - Preserve source chronology for the MAIN content inside every part. The only exception is explicitly marked supplemental footage appended at the very end to meet the minimum duration; never insert it into the main story.
 - Use source timestamps exactly; do not compensate for the final speed-up.
 - Follow the user's rules for what may be cut. Do not remove slow material, travel, music, technical details, or filler unless the user permits it.
+- Automatically identify and exclude credits, unrelated advertising, sponsorship/promotional passages, channel introductions, channel self-promotion, and calls to like/subscribe/follow in BOTH parts, even without an explicit user request. Explain excluded gaps in segment reasons. Preserve the main story, compelling events and natural continuity. A brand or product name alone is NOT grounds for removing substantive content (repairs, tests, reviews, results); cut only actual promotional/unrelated passages. These exclusions do not authorize shortening slow but relevant main content.
 - Each part needs its own strong hook. Quote the actual transcript in the hook field.
 - Titles and hashtags must use the source video's language (DE, EN, FR, JA, or KO).
-- Return exactly two parts and exactly 10 distinct hashtags per part, each prefixed with # and without spaces. Generate hashtags from the actual subject, actions and details in that part's retained transcript segments, not discarded footage or unrelated trending topics. Do not invent details. Prioritize topic-specific tags in the source language.
+- Return exactly two parts and exactly 10 distinct hashtags per part, each prefixed with # and without spaces. Include a balanced mix of content-specific tags, broader subject/category tags, and relevant trending/discovery tags in the source language and market. All tags must relate to the retained content; do not invent trends or claim verified live popularity. Avoid discarded footage and unrelated topics.
+- The app removes exactly 1 source second from the beginning of each part, once, before the final 1.25x speed-up. Return the original hook timestamps; do NOT shift them yourself. Account for this cut when checking duration: retained footage must exceed 76 seconds so the FINAL exported duration stays strictly greater than 60 seconds at 1.25x.
 - Segment start/end values must be seconds as numbers.
-- Each part's FINAL exported duration must be strictly greater than 60 seconds at 1.25x. The sum of segment durations (including supplemental footage) must therefore exceed 75 seconds per part, excluding removed gaps. First choose hooks that meet the minimum naturally. If a part or the source is too short, select a relevant real clip from anywhere in this source (prefer contextual action, visual detail, soundcheck or a recap; avoid ads/promotions) and append it at the END. You may reuse/repeat that actual clip if needed. Set isPadding: true on every appended segment; set isPadding: false on MAIN segments. Explain the choice and repetition in reason. Main segments must all precede padding segments. Do not invent speech, facts, timestamps outside the source, or fake new footage. Keep titles/hashtags factual, based on real content.
+- Each part's FINAL exported duration must be strictly greater than 60 seconds at 1.25x after removing its first source second. The sum of segment durations (including supplemental footage) must therefore exceed 76 seconds per part, excluding removed gaps. First choose hooks that meet the minimum naturally. If a part or the source is too short, select a relevant real clip from anywhere in this source (prefer contextual action, visual detail, soundcheck or a recap; avoid ads/promotions) and append it at the END. You may reuse/repeat that actual clip if needed. Set isPadding: true on every appended segment; set isPadding: false on MAIN segments. Explain the choice and repetition in reason. Main segments must all precede padding segments. Do not invent speech, facts, timestamps outside the source, or fake new footage. Keep titles/hashtags factual, based on real content.
 - For the two-entry-point workflow: Part 1 MAIN content spans Hook 1 to Hook 2, and Part 2 MAIN content spans Hook 2 to the source duration. Keep these ranges continuous except for explicitly permitted promotional cuts. Use multiple retained MAIN segments only around those cuts and explain each excluded gap in the adjacent segment reason. The first/last MAIN segment boundaries represent each part's source start/end; padding is appended afterwards.
 
 Original title: ${request.originalTitle || "Untitled"}
 Source duration in seconds: ${request.sourceDuration ?? "unknown; do not invent an end beyond the available source"}
-User instruction: ${request.instruction || "No extra instruction"}
+User instruction: ${request.instruction || "No extra instruction"}${request.supplementalPrompt?.trim() ? `\n\nAdditional user editing requirements:\n${request.supplementalPrompt.trim()}` : ""}
 
 Transcript:
 ${request.transcript}`;

@@ -49,6 +49,9 @@ next-env.d.ts
 /work/
 /.local-tools/
 /worker-data/
+cookies.txt
+*.cookies.txt
+youtube-download.json
 
 node_modules/
 .next/

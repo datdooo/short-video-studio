@@ -1,0 +1,17 @@
+import type { Segment } from './edit-plan';
+export const CANVAS_WIDTH: 1080;
+export const CANVAS_HEIGHT: 1920;
+export const PLAYBACK_RATE: 1.25;
+export const FOREGROUND_SCALE: 1.25;
+export const RENDER_FPS: 30;
+export const FOREGROUND_BASE_HEIGHT: 1080;
+export const FOREGROUND_HEIGHT: number;
+export const FOREGROUND_Y: number;
+export const TITLE_SHINE_SECONDS: number;
+export const TITLE_SHINE_WIDTH: number;
+export const SUBTITLE_BOTTOM_SAFE_MARGIN: number;
+export const TITLE_LAYOUT: Readonly<{ original: Readonly<{ top: number; bottom: number }>; part: Readonly<{ top: number; bottom: number }>; maxFontSize: number; minFontSize: number; maxLines: number; maxWidth: number; lineSpacing: number }>;
+export function isStillSegment(segment: Segment): boolean;
+export function segmentDuration(segment: Segment): number;
+export function timelineDuration(segments: Segment[]): number;
+export function foregroundFilter(focus?: string): string;

@@ -22,6 +22,7 @@ const childEnv = {
   NODE_ENV: "production", HOST: "127.0.0.1", PORT: "5173",
   MEDIA_WORKER_PORT: "8787", MEDIA_WORKER_DATA_DIR: dataRoot,
   FFMPEG_PATH: path.join(runtimeBin, "ffmpeg"), FFPROBE_PATH: path.join(runtimeBin, "ffprobe"),
+  WHISPER_PATH: path.join(runtimeBin, "whisper-cli"),
   YT_DLP_PATH: path.join(runtimeBin, "yt-dlp"),
   FONTCONFIG_FILE: fontConfig,
 };
