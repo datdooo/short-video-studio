@@ -37,6 +37,7 @@ import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
 import { smartCutPlan } from "./smart-cut.mjs";
 import { createYouTubeDownloader } from "./youtube-downloader.mjs";
+import { createChatGPTStore } from './chatgpt-store.mjs';
 import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundFilter, timelineDuration } from '../lib/render-config.mjs';
 import { originalCutPlan } from '../lib/legacy-plan.mjs';
 import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack } from "../lib/subtitles.mjs";
@@ -183,8 +184,7 @@ const mediaLibrary = createMediaLibrary({
 const pendingChatGPTAuth = new Map();
 const chatGPTRefreshes = new Map();
 const chatGPTHostPath = path.join(dataRoot, "chatgpt-host.json");
-const chatGPTKeychainService = "ShortCut Studio ChatGPT";
-const chatGPTKeychainAccount = "default";
+const chatGPTStore = createChatGPTStore({ dataRoot });
 const chatGPTResource = "https://api.openai.com/v1";
 const chatGPTIssuer = "https://auth.openai.com";
 const chatGPTAuthorizeEndpoint = `${chatGPTIssuer}/api/accounts/authorize`;
@@ -223,6 +223,7 @@ function supportsEncoder(binary, encoder) {
   const result = spawnSync(binary, ["-hide_banner", "-h", `encoder=${encoder}`], {
     encoding: "utf8",
     timeout: 5_000,
+    windowsHide: true,
   });
   return result.status === 0 && !result.stderr.includes("not recognized");
 }
@@ -241,7 +242,7 @@ const hardwareDecodeCodecs = new Set(["h264", "hevc", "prores"]);
 
 function binaryVersion(binary, args = ["--version"]) {
   if (!binary) return null;
-  const result = spawnSync(binary, args, { encoding: "utf8", timeout: 5_000 });
+  const result = spawnSync(binary, args, { encoding: "utf8", timeout: 5_000, windowsHide: true });
   return result.status === 0 ? result.stdout.trim().split("\n")[0] : null;
 }
 
@@ -301,52 +302,16 @@ function base64Url(bytes) {
   return Buffer.from(bytes).toString("base64url");
 }
 
-function runSecurity(args) {
-  if (process.platform !== "darwin" || !existsSync("/usr/bin/security")) {
-    throw new Error("ChatGPT sign-in cần macOS Keychain trên máy local này.");
-  }
-  return spawnSync("/usr/bin/security", args, {
-    encoding: "utf8",
-    timeout: 8_000,
-    maxBuffer: 2 * 1024 * 1024,
-  });
-}
-
 function readChatGPTCredentials() {
-  const result = runSecurity([
-    "find-generic-password",
-    "-a", chatGPTKeychainAccount,
-    "-s", chatGPTKeychainService,
-    "-w",
-  ]);
-  if (result.status !== 0) return null;
-  try {
-    return JSON.parse(result.stdout.trim());
-  } catch {
-    throw new Error("Credential ChatGPT trong Keychain bị hỏng. Hãy disconnect rồi đăng nhập lại.");
-  }
+  return chatGPTStore.read();
 }
 
 function writeChatGPTCredentials(credentials) {
-  const credentialHex = Buffer.from(JSON.stringify(credentials), "utf8").toString("hex");
-  const result = runSecurity([
-    "add-generic-password",
-    "-a", chatGPTKeychainAccount,
-    "-s", chatGPTKeychainService,
-    "-U",
-    "-X", credentialHex,
-    "-T", "/usr/bin/security",
-  ]);
-  if (result.status !== 0) throw new Error("Không lưu được ChatGPT credential vào macOS Keychain.");
+  chatGPTStore.write(credentials);
 }
 
 function deleteChatGPTCredentials() {
-  const result = runSecurity([
-    "delete-generic-password",
-    "-a", chatGPTKeychainAccount,
-    "-s", chatGPTKeychainService,
-  ]);
-  return result.status === 0;
+  return chatGPTStore.delete();
 }
 
 async function getChatGPTHostId() {
@@ -417,9 +382,9 @@ function normalizeScope(value) {
 }
 
 function publicChatGPTSession(credentials) {
-  if (!credentials) return { available: process.platform === "darwin", connected: false, sharing: false };
+  if (!credentials) return { available: chatGPTStore.available, connected: false, sharing: false };
   return {
-    available: process.platform === "darwin",
+    available: chatGPTStore.available,
     connected: true,
     sharing: credentials.scopes?.includes("chatgpt.tokens.use.direct") || false,
     email: credentials.email || null,
@@ -429,6 +394,7 @@ function publicChatGPTSession(credentials) {
 }
 
 async function startChatGPTAuthorization() {
+  if (!chatGPTStore.available) throw new Error('Bản app chưa có kho lưu phiên ChatGPT cho hệ điều hành này. Hãy cập nhật app.');
   const existing = readChatGPTCredentials();
   const state = base64Url(randomBytes(32));
   const nonce = base64Url(randomBytes(32));
@@ -708,6 +674,7 @@ async function run(binary, args, options = {}) {
       env: { ...process.env, ...options.env },
       stdio: ["ignore", "pipe", "pipe"],
       detached: Boolean(options.signal) && process.platform !== "win32",
+      windowsHide: true,
     });
     let killTimer;
     const kill = (signal) => {
@@ -1513,7 +1480,7 @@ const server = createServer(async (request, response) => {
       sendJson(request, response, 200, {
         ok: Boolean(ffmpeg && ffprobe),
         readyForYouTube: Boolean(ffmpeg && ffprobe),
-        chatGPTAuthAvailable: process.platform === "darwin" && existsSync("/usr/bin/security"),
+        chatGPTAuthAvailable: chatGPTStore.available,
         tools: versions,
         render: {
           playbackRate: PLAYBACK_RATE, foregroundScale: FOREGROUND_SCALE,

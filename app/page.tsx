@@ -1556,7 +1556,7 @@ export default function Home() {
                   >
                     {isChatGPTConnecting ? <><Loader2 className="animate-spin" /> Waiting for ChatGPT…</> : chatGPTSession?.sharing ? <><LogIn /> Reconnect ChatGPT</> : <><LogIn /> Continue with ChatGPT</>}
                   </Button>
-                  <p className="mt-2 text-[10px] leading-4 text-zinc-600">OAuth token chỉ nằm trong macOS Keychain của máy này, không lưu trong web.</p>
+                  <p className="mt-2 text-[10px] leading-4 text-zinc-600">Phiên OAuth được bảo vệ trên máy này (macOS Keychain / Windows DPAPI), không lưu token trong web.</p>
                 </div>
               )}
               <details className="rounded-xl border border-white/8 p-3">

@@ -19,7 +19,8 @@
     "install:antigravity": "node scripts/install-antigravity.mjs",
     "package:mac": "node scripts/package-macos.mjs",
     "setup:macos26": "node scripts/setup-macos26-runtime.mjs",
-    "package:macos26": "node scripts/package-macos.mjs --macos26"
+    "package:macos26": "node scripts/package-macos.mjs --macos26",
+    "package:windows": "node scripts/package-windows.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

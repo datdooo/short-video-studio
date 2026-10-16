@@ -1,5 +1,16 @@
 # ShortCut Studio
 
+## Bản Windows cá nhân
+
+Build trên macOS/Linux bằng `npm run package:windows`. Kết quả nằm trong `release/windows-x64/ShortCut Studio.exe` (Windows 10/11 x64 Intel/AMD).
+
+- Một EXE, tự giải nén runtime và mở trình duyệt khi web/worker sẵn sàng. Không cần cài Node, FFmpeg, Python hay Visual C++ riêng.
+- Giữ cửa sổ launcher mở trong lúc dùng; nhấn Enter và xác nhận để dừng. Đóng launcher sẽ dừng cả các tiến trình tải/render con bằng Windows Job Object.
+- Dữ liệu/video/lịch sử: `%LOCALAPPDATA%\ShortCut Studio\media`; log khởi động: `%LOCALAPPDATA%\ShortCut Studio\logs\startup.log`.
+- Whisper base tải model qua nút Auto Subtitle như bản Mac; kèm sẵn CLI và runtime C++/OpenMP x64. Continue with ChatGPT dùng OAuth trình duyệt như bản Mac; token Windows được mã hóa DPAPI theo tài khoản Windows đang đăng nhập, không cần API key. Điều kiện dùng gói/quyền/quota của OpenAI vẫn áp dụng.
+- Giữ foreground scale 1.25×, playback/audio 1.25× và export 1080×1920. Windows mặc định dùng libx264; không có Apple VideoToolbox.
+- Build kiểm tra checksum các runtime tải về, kiến trúc PE x64 và DLL phụ thuộc. Cross-build/kiểm thử logic trên Mac **không thay thế** việc chạy thử thực tế trên Windows. Bản cá nhân chưa có chữ ký Authenticode; không cần tắt Defender/SmartScreen để kiểm tra nguồn gốc.
+
 Personal tool để biến video dài thành 2 video dọc 1080×1920. App có hai chế độ chọn nội dung:
 
 - **AI plan**: đăng nhập ChatGPT Plus / Pro bằng OAuth chính thức, hoặc dùng mock mode.

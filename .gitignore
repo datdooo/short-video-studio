@@ -52,6 +52,8 @@ next-env.d.ts
 cookies.txt
 *.cookies.txt
 youtube-download.json
+*.dpapi
+chatgpt-credentials.json
 
 node_modules/
 .next/

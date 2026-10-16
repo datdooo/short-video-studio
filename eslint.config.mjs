@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "release/**",
+    ".local-tools/**", // Downloaded build SDKs/runtimes, not application source.
     "build/**",
     "next-env.d.ts",
   ]),
