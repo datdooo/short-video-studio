@@ -1,0 +1,14 @@
+export type FilterPresetId = "current" | "clean" | "vivid" | "nature" | "soft" | "contrast" | "bright" | "muted";
+export type VideoFilter = { contrast: number; saturation: number; presetId?: Exclude<FilterPresetId, "current">; brightness?: number; intensity?: number };
+export type FilterPreset = { id: FilterPresetId; label: string; description: string; filter: VideoFilter };
+export const FILTER_PRESET_IDS: readonly FilterPresetId[];
+export const CURRENT_FILTER: Readonly<VideoFilter>;
+export function getFilterPreset(id?: string): FilterPreset;
+export function listFilterPresets(): FilterPreset[];
+export function normalizeFilter(value?: unknown): VideoFilter;
+export function assertRenderableFilter(value?: unknown): VideoFilter;
+export function currentFilterEnvironment(env?: Record<string, string | undefined>): VideoFilter;
+export function effectiveFilterParameters(value?: unknown): { brightness: number; contrast: number; saturation: number };
+export function filterColorMatrix(value?: unknown): number[];
+export function browserFilterStyle(value?: unknown, current?: VideoFilter, id?: string): string;
+export function ffmpegFilterExpression(value?: unknown, current?: VideoFilter): string;

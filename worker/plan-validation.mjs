@@ -1,6 +1,10 @@
 import { PLAYBACK_RATE } from '../lib/render-config.mjs';
+import { assertRenderableVisualStyle, resolvePlanVisualStyle } from "../lib/visual-style/normalize.mjs";
+import { validateTeaser, TEASER_POLICY } from "../lib/teaser-hooks.mjs";
 export function validatePlan(plan, source) {
   if (!plan || !Array.isArray(plan.parts) || plan.parts.length !== 2) throw new Error("Edit plan phải có đúng 2 Part.");
+  assertRenderableVisualStyle(resolvePlanVisualStyle(plan));
+  if (plan.teaserPolicy !== undefined && plan.teaserPolicy !== TEASER_POLICY) throw new Error("Invalid teaser policy.");
   let previousPartEnd = 0;
   for (const [partIndex, part] of plan.parts.entries()) {
     if (!part.title?.trim() || !Array.isArray(part.segments) || !part.segments.length) {
@@ -31,5 +35,6 @@ export function validatePlan(plan, source) {
       throw new Error(`Part ${partIndex + 1} phải trên 1 phút sau tua 1.25×; cần hơn 75 giây footage gốc. Yêu cầu AI bổ sung footage thật ở cuối (isPadding: true) nếu nội dung chính quá ngắn.`);
     }
     previousPartEnd = previousEnd;
+    validateTeaser(part, source.duration);
   }
 }

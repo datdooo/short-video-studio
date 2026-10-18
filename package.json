@@ -20,7 +20,10 @@
     "package:mac": "node scripts/package-macos.mjs",
     "setup:macos26": "node scripts/setup-macos26-runtime.mjs",
     "package:macos26": "node scripts/package-macos.mjs --macos26",
-    "package:windows": "node scripts/package-windows.mjs"
+    "package:windows": "node scripts/package-windows.mjs",
+    "personal:dev-isolated": "node scripts/personal-dev.mjs --isolated",
+    "package:mac:dev": "node scripts/package-macos.mjs --dev",
+    "test:isolation": "node --test desktop/runtime-config.test.mjs worker/chatgpt-store.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

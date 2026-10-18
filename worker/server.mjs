@@ -28,6 +28,10 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
+import { titleAnimationFilters } from "./title-animation.mjs";
+import { cutTransitionFilters } from "./cut-transition.mjs";
+import { normalizeTitleAnimation } from "../lib/visual-style/animations.mjs";
+import { renderSceneOverlay } from "./scene-overlays.mjs";
 import { removeBatchItem } from "./batch-cleanup.mjs";
 import { createBatchSubmissionQueue } from "./batch-queue.mjs";
 import { createMediaLibrary } from "./media-library.mjs";
@@ -37,10 +41,20 @@ import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
 import { smartCutPlan } from "./smart-cut.mjs";
 import { createYouTubeDownloader } from "./youtube-downloader.mjs";
+import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth, localAuthOrigin } from "./chatgpt-auth-state.mjs";
 import { createChatGPTStore } from './chatgpt-store.mjs';
+import { createTeaserSelector } from "./teaser-selection.mjs";
+import { TEASER_POLICY, presentationSegments, presentationDuration, partTransitionWindows } from "../lib/teaser-hooks.mjs";
+import { detectScript, fontFamilyForStyle, listFonts } from "../lib/visual-style/fonts.mjs";
+import { DEFAULT_VISUAL_STYLE } from "../lib/visual-style/defaults.mjs";
+import { styledTextSvg } from "../lib/visual-style/text-render.mjs";
+import { constrainTitlePair, needsMeasuredTitleFit } from "../lib/visual-style/title-fit.mjs";
+import { assertRenderableBackground, gradientRowRgb } from "../lib/visual-style/backgrounds.mjs";
+import { currentFilterEnvironment, ffmpegFilterExpression } from "../lib/visual-style/filters.mjs";
+import { snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundFilter, timelineDuration } from '../lib/render-config.mjs';
 import { originalCutPlan } from '../lib/legacy-plan.mjs';
-import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack } from "../lib/subtitles.mjs";
+import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack, transcriptCues } from "../lib/subtitles.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
@@ -181,8 +195,10 @@ const mediaLibrary = createMediaLibrary({
     return { restoredItemIds, restoredUrls: outputs.map((output) => output.url) };
   },
 });
-const pendingChatGPTAuth = new Map();
+const pendingChatGPTAuth = createAuthAttempts();
+const chatGPTRegistrationPath = path.join(dataRoot, "chatgpt-registration.json");
 const chatGPTRefreshes = new Map();
+const chatGPTRefreshFailures = new Map();
 const chatGPTHostPath = path.join(dataRoot, "chatgpt-host.json");
 const chatGPTStore = createChatGPTStore({ dataRoot });
 const chatGPTResource = "https://api.openai.com/v1";
@@ -228,16 +244,10 @@ function supportsEncoder(binary, encoder) {
   return result.status === 0 && !result.stderr.includes("not recognized");
 }
 
-function renderNumber(name, fallback, min, max) {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
-}
-
 const videoToolboxAvailable = process.platform === "darwin" && supportsEncoder(ffmpeg, "h264_videotoolbox");
 const preferredVideoEncoder = process.env.FFMPEG_VIDEO_ENCODER
   || (videoToolboxAvailable ? "h264_videotoolbox" : "libx264");
-const renderContrast = renderNumber("FFMPEG_CONTRAST", 1.04, 0.8, 1.3);
-const renderSaturation = renderNumber("FFMPEG_SATURATION", 1.06, 0.8, 1.4);
+const { contrast: renderContrast, saturation: renderSaturation } = currentFilterEnvironment(process.env);
 const hardwareDecodeCodecs = new Set(["h264", "hevc", "prores"]);
 
 function binaryVersion(binary, args = ["--version"]) {
@@ -346,14 +356,14 @@ async function validateChatGPTIdToken(idToken, { clientId, nonce, subject } = {}
   if (header.alg !== "RS256" || !header.kid) throw new Error("ID token dùng thuật toán không được hỗ trợ.");
 
   if (!cachedChatGPTJwks) {
-    const response = await fetch(chatGPTJwksEndpoint, { headers: { Accept: "application/json" } });
+    const response = await fetch(chatGPTJwksEndpoint, { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error("Không tải được OpenAI signing keys.");
     cachedChatGPTJwks = await response.json();
   }
   let jwk = cachedChatGPTJwks.keys?.find((key) => key.kid === header.kid);
   if (!jwk) {
     cachedChatGPTJwks = null;
-    const response = await fetch(chatGPTJwksEndpoint, { headers: { Accept: "application/json" } });
+    const response = await fetch(chatGPTJwksEndpoint, { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error("Không refresh được OpenAI signing keys.");
     cachedChatGPTJwks = await response.json();
     jwk = cachedChatGPTJwks.keys?.find((key) => key.kid === header.kid);
@@ -385,8 +395,7 @@ function publicChatGPTSession(credentials) {
   if (!credentials) return { available: chatGPTStore.available, connected: false, sharing: false };
   return {
     available: chatGPTStore.available,
-    connected: true,
-    sharing: credentials.scopes?.includes("chatgpt.tokens.use.direct") || false,
+    ...sessionHealth(credentials),
     email: credentials.email || null,
     name: credentials.name || null,
     expiresAt: credentials.expires_at || null,
@@ -402,8 +411,10 @@ async function startChatGPTAuthorization() {
   const challenge = base64Url(createHash("sha256").update(verifier).digest());
   const redirectUri = `http://${host}:${port}/auth/callback`;
   const extAgentHostId = await getChatGPTHostId();
-  const clientId = existing?.client_id || "dynamic_agent_client";
-  pendingChatGPTAuth.set(state, {
+  let registration;
+  try { registration = JSON.parse(await readFile(chatGPTRegistrationPath, 'utf8')); } catch { /* No issued registration yet. */ }
+  const clientId = existing?.client_id || (/^oaiapp_[a-zA-Z0-9_-]+$/.test(registration?.clientId || '') ? registration.clientId : "dynamic_agent_client");
+  pendingChatGPTAuth.add({
     state,
     nonce,
     verifier,
@@ -412,9 +423,7 @@ async function startChatGPTAuthorization() {
     subject: existing?.subject || null,
     createdAt: Date.now(),
   });
-  for (const [key, attempt] of pendingChatGPTAuth) {
-    if (Date.now() - attempt.createdAt > 10 * 60_000) pendingChatGPTAuth.delete(key);
-  }
+
 
   const url = new URL(chatGPTAuthorizeEndpoint);
   url.searchParams.set("client_id", clientId);
@@ -428,18 +437,19 @@ async function startChatGPTAuthorization() {
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("ext_agent_host_id", extAgentHostId);
   if (clientId === "dynamic_agent_client") {
-    url.searchParams.set("agent_name_hint", "ShortCut Studio");
+    url.searchParams.set("agent_name_hint", process.env.CHATGPT_KEYCHAIN_SERVICE?.includes("Dev") ? "ShortCut Studio Dev" : "ShortCut Studio");
   } else {
+    if (existing && !existing.scopes?.includes("chatgpt.tokens.use.direct")) url.searchParams.set("prompt", "consent");
     if (existing?.id_token) url.searchParams.set("id_token_hint", existing.id_token);
     if (existing?.email) url.searchParams.set("login_hint", existing.email);
   }
-  return url.toString();
+  return { url: url.toString(), attemptId: state };
 }
 
 async function exchangeChatGPTCode(attempt, requestUrl) {
   if (requestUrl.searchParams.get("state") !== attempt.state) throw new Error("OAuth state không khớp.");
   const oauthError = requestUrl.searchParams.get("error");
-  if (oauthError) throw new Error(oauthError === "access_denied" ? "Bạn đã hủy cấp quyền ChatGPT." : `ChatGPT OAuth lỗi: ${oauthError}`);
+  if (oauthError) throw new Error(oauthError === "access_denied" ? "Bạn đã hủy cấp quyền ChatGPT." : "ChatGPT từ chối đăng nhập. Thử lại sau hoặc kiểm tra quyền tài khoản.");
   const code = requestUrl.searchParams.get("code");
   const callbackClientId = requestUrl.searchParams.get("client_id");
   const issuedClientId = attempt.clientId === "dynamic_agent_client" ? callbackClientId : attempt.clientId;
@@ -448,7 +458,10 @@ async function exchangeChatGPTCode(attempt, requestUrl) {
     throw new Error("ChatGPT callback trả về client khác với account đã chọn.");
   }
 
+  await mkdir(dataRoot, { recursive: true });
+  await writeFile(chatGPTRegistrationPath, JSON.stringify({ clientId: issuedClientId }), { mode: 0o600 });
   const response = await fetch(chatGPTTokenEndpoint, {
+    signal: AbortSignal.timeout(20_000),
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: new URLSearchParams({
@@ -461,13 +474,15 @@ async function exchangeChatGPTCode(attempt, requestUrl) {
     }),
   });
   const token = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(token.error_description || token.error || `OpenAI token exchange failed (${response.status}).`);
+  if (!response.ok) throw tokenError(token, response.status);
+  assertTokenResponse(token);
+  if (attempt.status !== "exchanging") throw new Error("Đã hủy đăng nhập; không lưu phiên.");
   const identity = await validateChatGPTIdToken(token.id_token, {
     clientId: issuedClientId,
     nonce: attempt.nonce,
     subject: attempt.subject || undefined,
   });
-  const scopes = normalizeScope(token.scope || requestUrl.searchParams.get("scope"));
+  const scopes = normalizeScope(token.scope);
   const credentials = {
     client_id: issuedClientId,
     ext_agent_host_id: await getChatGPTHostId(),
@@ -484,15 +499,20 @@ async function exchangeChatGPTCode(attempt, requestUrl) {
     saved_at: new Date().toISOString(),
   };
   if (!credentials.access_token || !credentials.refresh_token) throw new Error("OpenAI không trả đủ OAuth credentials.");
+  if (attempt.status !== "exchanging") throw new Error("Đã hủy đăng nhập; không lưu phiên.");
   writeChatGPTCredentials(credentials);
+  chatGPTRefreshFailures.delete(issuedClientId);
   return credentials;
 }
 
 async function refreshChatGPTCredentials(credentials) {
   const key = credentials.client_id;
   if (chatGPTRefreshes.has(key)) return chatGPTRefreshes.get(key);
+  const failed = chatGPTRefreshFailures.get(key);
+  if (failed && Date.now() < failed.until) throw failed.error;
   const refresh = (async () => {
     const response = await fetch(chatGPTTokenEndpoint, {
+      signal: AbortSignal.timeout(20_000),
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body: new URLSearchParams({
@@ -503,7 +523,9 @@ async function refreshChatGPTCredentials(credentials) {
       }),
     });
     const token = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(token.error_description || token.error || `Không refresh được ChatGPT session (${response.status}).`);
+    if (!response.ok) throw tokenError(token, response.status);
+    assertTokenResponse(token);
+    if (readChatGPTCredentials()?.refresh_token !== credentials.refresh_token) throw new Error("Phiên đã thay đổi trong lúc refresh; thử lại.");
     let identity = null;
     if (token.id_token) {
       identity = await validateChatGPTIdToken(token.id_token, {
@@ -524,9 +546,12 @@ async function refreshChatGPTCredentials(credentials) {
       earliest_refresh_at: token.earliest_refresh_at || null,
       saved_at: new Date().toISOString(),
     };
+    if (readChatGPTCredentials()?.refresh_token !== credentials.refresh_token) throw new Error("Phiên đã thay đổi trong lúc refresh; thử lại.");
     writeChatGPTCredentials(next);
     return next;
-  })().finally(() => chatGPTRefreshes.delete(key));
+  })().then(value => { chatGPTRefreshFailures.delete(key); return value; }).catch(error => {
+    chatGPTRefreshFailures.set(key, { error, until: Date.now() + (error.status === 401 ? 300_000 : 30_000) }); throw error;
+  }).finally(() => chatGPTRefreshes.delete(key));
   chatGPTRefreshes.set(key, refresh);
   return refresh;
 }
@@ -577,10 +602,10 @@ function responseTextFromCompleted(response) {
     .join("");
 }
 
-async function analyzeWithChatGPTPlan(body, signal) {
+async function analyzeWithChatGPTPlan(body, signal, content) {
   signal?.throwIfAborted();
   const credentials = await activeChatGPTCredentials();
-  const models = await listChatGPTModels(credentials, signal);
+  const models = content && body.model ? [] : await listChatGPTModels(credentials, signal);
   const model = body.model || models[0]?.slug;
   if (!model) throw new Error("MODEL_UNAVAILABLE: ChatGPT account không trả về model khả dụng.");
   const response = await fetch(`${chatGPTResource}/responses`, {
@@ -595,8 +620,9 @@ async function analyzeWithChatGPTPlan(body, signal) {
       model,
       store: false,
       stream: true,
+      ...(content ? { max_output_tokens: 1200 } : {}),
       instructions: body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
-      input: [{ role: "user", content: String(body.input || "") }],
+      input: [{ role: "user", content: content || String(body.input || "") }],
       text: {
         format: {
           type: "json_schema",
@@ -611,9 +637,12 @@ async function analyzeWithChatGPTPlan(body, signal) {
     const errorBody = await response.json().catch(() => ({}));
     const code = errorBody.error?.code;
     if (code === "subscription_sharing_usage_limit_exceeded") throw new Error("PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.");
-    if (response.status === 401) throw new Error("AUTH_EXPIRED: ChatGPT session không còn hợp lệ. Hãy đăng nhập lại.");
-    if (response.status === 429) throw new Error("RATE_LIMITED: ChatGPT đang giới hạn tạm thời.");
-    throw new Error(errorBody.error?.message || errorBody.detail || `ChatGPT request failed (${response.status}).`);
+    const message = response.status === 401 ? "AUTH_EXPIRED: ChatGPT session không còn hợp lệ. Hãy đăng nhập lại."
+      : response.status === 429 ? "RATE_LIMITED: ChatGPT đang giới hạn tạm thời."
+      : [404, 503].includes(response.status) ? "MODEL_UNAVAILABLE: Model chưa khả dụng."
+      : `ChatGPT request failed (${response.status}).`;
+    const retry = response.headers.get("retry-after");
+    throw Object.assign(new Error(message), { status: response.status, retryAfterMs: retry ? (/^\d+$/.test(retry) ? Number(retry) * 1000 : Math.max(0, Date.parse(retry) - Date.now())) : 1000 });
   }
 
   const reader = response.body.getReader();
@@ -650,6 +679,63 @@ async function analyzeWithChatGPTPlan(body, signal) {
   } catch {
     throw new Error("INVALID_RESPONSE: ChatGPT không trả về JSON edit plan hợp lệ.");
   }
+}
+
+const sourceDigests = new Map();
+async function hookSourceFingerprint(source, signal) {
+  signal?.throwIfAborted();
+  const info = await stat(source.mediaPath), key = `${source.id}:${info.size}:${info.mtimeMs}`;
+  if (sourceDigests.has(key)) return sourceDigests.get(key);
+  const digest = createHash("sha256");
+  for await (const chunk of createReadStream(source.mediaPath)) { signal?.throwIfAborted(); digest.update(chunk); }
+  const value = digest.digest("hex");
+  if (sourceDigests.size >= 32) sourceDigests.delete(sourceDigests.keys().next().value);
+  sourceDigests.set(key, value); return value;
+}
+async function hookFrames(part, source, signal) {
+  const ranges = part.segments.filter((s) => !s.isPadding).slice(0,200), total = timelineDuration(ranges), frames = [];
+  const directory = path.join(dataRoot, "cache", "hook-frames");
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  for (let i = 0; i < 6; i++) {
+    let offset = (i + 0.5) / 6 * total, range = ranges[0];
+    for (const s of ranges) { range = s; if (offset < s.end - s.start) break; offset -= s.end - s.start; }
+    const time = Math.min(range.end - 0.001, range.start + offset);
+    const file = path.join(directory, `${randomUUID()}.jpg`);
+    try {
+      await run(ffmpeg, ["-y", "-v", "error", "-ss", String(time), "-i", source.mediaPath, "-frames:v", "1", "-vf", "scale=512:288:force_original_aspect_ratio=decrease", "-q:v", "5", file], { signal });
+      const bytes = await readFile(file);
+      if (bytes.length > 300_000) throw new Error("Hook frame exceeds budget");
+      frames.push({ time, data: bytes.toString("base64") });
+    } finally { await rm(file, { force: true }); }
+  }
+  return frames;
+}
+const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames,
+  resolveProvider: async (signal) => {
+    const credentials = await activeChatGPTCredentials();
+    const models = await listChatGPTModels(credentials, AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(20_000)]));
+    const model = models.find((m) => /gpt|o[1-9]/i.test(m.slug))?.slug;
+    if (!model) throw new Error("MODEL_UNAVAILABLE");
+    return { id: "chatgpt", model, analyze: async ({ input, images, schema, instructions, signal }) => {
+      const content = [{ type: "input_text", text: JSON.stringify(input) }, ...images.flatMap((f) => [{ type: "input_text", text: `Source frame at ${f.time.toFixed(3)} seconds.` }, { type: "input_image", image_url: `data:image/jpeg;base64,${f.data}`, detail: "low" }])];
+      const result = await analyzeWithChatGPTPlan({ model, schema, instructions }, signal, content);
+      return { value: result.plan };
+    } };
+  },
+});
+async function planTeasers(plan, source, signal, transcript) {
+  let cues = Array.isArray(source.captions) ? source.captions : [];
+  if (plan.captionCues) cues = sourceCaptionTrack(plan.captionCues, source).cues;
+  else {
+    try { const cached = JSON.parse(await readFile(path.join(source.directory, "speech-captions.json"), "utf8")); cues = sourceCaptionTrack(cached, source).cues; } catch { /* No ASR download/recognition is triggered for selection. */ }
+  }
+  const sourceInput = typeof transcript === "string" ? { ...source, transcript: transcript.slice(0, 100_000) } : source;
+  if ((typeof transcript === "string" || !cues.length) && sourceInput.transcript) {
+    const lines = transcriptCues(sourceInput.transcript).filter((c) => c.at < source.duration).sort((a,b) => a.at-b.at);
+    if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter((c) => c.end > c.start);
+  }
+  const context = source.sourceContext;
+  return selectTeasers(plan, sourceInput, { cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters } : source, signal });
 }
 
 function safeName(value) {
@@ -861,35 +947,14 @@ async function importUpload(request, url) {
   return saveSourceMetadata(directory, source);
 }
 
-function detectScript(text) {
-  const japanese = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
-  const korean = (text.match(/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/g) || []).length;
-  if (japanese > korean && japanese > 0) return "japanese";
-  if (korean > 0) return "korean";
-  return "latin";
-}
-
-function fontFamilyFor(text) {
-  const script = detectScript(text);
-  const configured = {
-    latin: process.env.FONT_LATIN_FAMILY,
-    japanese: process.env.FONT_JAPANESE_FAMILY,
-    korean: process.env.FONT_KOREAN_FAMILY,
-  }[script];
-  if (configured) return configured;
-  if (script === "japanese") return "Noto Sans JP, Noto Sans, Noto Sans KR, sans-serif";
-  if (script === "korean") return "Noto Sans KR, Noto Sans, Noto Sans JP, sans-serif";
-  return "Noto Sans, Noto Sans JP, Noto Sans KR, sans-serif";
+function fontFamilyFor(text, font = "auto") {
+  return fontFamilyForStyle(font, text, { overrides: { latin: process.env.FONT_LATIN_FAMILY, japanese: process.env.FONT_JAPANESE_FAMILY, korean: process.env.FONT_KOREAN_FAMILY } });
 }
 
 let overlayFontsReady;
 function registerOverlayFonts() {
-  overlayFontsReady ||= Promise.all([
-    ["Noto Sans", "NotoSans-Variable.ttf"],
-    ["Noto Sans JP", "NotoSansJP-Variable.ttf"],
-    ["Noto Sans KR", "NotoSansKR-Variable.ttf"],
-  ].map(([family, filename]) => sharp({ text: {
-    text: "A", font: `${family} Bold 12`, fontfile: path.join(projectRoot, "public", filename), rgba: true,
+  overlayFontsReady ||= Promise.all(listFonts().filter((font) => font.bundled).map(({ family, file }) => sharp({ text: {
+    text: "A", font: `${family} Bold 12`, fontfile: path.join(projectRoot, "public", file), rgba: true,
   } }).png().toBuffer()));
   return overlayFontsReady;
 }
@@ -1001,47 +1066,36 @@ async function loadSource(sourceId) {
   return { ...metadata, ...media, directory, mediaPath };
 }
 
-function svgTextLines(lines, { fontFamily, fontSize, firstBaseline, lineHeight, fontWeight = 800 }) {
-  const textNodes = lines.map((line, index) => {
-    const y = Math.round(firstBaseline + index * lineHeight);
-    return `<text x="540" y="${y}" text-anchor="middle">${escapeXml(line)}</text>`;
-  }).join("");
-  const effectId = `${Math.round(firstBaseline)}-${fontSize}`;
-  // Render each effect independently: sequential drop shadows can obscure the glow.
-  // em units keep the same visual proportions as the browser at every title size.
-  return `<g font-family="${escapeXml(fontFamily)}" font-size="${fontSize}" font-weight="${fontWeight}" letter-spacing="0" stroke="none">
-    <defs>${[["ambient-shadow", .18], ["soft-shadow", .10], ["contact-shadow", .02], ["outer-glow", .08], ["inner-glow", .0225]].map(([id, radius]) => `<filter id="${id}-${effectId}" x="-50%" y="-100%" width="200%" height="300%"><feGaussianBlur stdDeviation="${radius * fontSize}" /></filter>`).join("")}</defs>
-    <g fill="#05080f" opacity="0.70" filter="url(#ambient-shadow-${effectId})">${textNodes}</g>
-    <g fill="#05080f" opacity="0.90" transform="translate(0 ${fontSize * 0.12})" filter="url(#soft-shadow-${effectId})">${textNodes}</g>
-    <g fill="#05080f" opacity="0.95" transform="translate(0 ${fontSize * 0.07})" filter="url(#contact-shadow-${effectId})">${textNodes}</g>
-    <g fill="#e5efff" opacity="0.55" filter="url(#outer-glow-${effectId})">${textNodes}</g>
-    <g fill="#ffffff" opacity="0.85" filter="url(#inner-glow-${effectId})">${textNodes}</g>
-    <g fill="#ffffff">${textNodes}</g>
-  </g>`;
-}
-
-async function renderTitleOverlay({ outputPath, shineOutputPath, originalTitle, partTitle, partId, totalParts }) {
+async function renderTitleOverlay({ outputPath, shineOutputPath, originalTitle, partTitle, partId, totalParts, visualStyle = DEFAULT_VISUAL_STYLE }) {
   await registerOverlayFonts();
   const size = Math.min(fitOverlayText(originalTitle, 'original').fontSize, fitOverlayText(partTitle, 'part').fontSize);
-  const originalFit = fitOverlayText(originalTitle, "original", size);
-  const partFit = fitOverlayText(partTitle, "part", size);
+  let pair = { original: fitOverlayText(originalTitle, "original", size), part: fitOverlayText(partTitle, "part", size) };
+  if (needsMeasuredTitleFit(visualStyle)) {
+    pair = await constrainTitlePair(originalTitle, partTitle, pair, async (text, fontSize, role) => {
+      const style = visualStyle[role === "original" ? "originalTitle" : "partTitle"];
+      const family = fontFamilyFor(role === "original" ? originalTitle : partTitle, style.font);
+      const { width } = await sharp({ text: { text: `<span font_family="${escapeXml(family)}" weight="${style.fontWeight}" size="${fontSize * 1024}">${escapeXml(text)}</span>`, rgba: true } }).metadata();
+      return width + style.outline * 2 + 2;
+    });
+  }
+  const { original: originalFit, part: partFit } = pair;
   const originalLineHeight = originalFit.fontSize + originalFit.lineSpacing;
   const originalLastBaseline = TITLE_LAYOUT.original.bottom - originalFit.fontSize * 0.2;
   const originalFirstBaseline = originalLastBaseline - (originalFit.lines.length - 1) * originalLineHeight;
   const partLineHeight = partFit.fontSize + partFit.lineSpacing;
-  const originalFamily = fontFamilyFor(originalTitle);
-  const partFamily = fontFamilyFor(partTitle);
+  const originalFamily = fontFamilyFor(originalTitle, visualStyle.originalTitle.font);
+  const partFamily = fontFamilyFor(partTitle, visualStyle.partTitle.font);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
       <defs><clipPath id="top-title-zone"><rect x="0" y="0" width="1080" height="${FOREGROUND_Y}" /></clipPath><clipPath id="bottom-title-zone"><rect x="0" y="${TITLE_LAYOUT.part.top - 24}" width="1080" height="${1800 - (TITLE_LAYOUT.part.top - 24)}" /></clipPath></defs>
-      <g clip-path="url(#top-title-zone)">${svgTextLines(originalFit.lines, { fontFamily: originalFamily, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, fontWeight: 700 })}</g>
-      <g clip-path="url(#bottom-title-zone)">${svgTextLines(partFit.lines, { fontFamily: partFamily, fontSize: partFit.fontSize, firstBaseline: TITLE_LAYOUT.part.top + partFit.fontSize * 0.82, lineHeight: partLineHeight, fontWeight: 700 })}</g>
-      ${svgTextLines([`${partId}/${totalParts}`], { fontFamily: partFamily, fontSize: 58, firstBaseline: 1850, lineHeight: 60 })}
+      <g clip-path="url(#top-title-zone)">${styledTextSvg(originalFit.lines, { fontFamily: originalFamily, fontSize: originalFit.fontSize, firstBaseline: originalFirstBaseline, lineHeight: originalLineHeight, style: visualStyle.originalTitle })}</g>
+      <g clip-path="url(#bottom-title-zone)">${styledTextSvg(partFit.lines, { fontFamily: partFamily, fontSize: partFit.fontSize, firstBaseline: TITLE_LAYOUT.part.top + partFit.fontSize * 0.82, lineHeight: partLineHeight, style: visualStyle.partTitle })}</g>
+      ${styledTextSvg([`${partId}/${totalParts}`], { fontFamily: visualStyle.partIndicator.font === "auto" ? partFamily : fontFamilyFor(partTitle, visualStyle.partIndicator.font), fontSize: 58, firstBaseline: 1850, lineHeight: 60, style: visualStyle.partIndicator })}
     </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outputPath);
   if (shineOutputPath) {
-    const shineText = (fit, family, baseline) => `<g font-family="${escapeXml(family)}" font-size="${fit.fontSize}" font-weight="700"><g fill="#b4e9ff" filter="url(#shine-glow)">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g><g fill="#e8f7ff">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g></g>`;
-    const shineSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><defs><filter id="shine-glow"><feGaussianBlur stdDeviation="${size * .08}"/></filter><clipPath id="top"><rect width="1080" height="${FOREGROUND_Y}"/></clipPath><clipPath id="bottom"><rect y="${TITLE_LAYOUT.part.top - 24}" width="1080" height="${1800 - TITLE_LAYOUT.part.top + 24}"/></clipPath></defs><g clip-path="url(#top)">${shineText(originalFit, originalFamily, originalFirstBaseline)}</g><g clip-path="url(#bottom)">${shineText(partFit, partFamily, TITLE_LAYOUT.part.top + size * .82)}</g></svg>`;
+    const shineText = (fit, family, baseline, style) => style.effect !== "current-title-glow-shine" ? "" : `<g font-family="${escapeXml(family)}" font-size="${fit.fontSize}" font-weight="${style.fontWeight}" opacity="${style.opacity}"><g fill="#b4e9ff" filter="url(#shine-glow)">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g><g fill="#e8f7ff">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g></g>`;
+    const shineSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><defs><filter id="shine-glow"><feGaussianBlur stdDeviation="${originalFit.fontSize * .08}"/></filter><clipPath id="top"><rect width="1080" height="${FOREGROUND_Y}"/></clipPath><clipPath id="bottom"><rect y="${TITLE_LAYOUT.part.top - 24}" width="1080" height="${1800 - TITLE_LAYOUT.part.top + 24}"/></clipPath></defs><g clip-path="url(#top)">${shineText(originalFit, originalFamily, originalFirstBaseline, visualStyle.originalTitle)}</g><g clip-path="url(#bottom)">${shineText(partFit, partFamily, TITLE_LAYOUT.part.top + partFit.fontSize * .82, visualStyle.partTitle)}</g></svg>`;
     await sharp(Buffer.from(shineSvg)).png().toFile(shineOutputPath);
   }
 }
@@ -1072,16 +1126,17 @@ async function subtitleFrames(source, plan, part, directory, signal) {
     add(blank, start - position);
     const file = path.join(directory, `subtitle-${index}.png`);
     const size = style.size;
-    const lines = cue.text.split("\n"), family = style.font === "auto" ? fontFamilyFor(cue.text) : `${style.font}, Noto Sans JP, Noto Sans KR, sans-serif`;
+    const lines = cue.text.split("\n"), family = fontFamilyFor(cue.text, style.font);
     const y = subtitleY(style, source.height);
     const text = lines.map((line, lineIndex) => `<text x="540" y="${y - (lines.length - lineIndex - 1) * size * 1.2}" text-anchor="middle">${escapeXml(line)}</text>`).join("");
-    const graphic = `<g font-family="${escapeXml(family)}" font-size="${size}" font-weight="700" stroke-linejoin="round" paint-order="stroke fill"><g transform="translate(2,3)" fill="#000" stroke="#000" stroke-width="${style.outline * 2 + 2}" opacity=".6">${text}</g><g fill="${style.color}" stroke="${style.outlineColor}" stroke-width="${style.outline * 2}">${text}</g></g>`;
+    const legacyGraphic = `<g font-family="${escapeXml(family)}" font-size="${size}" font-weight="700" stroke-linejoin="round" paint-order="stroke fill"><g transform="translate(2,3)" fill="#000" stroke="#000" stroke-width="${style.outline * 2 + 2}" opacity=".6">${text}</g><g fill="${style.color}" stroke="${style.outlineColor}" stroke-width="${style.outline * 2}">${text}</g></g>`;
+    const graphic = style.effect === undefined ? legacyGraphic : styledTextSvg(lines, { fontFamily: family, fontSize: size, firstBaseline: y - (lines.length - 1) * size * 1.2, lineHeight: size * 1.2, roundBaseline: false, style: { ...style, fontWeight: style.fontWeight ?? 700, opacity: style.opacity ?? 1 } });
     const svg = (opacity) => `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><g opacity="${opacity}">${graphic}</g></svg>`;
     await sharp(Buffer.from(svg(1))).png().toFile(file);
     add(file, end - start);
     position = end;
   }
-  const duration = timelineDuration(part.segments);
+  const duration = presentationDuration(part);
   add(blank, Math.max(0.04, duration - position));
   const list = path.join(directory, "subtitles.ffconcat");
   await writeFile(list, `ffconcat version 1.0\n${frames.join("\n")}\nfile '${path.basename(blank)}'\n`);
@@ -1089,7 +1144,7 @@ async function subtitleFrames(source, plan, part, directory, signal) {
 }
 
 
-async function renderPart({ source, plan, part, totalParts, outputPath, onProgress, signal }) {
+async function renderPart({ source, plan, part, totalParts, outputPath, backgroundAsset, sceneAsset, onProgress, signal }) {
   signal?.throwIfAborted();
   if (!ffmpeg) throw new Error("Không tìm thấy FFmpeg. macOS: brew install ffmpeg");
   const workDirectory = path.dirname(outputPath);
@@ -1102,33 +1157,63 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
     partTitle: part.title,
     partId: part.id,
     totalParts,
+    visualStyle: plan.visualStyle || DEFAULT_VISUAL_STYLE,
   });
 
+  // The existing title-card input carries scene pixels below unchanged text.
+  // None reuses the exact original path/graph; static scenes need no extra decoder.
+  const animated = normalizeTitleAnimation(plan.visualStyle?.titleAnimation) !== "none";
+  const segments = presentationSegments(part), finitePresentation = animated || segments !== part.segments;
+  const transitionFilters = cutTransitionFilters(plan.visualStyle?.cutTransition, segments, partTransitionWindows(part, plan.visualStyle?.cutTransition));
+  let titleInputPath = titleOverlayPath;
+  if (sceneAsset && !animated && !transitionFilters) {
+    titleInputPath = path.join(workDirectory, `part-${part.id}-scene-titles.png`);
+    await sharp(sceneAsset).composite([{ input: titleOverlayPath }]).png().toFile(titleInputPath);
+  }
   const audioInput = source.hasAudio ? "0:a" : "1:a";
   const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
-  const segmentFilters = part.segments.flatMap((segment, index) => [
+  const segmentFilters = segments.flatMap((segment, index) => [
     `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS,fps=30,setsar=1[v${index}]`,
     `[${audioInput}]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${index}]`,
   ]);
-  const concatInputs = part.segments.map((_, index) => `[v${index}][a${index}]`).join("");
+  const concatInputs = segments.map((_, index) => `[v${index}][a${index}]`).join("");
   const overlayInput = source.hasAudio ? 1 : 2;
   const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t/${PLAYBACK_RATE},${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
+  // New RGB recipes stay RGB through composition, then convert explicitly to
+  // Rec.709 limited YUV. Current's historical graph remains byte-for-byte.
+  const background = assertRenderableBackground(plan.visualStyle?.background);
+  const rgbFilter = Boolean(plan.visualStyle?.filter?.presetId) || background.mode !== "source-blur";
+  const overlayFormat = rgbFilter ? ":format=rgb" : "";
+  const outputColor = rgbFilter ? "scale=out_color_matrix=bt709:out_range=tv," : "";
+  const animatedSceneInput = (animated || transitionFilters) && sceneAsset ? overlayInput + 2 + (subtitlesPath ? 1 : 0) + (backgroundAsset ? 1 : 0) : undefined;
+  const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput: overlayInput + 1, sceneInput: transitionFilters ? undefined : animatedSceneInput, overlayFormat });
   const filters = [
     ...segmentFilters,
-    `${concatInputs}concat=n=${part.segments.length}:v=1:a=1[cutv][cuta]`,
-    `[cutv]eq=contrast=${renderContrast}:saturation=${renderSaturation}[graded]`,
-    `[graded]split=2[bgsrc][mainsrc]`,
-    `color=c=black:s=1080x1920:r=30[black]`,
-    `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=1080:1920:flags=bilinear,format=rgba,colorchannelmixer=aa=0.5[bgvideo]`,
-    `[black][bgvideo]overlay=shortest=1[bg]`,
+    `${concatInputs}concat=n=${segments.length}:v=1:a=1[cutv][cuta]`,
+    `[cutv]${ffmpegFilterExpression(plan.visualStyle?.filter, { contrast: renderContrast, saturation: renderSaturation })}[graded]`,
+    ...(background.mode === "source-blur" ? [
+      `[graded]split=2[bgsrc][mainsrc]`,
+      `color=c=black:s=1080x1920:r=30[black]`,
+      `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=1080:1920:flags=bilinear,format=rgba,colorchannelmixer=aa=${background.opacity}[bgvideo]`,
+      `[black][bgvideo]overlay=shortest=1${overlayFormat}[bg]`,
+    ] : [
+      `[graded]null[mainsrc]`,
+      background.mode === "solid" ? `color=c=black:s=1080x1920:r=30,format=rgb24[bg]` : `[${overlayInput + 2 + (subtitlesPath ? 1 : 0)}:v]format=rgb24[bg]`,
+    ]),
     `[mainsrc]${foregroundFilter()}[main]`,
-    `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1[layout]`,
+    `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[${transitionFilters ? "cutScene" : "layout"}]`,
+    ...(transitionFilters ? [
+      ...(animatedSceneInput !== undefined ? [`[${animatedSceneInput}:v]format=rgba[cutDecoration]`, `[cutScene][cutDecoration]overlay=0:0:shortest=1${overlayFormat}[decoratedCutScene]`] : []),
+      `[${animatedSceneInput !== undefined ? "decoratedCutScene" : "cutScene"}]${transitionFilters}[layout]`,
+    ] : []),
+    ...(animationFilters || [
     `[${overlayInput}:v]format=rgba[titlecard]`,
-    `[layout][titlecard]overlay=0:0:shortest=1[baseTitles]`,
+    `[layout][titlecard]overlay=0:0:shortest=1${overlayFormat}[baseTitles]`,
     `[${overlayInput + 1}:v]format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
-    `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1[titled]`,
-    ...(subtitlesPath ? [`[${overlayInput + 2}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0[subtitled]`] : []),
-    `[${subtitlesPath ? "subtitled" : "titled"}]format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,setpts=PTS/${PLAYBACK_RATE}[vout]`,
+    `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1${overlayFormat}[titled]`,
+    ]),
+    ...(subtitlesPath ? [`[${overlayInput + 2}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`] : []),
+    `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,${finitePresentation ? "settb=AVTB," : ""}setpts=PTS/${PLAYBACK_RATE}${finitePresentation ? ",fps=30:start_time=0:eof_action=pass" : ""}[vout]`,
     `[cuta]atempo=${PLAYBACK_RATE}[aout]`,
   ];
 
@@ -1140,9 +1225,11 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
     }
     args.push("-i", source.mediaPath);
     if (!source.hasAudio) args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo");
-    args.push("-loop", "1", "-framerate", "30", "-i", titleOverlayPath);
+    args.push("-loop", "1", "-framerate", "30", "-i", titleInputPath);
     args.push("-loop", "1", "-framerate", "30", "-i", titleShinePath);
     if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
+    if (backgroundAsset) args.push("-loop", "1", "-framerate", "30", "-i", backgroundAsset);
+    if (animatedSceneInput !== undefined) args.push("-loop", "1", "-framerate", "30", "-i", sceneAsset);
     args.push(
       "-filter_complex", filters.join(";"),
       "-map", "[vout]",
@@ -1159,9 +1246,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
         "-c:v", "h264_videotoolbox",
         "-profile:v", "high",
         "-level:v", "4.2",
-        "-b:v", process.env.FFMPEG_VIDEO_BITRATE || "12M",
-        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "16M",
-        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
+        "-b:v", process.env.FFMPEG_VIDEO_BITRATE || "16M",
+        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "20M",
+        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "32M",
         "-spatial_aq", "1",
         "-realtime", "0",
         "-allow_sw", "0",
@@ -1170,7 +1257,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
       args.push(
         "-c:v", videoEncoder,
         "-preset", process.env.FFMPEG_PRESET || "medium",
-        "-crf", process.env.FFMPEG_CRF || "18",
+        "-crf", process.env.FFMPEG_CRF || "17",
       );
     }
     args.push(
@@ -1178,7 +1265,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
       "-c:a", "aac",
       "-b:a", "192k",
       "-movflags", "+faststart+write_colr",
-      "-shortest",
+      // Animated video/audio are already finite. Do not truncate the audio tail
+      // to the final fps filter's EOF; None retains its historical options.
+      ...(!finitePresentation ? ["-shortest"] : []),
       "-progress", "pipe:1",
       "-nostats",
       outputPath,
@@ -1186,7 +1275,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, onProgre
     return args;
   };
 
-  const expectedMicroseconds = timelineDuration(part.segments) / PLAYBACK_RATE * 1_000_000;
+  const expectedMicroseconds = presentationDuration(part) / PLAYBACK_RATE * 1_000_000;
   let progressBuffer = "";
   const renderOptions = {
     signal,
@@ -1238,6 +1327,19 @@ async function executeRender(job, source, plan, signal) {
     await mkdir(outputDirectory, { recursive: true });
     const exportNames = job.exportNames || await reserveExportNames(plan, source);
     job.exportNames = exportNames;
+    const sceneAsset = await renderSceneOverlay({ overlays: plan.visualStyle?.overlays || [], publicRoot: path.join(projectRoot, "public"), outputPath: path.join(outputDirectory, "scene-overlays.png") });
+    // One static gradient per job, shared by all parts; never rasterize per frame.
+    const background = assertRenderableBackground(plan.visualStyle?.background);
+    let backgroundAsset;
+    if (background.mode === "gradient") {
+      backgroundAsset = path.join(outputDirectory, "background.png");
+      const pixels = Buffer.alloc(1080 * 1920 * 3);
+      for (let y = 0; y < 1920; y++) {
+        const row = Buffer.from(gradientRowRgb(background, y, 1920));
+        pixels.fill(row, y * 1080 * 3, (y + 1) * 1080 * 3);
+      }
+      await sharp(pixels, { raw: { width: 1080, height: 1920, channels: 3 } }).png().toFile(backgroundAsset);
+    }
     for (const [index, part] of plan.parts.entries()) {
       signal?.throwIfAborted();
       job.currentPart = part.id;
@@ -1250,6 +1352,8 @@ async function executeRender(job, source, plan, signal) {
         plan,
         part,
         totalParts: plan.parts.length,
+        backgroundAsset,
+        sceneAsset,
         outputPath,
         signal,
         onProgress: (partProgress) => {
@@ -1284,7 +1388,8 @@ async function startRender(body, parentSignal) {
   if (!["manual", "mock"].includes(originalPlan.providerUsed) && originalPlan.parts.some((part) => !part.smartCutApplied)) {
     originalPlan = smartCutPlan(originalPlan, await speech.boundaries(source), source.duration);
   }
-  originalPlan.subtitles = subtitleStyle(originalPlan.subtitles);
+  if (body.selectTeasers === true || (originalPlan.teaserPolicy === TEASER_POLICY && originalPlan.parts.some((p) => !p.teaser || p.teaser.inputKey === "0".repeat(64)))) originalPlan = await planTeasers(originalPlan, source, parentSignal);
+  originalPlan = snapshotPlanVisualStyle(originalPlan);
   if (originalPlan.subtitles.enabled && originalPlan.captionCues) originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
   const renderPlan = originalPlan;
   validatePlan(renderPlan, source);
@@ -1362,13 +1467,14 @@ async function prepareBatch(batch, body, items) {
         .replace("__BATCH_TRANSCRIPT__", source.transcript);
       const result = await analyzeWithChatGPTPlan({ input, schema: body.schema }, signal);
       signal.throwIfAborted();
-      item.plan = { ...result.plan, originalTitle: source.title, providerUsed: "chatgpt", subtitles: subtitleStyle(body.subtitles) };
+      item.plan = snapshotPlanVisualStyle({ ...result.plan, originalTitle: source.title, providerUsed: "chatgpt", visualStyle: body.visualStyle, subtitles: body.subtitles });
       item.plan.parts?.forEach((part, index) => { part.id = index + 1; });
       if (item.plan.parts?.length !== 2 || item.plan.parts.some((part) => !Array.isArray(part.hashtags) || new Set(part.hashtags).size !== 10)) {
         throw new Error("AI phải trả về đúng 2 part và 10 hashtag khác nhau cho mỗi part. Thử lại video này.");
       }
       validatePlan(item.plan, source);
-      const job = await startRender({ sourceId: source.id, plan: item.plan }, signal);
+      const job = await startRender({ sourceId: source.id, plan: item.plan, selectTeasers: true }, signal);
+      item.plan = structuredClone(job.plan);
       item.jobId = job.id;
       item.state = "queued";
     } catch (error) {
@@ -1462,12 +1568,15 @@ await mkdir(sourcesRoot, { recursive: true });
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", `http://${host}:${port}`);
   try {
+    if (requestUrl.pathname.startsWith("/api/chatgpt/") && !localAuthOrigin(request.headers.origin)) {
+      sendJson(request, response, 403, { error: "Phiên ChatGPT chỉ dùng từ app local." }); return;
+    }
     if (request.method === "OPTIONS") {
       response.writeHead(204, corsHeaders(request));
       response.end();
       return;
     }
-    if (requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
+    if (requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut|teaser-hooks)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
       const origin = request.headers.origin;
       let local = !origin;
       try { const url = new URL(origin); local = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname); } catch { /* Missing/native origin only. */ }
@@ -1501,15 +1610,18 @@ const server = createServer(async (request, response) => {
         sendHtml(request, response, 400, "ChatGPT sign-in expired", "Quay lại ShortCut Studio và bấm Continue with ChatGPT lần nữa.");
         return;
       }
-      pendingChatGPTAuth.delete(state);
       try {
+        pendingChatGPTAuth.take(state);
         const credentials = await exchangeChatGPTCode(attempt, requestUrl);
+        pendingChatGPTAuth.finish(state, "connected");
         const sharingMessage = credentials.scopes.includes("chatgpt.tokens.use.direct")
           ? "Đã kết nối ChatGPT plan. Cửa sổ này sẽ tự đóng."
           : "Đã đăng nhập, nhưng ChatGPT plan usage chưa được cấp quyền.";
         sendHtml(request, response, 200, "ChatGPT connected", sharingMessage);
       } catch (error) {
-        sendHtml(request, response, 400, "Không kết nối được ChatGPT", error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : "Không đăng nhập được ChatGPT.";
+        pendingChatGPTAuth.finish(state, "failed", message);
+        sendHtml(request, response, 400, "Không kết nối được ChatGPT", message);
       }
       return;
     }
@@ -1517,16 +1629,27 @@ const server = createServer(async (request, response) => {
       sendJson(request, response, 400, { error: "Gemini Pro dùng chế độ copy/dán JSON trong tab chỉnh từng video. Không còn kết nối Antigravity hoặc gọi Gemini CLI/API." }); return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/chatgpt/session") {
-      sendJson(request, response, 200, { session: publicChatGPTSession(readChatGPTCredentials()) });
+      let credentials = readChatGPTCredentials(), error;
+      if (credentials?.scopes?.includes("chatgpt.tokens.use.direct") && Date.parse(credentials.expires_at || "") - Date.now() < 90_000) {
+        try { credentials = await activeChatGPTCredentials(); } catch (e) { error = e.status === 401 ? "Phiên đã bị thu hồi/hết hạn. Kết nối lại ChatGPT." : "Không refresh được phiên. Kiểm tra mạng và thử lại sau."; }
+      }
+      sendJson(request, response, 200, { session: { ...publicChatGPTSession(credentials), ...(error ? { sharing: false, error, needsSignIn: true } : {}) } });
       return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/chatgpt/auth/start") {
-      const url = await startChatGPTAuthorization();
-      sendJson(request, response, 200, { url });
+      const attempt = await startChatGPTAuthorization();
+      sendJson(request, response, 200, attempt);
       return;
     }
+    if (requestUrl.pathname === "/api/chatgpt/auth/status" && ["GET", "DELETE"].includes(request.method)) {
+      const id = requestUrl.searchParams.get("attemptId");
+      if (request.method === "DELETE") pendingChatGPTAuth.cancel(id);
+      sendJson(request, response, 200, pendingChatGPTAuth.public(id)); return;
+    }
     if (request.method === "DELETE" && requestUrl.pathname === "/api/chatgpt/session") {
+      pendingChatGPTAuth.cancelAll();
       deleteChatGPTCredentials();
+      await rm(chatGPTRegistrationPath, { force: true });
       sendJson(request, response, 200, { session: publicChatGPTSession(null) });
       return;
     }
@@ -1557,7 +1680,7 @@ const server = createServer(async (request, response) => {
       await readJson(request); await speech.installModel();
       sendJson(request, response, 200, await speech.status()); return;
     }
-    const speechSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/(smart-cut|captions)$/i);
+    const speechSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/(smart-cut|captions|teaser-hooks)$/i);
     if (request.method === "POST" && speechSource) {
       const body = await readJson(request);
       if (mediaLibrary.isLocked(speechSource[1])) throw new Error("Source đang được chuyển vào thùng rác.");
@@ -1566,6 +1689,16 @@ const server = createServer(async (request, response) => {
         sendJson(request, response, 200, await speech.captions(source, undefined, { regenerate: body.regenerate === true, provider: body.provider || 'auto' })); return;
       }
       validatePlan(body.plan, source);
+      if (speechSource[2] === "teaser-hooks") {
+        const controller = new AbortController(), abort = () => controller.abort(new Error("Hook client disconnected"));
+        response.once("close", abort);
+        try {
+          if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 100_000)) throw new Error("Invalid hook transcript.");
+          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript);
+          validatePlan(next, source); sendJson(request, response, 200, { plan: next });
+        } finally { response.removeListener("close", abort); }
+        return;
+      }
       const next = smartCutPlan({ ...body.plan, parts: body.plan.parts.map(trimPartStart) }, await speech.boundaries(source), source.duration);
       validatePlan(next, source); sendJson(request, response, 200, { plan: next }); return;
     }

@@ -1,15 +1,16 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import net from "node:net";
+import { resolveRuntime, runtimeEnvironment, prepareRuntimeDirectories, assertRuntimePortsAvailable } from "./runtime-config.mjs";
 
 const resources = path.resolve(import.meta.dirname, "..");
 const appRoot = path.join(resources, "app");
 const config = JSON.parse(await readFile(path.join(resources, "config.json"), "utf8"));
-const supportRoot = path.join(homedir(), "Library", "Application Support", "ShortCut Studio");
-const dataRoot = config.existingDataRoot && existsSync(config.existingDataRoot) ? config.existingDataRoot : path.join(supportRoot, "media");
+const runtime = resolveRuntime({ profile: config.profile, home: homedir(), existingDataRoot: config.existingDataRoot });
+const { dataRoot } = runtime;
+await assertRuntimePortsAvailable(runtime);
+await prepareRuntimeDirectories(runtime);
 await mkdir(dataRoot, { recursive: true });
 await mkdir(path.join(dataRoot, "cache"), { recursive: true });
 const xmlEscape = (text) => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
@@ -17,28 +18,14 @@ const fontConfig = path.join(dataRoot, "fontconfig.xml");
 await writeFile(fontConfig, `<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><dir>${xmlEscape(path.join(appRoot, "public"))}</dir><dir>/System/Library/Fonts</dir><cachedir>${xmlEscape(path.join(dataRoot, "cache", "fontconfig"))}</cachedir></fontconfig>`);
 const runtimeBin = path.join(resources, "runtime", "bin");
 const childEnv = {
-  ...process.env,
+  ...runtimeEnvironment(runtime),
   PATH: `${runtimeBin}:/usr/bin:/bin:/usr/sbin:/sbin`,
-  NODE_ENV: "production", HOST: "127.0.0.1", PORT: "5173",
-  MEDIA_WORKER_PORT: "8787", MEDIA_WORKER_DATA_DIR: dataRoot,
+  NODE_ENV: "production",
   FFMPEG_PATH: path.join(runtimeBin, "ffmpeg"), FFPROBE_PATH: path.join(runtimeBin, "ffprobe"),
   WHISPER_PATH: path.join(runtimeBin, "whisper-cli"),
   YT_DLP_PATH: path.join(runtimeBin, "yt-dlp"),
   FONTCONFIG_FILE: fontConfig,
 };
-
-async function portOccupied(port) {
-  return new Promise((resolve) => {
-    const socket = net.connect({ host: "127.0.0.1", port });
-    socket.setTimeout(1000);
-    socket.once("connect", () => { socket.destroy(); resolve(true); });
-    socket.once("error", () => resolve(false));
-    socket.once("timeout", () => { socket.destroy(); resolve(false); });
-  });
-}
-if (await portOccupied(5173) || await portOccupied(8787)) {
-  throw new Error("Cổng 5173 hoặc 8787 đang có bản ShortCut Studio khác chạy. Hãy tắt bản chạy trong Terminal rồi mở app lại; không dừng render đang chạy.");
-}
 
 const children = new Set();
 let stopping = false;
@@ -70,8 +57,8 @@ let ready = false;
 for (let attempt = 0; attempt < 120 && !stopping; attempt++) {
   try {
     const [worker, web] = await Promise.all([
-      fetch("http://127.0.0.1:8787/health", { signal: AbortSignal.timeout(1500) }),
-      fetch("http://127.0.0.1:5173/", { signal: AbortSignal.timeout(1500) }),
+      fetch(`${runtime.workerOrigin}/health`, { signal: AbortSignal.timeout(1500) }),
+      fetch(`${runtime.webOrigin}/`, { signal: AbortSignal.timeout(1500) }),
     ]);
     ready = worker.ok && (await worker.json()).ok && web.ok;
     if (ready) { console.log("SHORTCUT_READY"); break; }

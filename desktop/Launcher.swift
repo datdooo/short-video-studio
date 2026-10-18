@@ -8,23 +8,29 @@ final class StudioApp: NSObject, NSApplicationDelegate {
     private var didOpen = false
     private var quitting = false
     private var logHandle: FileHandle?
-    private let webURL = URL(string: "http://127.0.0.1:5173/")!
+    private var appName: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "ShortCut Studio" }
+    private var webURL: URL {
+        let configURL = Bundle.main.resourceURL!.appendingPathComponent("config.json")
+        let config = (try? Data(contentsOf: configURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        let port = config?["webPort"] as? Int ?? 5173
+        return URL(string: "http://127.0.0.1:\(port)/")!
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let menu = NSMenu()
-        menu.addItem(withTitle: "Mở ShortCut Studio", action: #selector(openBrowser), keyEquivalent: "o").target = self
+        menu.addItem(withTitle: "Mở \(appName)", action: #selector(openBrowser), keyEquivalent: "o").target = self
         menu.addItem(withTitle: "Xem log", action: #selector(openLog), keyEquivalent: "").target = self
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Thoát ShortCut Studio…", action: #selector(quitApp), keyEquivalent: "q").target = self
+        menu.addItem(withTitle: "Thoát \(appName)…", action: #selector(quitApp), keyEquivalent: "q").target = self
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let iconURL = Bundle.main.url(forResource: "StudioMenuTemplate", withExtension: "png"),
            let icon = NSImage(contentsOf: iconURL) {
             icon.size = NSSize(width: 18, height: 18)
             icon.isTemplate = true
-            icon.accessibilityDescription = "ShortCut Studio"
+            icon.accessibilityDescription = appName
             item.button?.image = icon
         }
-        item.button?.toolTip = "ShortCut Studio — Đang khởi động"
+        item.button?.toolTip = "\(appName) — Đang khởi động"
         item.menu = menu
         statusItem = item
         guard let resources = Bundle.main.resourceURL else { showError("Không tìm thấy dữ liệu app."); return }
@@ -55,7 +61,7 @@ final class StudioApp: NSObject, NSApplicationDelegate {
                 if log.contains("SHORTCUT_READY") {
                     self.didOpen = true
                     self.readyTimer?.invalidate()
-                    self.statusItem?.button?.toolTip = "ShortCut Studio — Đang chạy"
+                    self.statusItem?.button?.toolTip = "\(self.appName) — Đang chạy"
                     self.openBrowser()
                 }
             }
@@ -63,7 +69,7 @@ final class StudioApp: NSObject, NSApplicationDelegate {
     }
 
     private var logURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/ShortCut Studio/launcher.log")
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/\(appName)/launcher.log")
     }
     @objc private func openBrowser() { NSWorkspace.shared.open(webURL) }
     @objc private func openLog() { NSWorkspace.shared.open(logURL) }
@@ -71,7 +77,7 @@ final class StudioApp: NSObject, NSApplicationDelegate {
 
     private func showError(_ text: String) {
         let alert = NSAlert()
-        alert.messageText = "Không chạy được ShortCut Studio"
+        alert.messageText = "Không chạy được \(appName)"
         alert.informativeText = text
         alert.addButton(withTitle: "Đóng")
         alert.addButton(withTitle: "Xem log")
@@ -83,7 +89,7 @@ final class StudioApp: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if !quitting && runner?.isRunning == true {
             let alert = NSAlert()
-            alert.messageText = "Thoát ShortCut Studio?"
+            alert.messageText = "Thoát \(appName)?"
             alert.informativeText = "Nếu đang render, tác vụ sẽ bị dừng. Video đã xuất hoàn tất vẫn được giữ. Đóng tab trình duyệt thì app vẫn tiếp tục chạy."
             alert.addButton(withTitle: "Thoát và dừng app")
             alert.addButton(withTitle: "Tiếp tục chạy")

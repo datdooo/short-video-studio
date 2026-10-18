@@ -1,0 +1,13 @@
+export type FontId = "auto" | "Noto Sans" | "Noto Sans JP" | "Noto Sans KR" | "Montserrat" | "Inter" | "Roboto Condensed" | "Oswald";
+export type Script = "latin" | "japanese" | "korean";
+export type FontDefinition = { id: FontId; label: string; family: string | null; file: string | null; licenseFile: string | null; scripts: Script[]; weights: number[]; group: string; bundled: boolean; fallbackFamilies: string[] };
+export const FONT_IDS: readonly FontId[];
+export function normalizeFontId(value?: unknown): FontId;
+export function getFontDefinition(id?: unknown): FontDefinition;
+export function listFonts(): FontDefinition[];
+export function detectScript(text: string): Script;
+export function supportsScript(id: unknown, script: Script): boolean;
+export function fontFallbackStack(id: unknown, text: string, browser?: boolean): string[];
+export function fontFamilyForStyle(id: unknown, text: string, options?: { browser?: boolean; overrides?: Partial<Record<Script, string | undefined>> }): string;
+export function fontWeightFor(id: unknown, value?: number): number;
+export function fontFaceCss(): string;

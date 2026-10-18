@@ -1,3 +1,4 @@
+import { copyWorkerLibraries } from "./worker-runtime-files.mjs";
 // Cross-build a single-file Windows x64 EXE on macOS/Linux using a verified Go SDK.
 // Generated downloads/staging live only in ignored .local-tools/ and release/.
 import { spawnSync } from 'node:child_process';
@@ -66,7 +67,7 @@ run(process.execPath, ['scripts/run-framework.mjs', 'build'], { stdio: 'inherit'
 await cp(path.join(project, 'dist', 'standalone'), app, { recursive: true, dereference: true });
 await cp(path.join(project, 'worker'), path.join(app, 'worker'), { recursive: true, filter: (file) => !file.endsWith('.test.mjs') });
 await mkdir(path.join(app, 'lib'), { recursive: true });
-for (const file of ['subtitles.mjs', 'render-config.mjs', 'legacy-plan.mjs']) await copyFile(path.join(project, 'lib', file), path.join(app, 'lib', file));
+await copyWorkerLibraries(project, app);
 await mkdir(path.join(resources, 'desktop'));
 for (const file of ['windows-bootstrap.mjs', 'windows-config.mjs']) await copyFile(path.join(project, 'desktop', file), path.join(resources, 'desktop', file));
 

@@ -11,6 +11,7 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "release/**",
+    ".isolation-verification/**", // Synthetic QA snapshots and temporary unpacked runtimes.
     ".local-tools/**", // Downloaded build SDKs/runtimes, not application source.
     "build/**",
     "next-env.d.ts",

@@ -1,3 +1,4 @@
+import { copyWorkerLibraries } from "./worker-runtime-files.mjs";
 import { spawnSync } from "node:child_process";
 import { createRequire, isBuiltin } from "node:module";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -6,27 +7,28 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { trimRuntime } from "./trim-runtime.mjs";
+import { macPackageTarget, runtimeEnvironment } from "../desktop/runtime-config.mjs";
 import { auditMacOSRuntime } from "./audit-macos-runtime.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("This packaging script targets Apple Silicon Macs.");
 const compatible26 = process.argv.includes("--macos26");
+const target = macPackageTarget({ development: process.argv.includes("--dev"), compatible26, projectRoot });
+const { runtime, releaseRoot, outputAppPath } = target;
 const runtimeManifestPath = path.join(projectRoot, ".local-tools/macos26/runtime-manifest.json");
 if (compatible26 && !existsSync(runtimeManifestPath)) throw new Error("Run npm run setup:macos26 first to fetch verified compatible runtime binaries.");
 const compatibleRuntime = compatible26 ? JSON.parse(readFileSync(runtimeManifestPath, "utf8")) : null;
 const minimumOS = compatible26 ? "26.0" : run("/usr/bin/sw_vers", ["-productVersion"]).trim().split(".")[0] + ".0";
-const releaseRoot = path.join(projectRoot, "release", ...(compatible26 ? ["macos-26"] : []));
-const outputAppPath = path.join(releaseRoot, "ShortCut Studio.app");
 await mkdir(releaseRoot, { recursive: true });
 const stageRoot = await mkdtemp(path.join(releaseRoot, ".build-"));
-const appPath = path.join(stageRoot, "ShortCut Studio.app");
+const appPath = path.join(stageRoot, target.appName);
 function run(binary, args, options = {}) {
   const result = spawnSync(binary, args, { cwd: projectRoot, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, ...options });
   if (result.error || result.status !== 0) throw new Error(`${binary}: ${result.error?.message || result.stderr || result.stdout}`);
   return result.stdout || "";
 }
-console.log("Building production frontend…");
-run(process.execPath, ["scripts/run-framework.mjs", "build"], { stdio: "inherit", env: { ...process.env, SHORTCUT_PERSONAL_BUILD: "1" } });
+console.log(`Building frontend for ${runtime.name}…`);
+run(process.execPath, ["scripts/run-framework.mjs", "build"], { stdio: "inherit", env: { ...(runtime.isolated ? runtimeEnvironment(runtime) : process.env), NEXT_PUBLIC_MEDIA_WORKER_ORIGIN: runtime.workerOrigin, SHORTCUT_PERSONAL_BUILD: "1" } });
 const contents = path.join(appPath, "Contents");
 const resources = path.join(contents, "Resources");
 const appRoot = path.join(resources, "app");
@@ -38,10 +40,9 @@ await mkdir(libRoot, { recursive: true });
 await cp(path.join(projectRoot, "dist", "standalone"), appRoot, { recursive: true, dereference: true });
 await cp(path.join(projectRoot, "worker"), path.join(appRoot, "worker"), { recursive: true });
 await mkdir(path.join(appRoot, "lib"), { recursive: true });
-await copyFile(path.join(projectRoot, "lib/subtitles.mjs"), path.join(appRoot, "lib/subtitles.mjs"));
-for (const file of ['render-config.mjs', 'legacy-plan.mjs']) await copyFile(path.join(projectRoot, 'lib', file), path.join(appRoot, 'lib', file));
+await copyWorkerLibraries(projectRoot, appRoot);
 await cp(path.join(projectRoot, "desktop"), path.join(resources, "desktop"), { recursive: true });
-await writeFile(path.join(resources, "config.json"), JSON.stringify({ existingDataRoot: compatible26 ? null : path.join(projectRoot, "worker-data") }, null, 2));
+await writeFile(path.join(resources, "config.json"), JSON.stringify(target.config, null, 2));
 
 // Only Sharp and its installed runtime dependencies are additional to vinext's standalone output.
 const resolver = createRequire(path.join(projectRoot, "package.json"));
@@ -175,7 +176,7 @@ run(path.join(binRoot, "yt-dlp"), ["--version"]);
 
 console.log("Compiling macOS launcher…");
 const scratch = await mkdtemp(path.join(tmpdir(), "shortcut-mac-build-"));
-run("/usr/bin/swiftc", ["-O", "-target", `arm64-apple-macosx${minimumOS}`, "-module-cache-path", path.join(scratch, "swift-cache"), path.join(projectRoot, "desktop", "Launcher.swift"), "-o", path.join(contents, "MacOS", "ShortCut Studio")]);
+run("/usr/bin/swiftc", ["-O", "-target", `arm64-apple-macosx${minimumOS}`, "-module-cache-path", path.join(scratch, "swift-cache"), path.join(projectRoot, "desktop", "Launcher.swift"), "-o", path.join(contents, "MacOS", runtime.name)]);
 const iconset = path.join(scratch, "Studio.iconset");
 await mkdir(iconset);
 const icon = readFileSync(path.join(projectRoot, "public", "favicon.svg"));
@@ -190,8 +191,8 @@ for (const size of [16, 32, 128, 256, 512]) {
 }
 run("/usr/bin/iconutil", ["-c", "icns", iconset, "-o", path.join(resources, "Studio.icns")]);
 await writeFile(path.join(contents, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
-<key>CFBundleName</key><string>ShortCut Studio</string><key>CFBundleDisplayName</key><string>ShortCut Studio</string>
-<key>CFBundleIdentifier</key><string>local.datdo.shortcutstudio</string><key>CFBundleExecutable</key><string>ShortCut Studio</string>
+<key>CFBundleName</key><string>${runtime.name}</string><key>CFBundleDisplayName</key><string>${runtime.name}</string>
+<key>CFBundleIdentifier</key><string>${runtime.bundleId}</string><key>CFBundleExecutable</key><string>${runtime.name}</string>
 <key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>1.1.0</string><key>CFBundleVersion</key><string>2</string>
 <key>CFBundleIconFile</key><string>Studio.icns</string><key>LSMinimumSystemVersion</key><string>${minimumOS}</string><key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>

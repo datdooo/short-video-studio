@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readdir, writeFile, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createYouTubeDownloader } from './youtube-downloader.mjs';
+import { createYouTubeDownloader, COMMENT_TIMEOUT_MS } from './youtube-downloader.mjs';
 import { cookieHeader, fallback, youtubeFailure, youtubeUrl } from './youtube-common.mjs';
+import { collectCommentSignals, COMMENT_FETCH_LIMIT } from '../lib/source-context/comments.mjs';
 
 const url = 'https://www.youtube.com/watch?v=BaW_jenozKc';
 async function fixture(t, adapters, options = {}) {
@@ -203,4 +204,84 @@ test('real yt-dlp arguments use only a private cookie-file path and do not alter
   await writeFile(path.join(root, 'youtube-download.json'), JSON.stringify({ cookiesFile: original }));
   assert.equal((await downloader.metadata(url)).title, 'Private-cookie test'); assert.equal(calls, 1);
   assert.equal(await readFile(original, 'utf8'), jar); await clean();
+});
+
+test('comments reuse the yt-dlp engine without downloading media or touching YouTube.js', async (t) => {
+  const calls = [];
+  const { downloader, clean } = await fixture(t, {
+    yt: async (operation, parsed) => { calls.push(`yt:${operation}:${parsed.id}`); return { title: 'Comment source', comments: [{ id: 'c1', text: 'see 1:00', author: 'A' }] }; },
+    js: async () => assert.fail('YouTube.js must not handle comment retrieval'),
+  });
+  const info = await downloader.comments(url);
+  assert.equal(info.title, 'Comment source');
+  assert.equal(info.comments.length, 1);
+  assert.deepEqual(calls, ['yt:comments:BaW_jenozKc']);
+  await clean();
+});
+
+test('comment retrieval failure degrades to a normalized unavailable signal', async (t) => {
+  const { downloader, clean } = await fixture(t, {
+    yt: async () => { throw new Error('429 rate limited'); },
+    js: async () => assert.fail('YouTube.js must not handle comment retrieval'),
+  });
+  await assert.rejects(downloader.comments(url));
+  const signals = await collectCommentSignals(() => downloader.comments(url));
+  assert.equal(signals.status, 'unavailable');
+  assert.equal(signals.reason, 'comment-retrieval-failed');
+  await clean();
+});
+
+test('real comments operation uses comment-only yt-dlp arguments and no media flags', async (t) => {
+  const calls = [];
+  const { downloader, clean } = await fixture(t, undefined, {
+    ytDlp: '/fake/yt-dlp',
+    run: async (binary, args) => {
+      calls.push({ binary, args });
+      return { stdout: JSON.stringify({ title: 'Comment source', comments: [{ id: 'c1', text: 'see 1:00', author: 'A', parent: 'root' }] }) };
+    },
+  });
+
+  const info = await downloader.comments(url);
+  assert.equal(info.title, 'Comment source');
+  assert.equal(calls.length, 1);
+
+  const { binary, args } = calls[0];
+  assert.equal(binary, '/fake/yt-dlp');
+  assert.ok(args.includes('--skip-download'), 'comments must never download media');
+  assert.ok(args.includes('--write-comments'), 'comments must be requested from yt-dlp');
+  assert.ok(args.includes('--dump-single-json'), 'comments must be emitted as a single JSON payload');
+  assert.ok(args.includes(`youtube:max_comments=${COMMENT_FETCH_LIMIT}`), 'comment extraction must be bounded');
+  for (const flag of ['-f', '-S', '--merge-output-format', '--write-info-json', '--write-subs', '--write-auto-subs']) {
+    assert.ok(!args.includes(flag), `${flag} must be absent from the comments path`);
+  }
+  assert.ok(args.at(-1).includes('BaW_jenozKc'), 'the comments path must target the parsed video URL');
+  await clean();
+});
+
+test('comment retrieval gets a dedicated timeout budget instead of the metadata budget', async (t) => {
+  assert.ok(COMMENT_TIMEOUT_MS >= 120_000, 'the comment budget must be at least 120 seconds');
+  let aborted = false;
+  const { downloader, clean } = await fixture(t, undefined, {
+    ytDlp: '/fake/yt-dlp',
+    timeouts: { metadata: 1 },
+    run: async (_binary, args, options) => {
+      assert.ok(args.includes('--write-comments'));
+      // Outlives the tiny metadata budget; only a dedicated comment budget survives.
+      await new Promise((resolve, reject) => {
+        const onAbort = () => { clearTimeout(timer); aborted = true; reject(options.signal.reason); };
+        const timer = setTimeout(() => {
+          // A finished subprocess no longer observes the downloader's normal
+          // shared-request cleanup abort after its final consumer resolves.
+          options.signal.removeEventListener('abort', onAbort);
+          resolve();
+        }, 75);
+        options.signal.addEventListener('abort', onAbort, { once: true });
+      });
+      return { stdout: JSON.stringify({ title: 'Slow comment scrape' }) };
+    },
+  });
+
+  assert.equal((await downloader.comments(url)).title, 'Slow comment scrape');
+  assert.equal(aborted, false);
+  await clean();
 });

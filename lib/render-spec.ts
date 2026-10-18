@@ -1,25 +1,15 @@
 import { EditPart, RENDER_PRESET } from "@/lib/edit-plan";
 import { foregroundFilter, FOREGROUND_Y, TITLE_LAYOUT } from './render-config.mjs';
 
-export type ScriptPreset = "latin" | "japanese" | "korean";
-
+import { detectScript, fontFallbackStack } from "./visual-style/fonts.mjs";
+export { detectScript };
+export type ScriptPreset = import("./visual-style/fonts.mjs").Script;
 export const FONT_PRESETS: Record<ScriptPreset, string[]> = {
-  latin: ["Studio Noto Sans", "Studio Noto Sans JP", "Studio Noto Sans KR", "sans-serif"],
-  japanese: ["Studio Noto Sans JP", "Studio Noto Sans", "Studio Noto Sans KR", "sans-serif"],
-  korean: ["Studio Noto Sans KR", "Studio Noto Sans", "Studio Noto Sans JP", "sans-serif"],
+  latin: fontFallbackStack("auto", "A", true),
+  japanese: fontFallbackStack("auto", "あ", true),
+  korean: fontFallbackStack("auto", "한", true),
 };
-
-export function detectScript(text: string): ScriptPreset {
-  const japanese = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
-  const korean = (text.match(/[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/g) || []).length;
-  if (japanese > korean && japanese > 0) return "japanese";
-  if (korean > 0) return "korean";
-  return "latin";
-}
-
-export function fontStackFor(text: string) {
-  return FONT_PRESETS[detectScript(text)];
-}
+export function fontStackFor(text: string) { return fontFallbackStack("auto", text, true); }
 
 export type OverlayRole = "original" | "part";
 

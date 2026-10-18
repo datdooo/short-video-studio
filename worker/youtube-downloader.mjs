@@ -3,6 +3,17 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import { youtubeUrl, fallback } from './youtube-common.mjs';
 import { YOUTUBE_FORMAT, YOUTUBE_SORT, upscaleDimensions } from './youtube-quality.mjs';
+import { buildYouTubeCommentArgs } from '../lib/source-context/comments.mjs';
+
+// Comment scraping is far slower than metadata and needs its own bounded budget.
+// It must never inherit the (much shorter) metadata timeout.
+export const COMMENT_TIMEOUT_MS = 3 * 60_000;
+
+function attemptTimeoutMs(operation, timeouts) {
+  if (operation === 'download') return timeouts.download ?? 20 * 60_000;
+  if (operation === 'comments') return timeouts.comments ?? COMMENT_TIMEOUT_MS;
+  return timeouts.metadata ?? 60_000;
+}
 
 export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMedia, adapters, env = process.env, timeouts = {}, upscaleEncoder = () => 'libx264' }) {
   const pending = new Map();
@@ -44,8 +55,10 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
   }
 
   async function attempt(operation, parsed, directory, auth, signal) {
-    const timeout = AbortSignal.timeout(operation === 'download' ? (timeouts.download ?? 20 * 60_000) : (timeouts.metadata ?? 60_000));
+    const timeout = AbortSignal.timeout(attemptTimeoutMs(operation, timeouts));
     const bounded = AbortSignal.any([signal, timeout]);
+    // Comment retrieval is yt-dlp only; other engines have no comment support.
+    if (operation === 'comments' && !ytDlp && !adapters?.yt) throw new Error('Comment retrieval unavailable');
     if (adapters) return adapters[auth.engine](operation, parsed, directory, auth, bounded);
     if (auth.engine === 'oembed') {
       const url = new URL('https://www.youtube.com/oembed'); url.searchParams.set('url', parsed.url); url.searchParams.set('format', 'json');
@@ -93,6 +106,12 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
       const files = await readdir(directory);
       return JSON.parse(await readFile(path.join(directory, files.find((name) => name.endsWith('.info.json')) || 'source.info.json'), 'utf8'));
     }
+    if (operation === 'comments') {
+      const result = await run(ytDlp, [...common, ...buildYouTubeCommentArgs(), '--dump-single-json', parsed.url], { maxStdout: 20 * 1024 * 1024, signal: bounded });
+      const info = JSON.parse(result.stdout);
+      if (!info.title) throw new Error('No title found in player responses');
+      return info;
+    }
     const result = await run(ytDlp, [...common, '--skip-download', '--dump-single-json', parsed.url], { maxStdout: 10 * 1024 * 1024, signal: bounded });
     const info = JSON.parse(result.stdout);
     if (!info.title) throw new Error('No title found in player responses');
@@ -117,10 +136,12 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     const config = await configuration();
     const attempts = [];
     const add = (engine, auth = {}) => attempts.push({ engine, ...auth, label: `${engine === 'js' ? 'YouTube.js' : 'yt-dlp'}${auth.file || auth.browser ? ' (cookie)' : ''}` });
-    if (config.file) { if (ytDlp || adapters?.yt) add('yt', { file: config.file }); add('js', { file: config.file }); }
+    const supportsJs = operation !== 'comments';
+    if (config.file) { if (ytDlp || adapters?.yt) add('yt', { file: config.file }); if (supportsJs) add('js', { file: config.file }); }
     if (config.browser && (ytDlp || adapters?.yt)) add('yt', { browser: config.browser });
     if (ytDlp || adapters?.yt) add('yt');
-    add('js');
+    if (supportsJs) add('js');
+    if (operation === 'comments' && attempts.length === 0) add('yt');
     if (operation === 'metadata') attempts.push({ engine: 'oembed', label: 'YouTube oEmbed' });
     await mkdir(scratchRoot, { recursive: true, mode: 0o700 });
     return fallback(attempts, async (auth) => {
@@ -168,6 +189,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
       }, signal);
     },
     transcript: (url, signal) => { const parsed = youtubeUrl(url); return shared(`transcript:${parsed.id}`, (activeSignal) => execute('transcript', parsed, activeSignal), signal); },
+    comments: (url, signal) => { const parsed = youtubeUrl(url); return shared(`comments:${parsed.id}`, (activeSignal) => execute('comments', parsed, activeSignal), signal); },
     download: (url, accept, signal) => { const parsed = youtubeUrl(url); return shared(`download:${parsed.id}`, (activeSignal) => execute('download', parsed, activeSignal, accept), signal); },
   };
 }

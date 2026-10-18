@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { fontFaceCss } from "@/lib/visual-style/fonts.mjs";
 
 export const metadata: Metadata = {
   title: "ShortCut Studio — AI Vertical Video Editor",
@@ -20,7 +21,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><style dangerouslySetInnerHTML={{ __html: fontFaceCss() }} />{children}</body>
     </html>
   );
 }

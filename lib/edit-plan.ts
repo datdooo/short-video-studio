@@ -1,6 +1,11 @@
 import { trimPartStart } from "../worker/part-start.mjs";
 import { PLAYBACK_RATE, FOREGROUND_SCALE, timelineDuration, isStillSegment } from "./render-config.mjs";
+import { resolvePlanVisualStyle } from "./visual-style/normalize.mjs";
+import type { VisualStyle } from "./visual-style/types";
 import type { CaptionTrack } from "./subtitles.mjs";
+import { transcriptCues } from "./subtitles.mjs";
+export { transcriptCues };
+import { presentationDuration, validateTeaser, TEASER_POLICY } from "./teaser-hooks.mjs";
 
 export type AiProvider = "mock" | "chatgpt" | "gemini" | "muse" | "openai" | "qwen";
 export type PlanSource = AiProvider | "manual";
@@ -18,6 +23,7 @@ export type Segment = {
 };
 
 export type EditPart = {
+  teaser?: import("./teaser-hooks.mjs").Teaser;
   startTrimApplied?: boolean;
   smartCutApplied?: boolean;
   id: number;
@@ -28,6 +34,8 @@ export type EditPart = {
 };
 
 export type EditPlan = {
+  teaserPolicy?: "per-part-v1";
+  visualStyle?: VisualStyle;
   subtitles?: import("./subtitles.mjs").SubtitleStyle;
   captionCues?: CaptionTrack;
   originalTitle: string;
@@ -69,7 +77,7 @@ export function durationOf(part: EditPart) {
 }
 
 export function finalDurationOf(part: EditPart) {
-  return durationOf(part) / RENDER_PRESET.speed;
+  return presentationDuration(part) / RENDER_PRESET.speed;
 }
 
 export function isChronological(part: EditPart) {
@@ -87,6 +95,7 @@ export function isChronological(part: EditPart) {
 }
 
 export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, providerUsed: PlanSource): EditPlan {
+  if (plan.teaserPolicy !== undefined && plan.teaserPolicy !== TEASER_POLICY) throw new Error("Invalid teaser policy.");
   let parts = plan.parts.slice(0, 2).map((part, index) => ({
     ...part,
     id: index + 1,
@@ -107,6 +116,7 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
     throw new Error("AI chưa trả về đủ 10 hashtag khác nhau cho mỗi part. Hãy Generate lại.");
   }
   if (!["mock", "manual"].includes(providerUsed)) parts = parts.map(trimPartStart);
+  parts.forEach((part) => validateTeaser(part));
   if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => durationOf(part) / PLAYBACK_RATE <= 60)) {
     throw new Error("Mỗi part phải trên 1 phút sau bỏ 1 giây đầu và tua 1.25×: cần hơn 76 giây footage gốc. Nếu nội dung chính ngắn, yêu cầu AI chọn footage thật phù hợp và thêm segment isPadding: true ở cuối để đủ thời lượng.");
   }
@@ -117,6 +127,8 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
   }
 
   return {
+    ...(plan.teaserPolicy ? { teaserPolicy: plan.teaserPolicy } : {}),
+    visualStyle: resolvePlanVisualStyle(plan),
     originalTitle: plan.originalTitle,
     language: plan.language,
     providerUsed,
@@ -195,13 +207,6 @@ export function manualPlan(input: {
     },
     "manual",
   );
-}
-
-export function transcriptCues(transcript: string) {
-  const matches = [...transcript.matchAll(/(?:^|\n)\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*(?:\n|\s+-\s+|\s+)([^\n]+)/g)];
-  return matches
-    .map((match) => ({ at: parseTimestamp(match[1]), text: match[2].trim() }))
-    .filter((cue): cue is { at: number; text: string } => cue.at !== null && cue.text.length > 0);
 }
 
 export function mockPlan(request: AnalyzeRequest): EditPlan {

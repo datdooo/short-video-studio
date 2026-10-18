@@ -1,0 +1,10 @@
+import type { Segment } from "../edit-plan";
+export type CutTransitionId = "none" | "dip-black" | "flash-white";
+export type CutTransitionWindow = { boundary: number; startFrame: number; cutFrame: number; endFrame: number; halfFrames: number; presetId?: CutTransitionId };
+export type CutTransitionPreset = { id: CutTransitionId; label: string; durationMs: number; color: string; behavior: "none" | "linear-dip" };
+export const CUT_TRANSITION_IDS: readonly CutTransitionId[];
+export function normalizeCutTransition(id?: unknown): CutTransitionId;
+export function getCutTransition(id?: unknown): CutTransitionPreset;
+export function listCutTransitions(): CutTransitionPreset[];
+export function resolveCutTransitions(id: unknown, segments: readonly Segment[]): CutTransitionWindow[];
+export function cutTransitionPose(id: unknown, windows: readonly CutTransitionWindow[], seconds: number): { color: string; opacity: number };

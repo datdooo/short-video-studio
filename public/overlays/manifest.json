@@ -1,0 +1,37 @@
+{
+  "overlay.grain.v1": {
+    "file": "grain-v1.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 386873,
+    "sha256": "68e4a7a8afc5e14590582cca4161c0a1b159ab73bd9ecba761071c55ce8a8a03"
+  },
+  "overlay.vignette.v1": {
+    "file": "vignette-v1.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 121803,
+    "sha256": "8411090efe010ba340d6347267ef7d20c979d19ef7ddc4f96593a013d16718b7"
+  },
+  "overlay.soft-glow.v1": {
+    "file": "soft-glow-v1.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 49167,
+    "sha256": "2cbc6e314fce268bd9c2bd30197bfbfd736d93de7af4d8b5a7a4e0094c489672"
+  },
+  "overlay.film-frame.v1": {
+    "file": "film-frame-v1.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 13927,
+    "sha256": "9066900c9bf90e52264d57f3d77f09a706c3ef07a9256ea23c0da0c3f53a5e44"
+  },
+  "overlay.rec-hud.v1": {
+    "file": "rec-hud-v1.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 8702,
+    "sha256": "aa7255695e26ecb8b845f4b67be96865ebad810e581dc48d22ce6d9155ce17d3"
+  }
+}

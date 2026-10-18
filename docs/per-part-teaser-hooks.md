@@ -1,0 +1,171 @@
+# Per-part teaser hooks
+
+Implementation starts at `6ffd2d4`, on the isolated DEV branch/worktree.
+Current follow-up implementation and evidence: `docs/teaser-hooks-qualification.md`.
+The original blocked qualification below is historical. DEV Keychain saving is
+fixed and ChatGPT live two-part requests now pass; Gemini/Muse require separate
+web-workflow evidence and are never inferred operational from GPT success.
+
+## Reuse decision (bounded research, 2026-10-18)
+
+| Repository / source inspected | License / actual implementation | Decision |
+| --- | --- | --- |
+| [DELINSHABU/ShortsEditor](https://github.com/DELINSHABU/ShortsEditor), README, package.json, `lib/gemini-service.ts`, analyze route | README claims MIT, but no root LICENSE or GitHub license grant was established. Next15 app + Google Generative AI SDK, fluent-ffmpeg, downloader/UI dependencies. One download-analysis path explicitly simulates results. Direct analysis exists but is not a same-part teaser library. Last push inspected:2025-09-06. | No code copied/dependency added: license unclear, overlapping app stack and simulated path unsuitable. |
+| [chadbar/autoclip](https://github.com/chadbar/autoclip), README, pyproject.toml, analyzer.py, models.py | No license file/declared license established. Actual Gemini file upload + JSON-schema timestamp selection and Pydantic parsing. Python>=3.10, google-genai, faster-whisper, Pydantic, Typer. Last push inspected:2026-03-26. | No code copied/dependency added: unclear license, Python/Whisper stack unnecessary for this Node22/macOSARM64 worker. |
+
+No third-party install scripts, demos, clones or credentials were used. Reused
+project code: ChatGPT account credential/refresh/model/Responses adapter; FFmpeg
+trim/concat/title/transition pipeline; subtitle repetition; preview seek mapping;
+shared transcript parser; VisualStyle job snapshots; DEV isolation. Small custom
+gaps: teaser contract/validation, bounded selection/cache orchestration and wiring.
+No external source was adapted, so there are no new attribution obligations.
+
+Tracked change map: `lib/teaser-hooks.mjs`/`.d.mts` and test (contract/presentation);
+`worker/teaser-selection.mjs` and test (provider/cache); `worker/server.mjs` and
+`plan-validation.mjs` (API/render/snapshots); `lib/edit-plan.ts`, `custom-time.mjs`,
+`subtitles.mjs`/`.d.mts` (model, duration, shared parser, repetition);
+`lib/visual-style/cut-transitions.mjs`/`.d.mts`, `worker/cut-transition.mjs`,
+`components/cut-transition-panel.tsx` (same transition engine, per-boundary preset);
+`app/page.tsx` (selection, preview/provenance); `scripts/qa-teaser-hooks.mjs`,
+macOS/Windows package scripts (dependency copy); this document, architecture map,
+Smart Auto Cut status, handoff and next-task docs. No runtime dependency added.
+
+Official protocol checks:
+[OpenAI image input](https://developers.openai.com/api/docs/guides/images-vision),
+[structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses),
+[Gemini video input](https://ai.google.dev/gemini-api/docs/video-understanding),
+[Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output).
+Documented API capabilities do not establish access/capabilities of this user's
+configured account/model. [Muse docs](https://muse.ai/docs) returned401 during
+inspection; no analysis endpoint or generation-only classification was invented.
+
+## Provider status and selection
+
+| Provider | Actual project integration | Verification |
+| --- | --- | --- |
+| GPT/ChatGPT | Existing DEV OAuth/Keychain/direct Responses integration. Hook adapter uses that account's model catalog, JSON schema, text + at most six timestamped JPEGs per part. No API key or new subscription. | No configured DEV session; no successful remote text/image request. Real two-part AI selection remains blocked. |
+| Gemini | Current `/api/gemini/*` intentionally rejects API use; UI opens Gemini web and imports JSON. Old Antigravity bridge remains disabled in the server. | No working analysis adapter claimed. Official native audio/video capabilities were researched, not tested on a configured model. |
+| Muse | Existing `https://muse.ai/` web/copy-paste workflow and strict plan JSON parser; no configured authenticated analysis API. | No successful request and no analysis API claimed. Not assumed equivalent to GPT/Gemini. |
+
+New real automatic plans pass through the source-specific teaser endpoint after
+existing normalization/smart-boundary cleanup. Semi-Auto imported plans use the
+same endpoint; hook provider may differ from the external main-plan provider.
+New batch-generated plans request the same selector before queue snapshotting.
+Legacy saved plans, Manual cut and the offline Mock planner do not silently gain
+hooks. Explicit opt-in API selection is supported for deterministic QA fixtures.
+
+The selector requests each part independently with its allowed main ranges, title/
+part context, available timed captions/transcript, optional existing chapters/
+description/comment clusters, and bounded frames when a provider is available.
+Edited UI transcript is passed as data; the existing shared timestamp parser is
+reused. No new comments/heatmap retrieval, ASR download, video-analysis service,
+provider, Sports Voiceover or main-content ranking pipeline is introduced.
+
+System instructions delimit external text/images as untrusted data. Structured
+output contains source start/end, appeal, relation to this part, evidence times
+and limitations. There is no confidence probability. Frames are sparse stills;
+motion/audio/video comprehension is never inferred from them. Audio/video payloads
+are not sent through an unverified API capability.
+
+The model is selected from the existing account catalog. A rejected image/schema
+request gets at most one text-only retry with an explicit limitation. Other bad
+JSON/ranges/timeouts get at most two attempts per part; auth/model failures stop
+early. Rate-limit retry honors Retry-After only within a5s bound, otherwise falls
+back. Each request has a90s timeout and a1200-output-token cap; endpoint deadline
+240s, sequential parts, at most four inference requests. Client disconnect aborts.
+Remote errors are reduced to non-secret reason codes; no credentials/raw payloads
+are printed. No unavailable provider is silently replaced by a new paid service.
+
+## Contract and compatibility
+
+Main `part.segments`, chronology, padding and manual locks remain authoritative.
+The old `part.hook` headline remains a string and is not the video excerpt.
+New `plan.teaserPolicy: "per-part-v1"` marks opt-in/new automatic selection.
+`part.teaser` is separate data:
+
+```ts
+{ version:1, status:"selected", start:number, end:number,
+  selection:"ai"|"fallback"|"external-import", reason:string, relation:string,
+  evidenceTimes:number[], limitations:string[], provider:string, model:string,
+  promptVersion:string, inputKey:string, rangeKey:string,
+  transition:"inherit-or-dip-black" }
+// Or {version:1,status:"unavailable",reason:string,rangeKey:string}
+```
+
+Target: **5 rendered seconds =6.25 source seconds at existing1.25× playback**.
+Allow4–6 rendered seconds for a complete sentence/action; shorter contiguous ranges
+may shorten the hook. Minimum usable excerpt0.5s. Tiny entry ranges unable to
+support a frame-safe transition produce explicit unavailable status. A hook must
+fit wholly inside one non-padding range of that same part. No bridging excluded
+gaps or footage from the other part. Unknown fields, non-finite/string timestamps,
+oversized provenance, stale range keys, unsupported policies or bad evidence
+timestamps are rejected at the worker boundary and normalizer.
+
+Fallback is deterministic: earliest longest retained contiguous range, optionally
+a complete caption sentence within the duration bounds. It states semantic appeal
+is **unverified**, records its reason, and is visibly labeled Fallback in UI. It
+does not qualify AI selection. Empty/too-short parts are explicitly unavailable.
+
+`presentationSegments(part)` derives `[teaser, ...mainSegments]`. Main content,
+including the hook's original occurrence and any existing padding, stays intact.
+Duration includes the repeated excerpt. Preview, source/output seek and subtitle
+mapping use the same presentation order. Legacy plans without teaser data use the
+original segment array and graph. Original main-duration acceptance rules remain.
+
+Hook→main uses the existing scene-only transition renderer: inherit explicit Dip
+Black/Flash White; ordinary None gives a **hook-only Dip Black**, keeping ordinary
+cuts None. The existing centered/clamped dip overlays retained frames, adding no
+extra timeline duration. It does not fade audio/text. Title entrance runs once at
+part start. Hooks use the existing finite-stream EOF handling to preserve audio
+tail/frame count; old non-hook options are unchanged.
+
+Custom Time changes only main ranges, invalidates stale selection and supplies an
+explicit provisional fallback for preview. Before export the selector refreshes
+against the exact locked ranges. The UI accepts the returned plan only if source/
+main-content request identity is still current. Queued plans carry independent
+full hook/range/provenance snapshots; rendering a valid submitted selection does
+not silently replace it. Job history/delete/recovery uses existing plan storage.
+
+Cache: SHA256 of immutable source media (memoized by source ID/size/mtime), source/
+part context, main ranges, bounded analysis text/signals, provider/model, frame
+sampling policy and prompt version. VisualStyle is excluded. Cache hits bypass
+frames/inference; AI results persist, fallbacks have60s TTL. At most256 disk entries;
+private mode0600; read/write failure cannot fabricate AI or discard valid output.
+Changing analysis inputs invalidates the corresponding part only. Style handlers
+do not call selection. Regenerating with unchanged inputs reuses cache.
+
+## Verification and exact remaining blocker
+
+Recorded local artifacts (ignored): `.isolation-verification/teaser-hooks/`.
+Full unit suite:243/243, no skips/failures (`final-tests.tap`). Isolation:15/15.
+`npx tsc --noEmit --incremental false` and `npm run lint` exit0
+(`final-tsc.log`, `final-lint.log`). DEV package rebuild under Node22 passes
+(`package-final.log`); deep/strict codesign passes. Packaged bootstrap, web5273,
+worker8887, private data root, current-only storage and new runtime-file hashes
+pass at `teaser-package-yaZS3l/result.json`. This is startup/dependency smoke,
+not another full RC matrix or a claim of real AI functionality.
+Small real render: `teaser-render-6doxyk/result.json`, three jobs/six MP4s;
+legacy, hooks+None (hook-only Dip), hooks+Flash, title Fade In, fixed cues.
+Each part uses distinguishable scenes and source audio frequencies. Checks cover
+decoded scene order, repeated main occurrence, PCM pitch/tail (within one AAC
+frame), burned subtitle repetition, exact output frames/duration and independent
+snapshots. Offline fallback examples are P1 source8–14.25 and P2 source24–30.25;
+main ranges remain P1[0,2]+[8,16], P2[16,18]+[24,32]. Hook outputs13s vs legacy8s.
+
+Browser source test (`teaser-browser-1Fqr7r/result.json`) uses a mocked **main planner/session only**, real source/
+smart-cut/hook endpoints and explicitly missing QA credentials. It checks both
+part previews, repeated-source seek and no style-triggered hook requests/video
+reset. This is UI/fallback evidence, **not** real AI-provider evidence.
+
+After DEV ChatGPT sign-in is repaired, run the bounded real verification:
+
+```sh
+PATH="/opt/homebrew/opt/node@22/bin:$PATH" node scripts/qa-teaser-hooks.mjs --live
+```
+
+It uses the actual DEV Keychain service with isolated fixture data, requires AI
+for **both** parts, records provider/model/validated selection/limitations without
+raw private payloads, then checks excerpts against the actual local video and
+subsequent content. Any fallback fails live qualification. No successful live
+request has been run at this checkpoint. Do not claim GPT/Gemini/Muse works until
+that succeeds. Full Smart Auto Cut C–H and main-candidate fusion remain incomplete.

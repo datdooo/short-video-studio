@@ -1,0 +1,10 @@
+export type TitleAnimationId = "none" | "fade-in" | "slide-up" | "pop-in";
+export const TITLE_ANIMATION_SECONDS: number;
+export const TITLE_SLIDE_PIXELS: number;
+export const TITLE_POP_START_SCALE: number;
+export const TITLE_ANIMATION_IDS: readonly TitleAnimationId[];
+export function normalizeTitleAnimation(id?: unknown): TitleAnimationId;
+export function getTitleAnimation(id?: unknown): { id: TitleAnimationId; label: string; description: string };
+export function listTitleAnimations(): ReturnType<typeof getTitleAnimation>[];
+export function titleAnimationAt(id: unknown, seconds: number): { opacity: number; y: number; scale: number };
+export function titleAnimationPreviewCss(id: unknown, seconds: number, canvasScale?: number): { opacity?: number; transform?: string; transformOrigin?: string };

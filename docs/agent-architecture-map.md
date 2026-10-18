@@ -1,0 +1,38 @@
+# Targeted architecture map
+
+Paths are repository-relative. Visual-editor architecture originates at `1b5700e`;
+SourceContext A/B now exist (`81d2b09`, `558ad67`, fixes `37ac963`). Full Smart Auto
+Cut remains incomplete. Read only rows relevant to the task.
+`VS/` below abbreviates `lib/visual-style/`. Test names without directories in a
+VS row are under `lib/`; worker/desktop tests live beside their modules.
+
+| Subsystem | Main files | Responsibility | Key state/contracts | Tests |
+| --- | --- | --- | --- | --- |
+| Editor UI | `app/page.tsx`, `app/globals.css`, `components/visual-customize-panel.tsx` | Plan/preview/forms; compact disclosures | Canonical plan; subtitle alias synchronized; controls stay mounted | `scripts/qa-template-ui.mjs`, `scripts/qa-editor-preview.mjs` |
+| VisualStyle | `VS/types.ts`, `normalize.mjs`, `defaults.mjs`, `presets.mjs` | Normalize/resolve/snapshot | v1 allowlist; fresh copies; legacy subtitle precedence | `visual-style.test.mjs`, `legacy-plan.test.mjs` |
+| Templates | `VS/templates.mjs`, `components/visual-template-panel.tsx` | Frozen ID recipes/application/matching | Effective style authoritative; mismatch→Custom; animation/transition independent | `templates.test.mjs`, `scripts/qa-visual-templates.mjs` |
+| Text/fonts | `VS/text-presets.mjs`, `text-presets-data.mjs`, `fonts.mjs`, `text-render.mjs`, `title-fit.mjs`, `components/text-style-panel.tsx` | Presets, font fallback, fitting/assets | Existing font IDs; script coverage; role-specific text | `fonts.test.mjs`, `text-presets.test.mjs`, `title-fit.test.mjs`, `scripts/qa-text-presets.mjs` |
+| Filters | `VS/filters.mjs`, `filter-presets.mjs` | Shared filter recipe resolution | Preset plus normalized intensity; Current compatible | `filters.test.mjs`, `scripts/qa-video-filters.mjs` |
+| Backgrounds | `VS/backgrounds.mjs`, `background-presets.mjs` | Existing scene backgrounds | Curated values; foreground geometry unchanged | `backgrounds.test.mjs`, `scripts/qa-backgrounds.mjs` |
+| Overlays | `VS/overlays.mjs`, `overlay-presets.mjs`, `public/overlays/` | Curated static scene assets | None baseline; local PNG assets; no custom uploads | `overlays.test.mjs`, `scripts/qa-overlays.mjs` |
+| Title animations | `VS/animations.mjs`, `worker/title-animation.mjs` | Part-start title entrance expressions | None/Fade/Slide/Pop; finite streams; 0.5s | `lib/animations.test.mjs`, `worker/title-animation.test.mjs`, `scripts/qa-text-animations.mjs` |
+| Cut transitions | `VS/cut-transitions.mjs`, `worker/cut-transition.mjs`, `components/cut-transition-panel.tsx` | Scene ramp at internal cuts | None/Dip/Flash; ≤400ms; text protected; clamp short segments | `lib/cut-transitions.test.mjs`, `worker/cut-transition.test.mjs`, `scripts/qa-cut-transitions.mjs` |
+| Worker/rendering | `worker/server.mjs`, `lib/render-config.mjs` | APIs, assets, jobs, encoders | `startRender` snapshots/validates; 1080×1920/30fps/1.25 | `scripts/qa-visual-style.mjs`, `scripts/qa-editor-renders.mjs` |
+| FFmpeg graph | `worker/server.mjs`, title/transition modules above | Trim/concat/filter/scene/text/subtitles/speed/encode | One renderer; animation EOF fix; CPU/VT defaults | Animation/transition render suites; local RC matrix (see handoff) |
+| Subtitles | `lib/subtitles.mjs`, `worker/speech.mjs`, `VS/normalize.mjs`, worker server | Cue/style separation, YouTube/Whisper/cache/render | Templates preserve enabled/source/content; alias compatibility | `lib/subtitles.test.mjs`, `worker/speech.test.mjs`, `scripts/qa-speech.mjs` |
+| Queue | `worker/batch-queue.mjs`, `worker/server.mjs` | Preparation FIFO and separate serial render FIFO | Independent submission/job snapshots; persisted history; interrupted→cancelled | `worker/batch-queue.test.mjs`, editor render QA |
+| Batch lifecycle | `worker/batch-cleanup.mjs`, `media-library.mjs`, `lib/batch-submission.mjs`, `batch-downloads.mjs` | Submit/history/trash/restore/download | Independent item plans/styles; cleanup scoped to own media | `worker/batch-cleanup.test.mjs`, `media-library.test.mjs`, `lib/batch-submission.test.mjs`, `batch-downloads.test.mjs` |
+| YouTube/yt-dlp | `worker/youtube-downloader.mjs`, `youtube-common.mjs`, `youtube-js.mjs`, `youtube-player.mjs`, `youtube-quality.mjs` | Existing metadata/import/fallback stack | Shared metadata cache/dedup; info JSON; no new downloader | `worker/youtube-*.test.mjs`, `scripts/qa-youtube.mjs` |
+| Auto planning | `lib/edit-plan.ts`, `app/page.tsx`, `worker/server.mjs` | Transcript prompt/ChatGPT analysis/plan validation | Exactly two AI parts; duration/hashtag rules; no multi-signal engine | `lib/edit-plan.test.mjs`, `worker/plan-validation.test.mjs` |
+| SourceContext A/B | `lib/source-context/`, `worker/youtube-downloader.mjs` (`comments`) | Metadata/chapters/description markers, optional comments/timestamp clusters | Copy-safe v1 context; separate comments timeout; not wired into planning; C–H unimplemented | `lib/source-context.test.mjs`, `worker/youtube-downloader.test.mjs` |
+| Per-part teaser hooks | `lib/teaser-hooks.mjs`, `worker/teaser-selection.mjs`, source-specific `/teaser-hooks`, existing UI/renderer | Separate same-part excerpt/provenance; shared presentation order, cached structured selection and honest fallback | Main ranges/locks preserved; legacy no-hook compatible; actual AI verification blocked by DEV OAuth | `lib/teaser-hooks.test.mjs`, `worker/teaser-selection.test.mjs`, `scripts/qa-teaser-hooks.mjs`; see `docs/per-part-teaser-hooks.md` |
+| Smart boundary cleanup | `worker/smart-cut.mjs`, `speech.mjs`, `part-start.mjs` | Sentence/silence snapping and start trimming | Existing plan only; not candidate scoring; no repeated application | `worker/smart-cut.test.mjs`, `part-start.test.mjs`, `speech.test.mjs` |
+| Semi-Auto/manual | `app/page.tsx`, `lib/muse-plan.mjs`, `custom-time.mjs` | External-provider prompt/JSON and manual time selection | Preserve Custom Time; no future candidate review UI | `lib/muse-plan.test.mjs`, `custom-time.test.mjs` |
+| Multi-link workflow | `app/page.tsx`, `worker/server.mjs` (`prepareBatch`), `worker/batch-queue.mjs` | Serial import/transcript/ChatGPT analysis, per-item queue/error | ChatGPT batch today; transcript required; no SourceContext/resume analysis engine | Batch tests above; real AI batch qualification pending |
+| Packaging | `scripts/package-macos.mjs`, `desktop/bootstrap.mjs`, `Launcher.swift` | Bundled DEV runtime/app, including SourceContext dependency | `npm run package:mac:dev`; run release/dev in place | `scripts/audit-macos-runtime.mjs`, `scripts/qa-rc-packaged-ui.mjs`; current macOS DEV RC passed |
+| Real packaged UI QA | `scripts/qa-rc-packaged-ui.mjs` | Bootstrap + Chrome + real worker, MP4 playback/recovery | Private HOME, default native or `--cpu`; synthetic caption cache explicitly seeded | Run with `QA_PLAYWRIGHT_MODULE`; current result paths in RC report |
+| Isolation | `desktop/runtime-config.mjs`, `scripts/personal-dev.mjs`, `docs/dev-isolation.md` | DEV identity/ports/private data/runtime | 5273/8887; disable legacy lookup; never production paths | `npm run test:isolation`, `desktop/runtime-config.test.mjs`, `windows-config.test.mjs` |
+
+Qualification commands/evidence and unsafe default-runtime caveat are in
+`docs/agent-handoff.md`; exact remaining RC acceptance is in
+`docs/final-visual-editor-qualification.md`. Do not run broad QA during handoff.

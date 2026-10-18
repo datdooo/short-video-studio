@@ -26,6 +26,30 @@ import {
   WifiOff,
 } from "lucide-react";
 
+import { VisualCustomizePanel } from "@/components/visual-customize-panel";
+import { VisualTemplatePanel } from "@/components/visual-template-panel";
+import { applyVisualTemplate } from "@/lib/visual-style/templates.mjs";
+import { TextStylePanel, TextFontSelector } from "@/components/text-style-panel";
+import { OverlayPanel, SceneOverlays } from "@/components/overlay-panel";
+import { applyOverlayPreset, applyOverlayOpacity } from "@/lib/visual-style/overlay-presets.mjs";
+import { BackgroundPanel } from "@/components/background-panel";
+import { backgroundCss } from "@/lib/visual-style/backgrounds.mjs";
+import { applyBackgroundPreset } from "@/lib/visual-style/background-presets.mjs";
+import { VideoFilterPanel, VideoFilterDefinition } from "@/components/video-filter-panel";
+import { applyFilterPreset, applyFilterIntensity } from "@/lib/visual-style/filter-presets.mjs";
+import { browserFilterStyle } from "@/lib/visual-style/filters.mjs";
+import { TextAnimationPanel } from "@/components/text-animation-panel";
+import { CutTransitionPanel, CutTransitionVeil } from "@/components/cut-transition-panel";
+import { presentationSegments, partTransitionWindows, TEASER_POLICY } from "@/lib/teaser-hooks.mjs";
+import { titleAnimationPreviewCss } from "@/lib/visual-style/animations.mjs";
+import { normalizeVisualStyle } from "@/lib/visual-style/normalize.mjs";
+import { applyTextPreset, applyFontOverride } from "@/lib/visual-style/text-presets.mjs";
+import { textPreviewCss, subtitlePreviewCss } from "@/lib/visual-style/text-render.mjs";
+import { constrainTitlePair, needsMeasuredTitleFit } from "@/lib/visual-style/title-fit.mjs";
+import { listFonts, fontFamilyForStyle } from "@/lib/visual-style/fonts.mjs";
+import { DEFAULT_VISUAL_STYLE } from "@/lib/visual-style/defaults.mjs";
+import { resolvePlanVisualStyle, snapshotPlanVisualStyle } from "@/lib/visual-style/normalize.mjs";
+import { resolveWorkerOrigin } from "@/lib/worker-origin.mjs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,7 +69,7 @@ import { completedRenderJobs } from '@/lib/render-delete.mjs';
 import { CopyButton } from "@/components/copy-button";
 import { trimPartStart } from "@/worker/part-start.mjs";
 import { applyPartTimes, partTimes, type PartTime } from "@/lib/custom-time.mjs";
-import { DEFAULT_SUBTITLE_STYLE, partCaptions, subtitleY, sourceCaptionTrack, isCurrentCaptionRequest, type CaptionTrack, type SubtitleStyle } from "@/lib/subtitles.mjs";
+import { partCaptions, subtitleY, sourceCaptionTrack, isCurrentCaptionRequest, type CaptionTrack, type SubtitleStyle } from "@/lib/subtitles.mjs";
 import { FOREGROUND_SCALE, PLAYBACK_RATE, FOREGROUND_HEIGHT, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH } from '@/lib/render-config.mjs';
 import {
   AiProvider,
@@ -61,13 +85,14 @@ import {
   mockPlan,
   normalizePlan,
 } from "@/lib/edit-plan";
-import { fitTitlePair, fontStackFor } from "@/lib/render-spec";
+import { fitTitlePair } from "@/lib/render-spec";
 import { collectBatchDownloads, createBatchDownloadQueue } from "@/lib/batch-downloads.mjs";
 import { clearSubmittedBatchInput } from "@/lib/batch-submission.mjs";
+import { attachExternalHooks, externalHooksCurrent, buildExternalHookOnlyPrompt, parseExternalHookOnly } from "@/lib/teaser-import.mjs";
 import { buildMusePrompt, parseMusePlan } from "@/lib/muse-plan.mjs";
 import { locateTimelineTime, timelineTimeForSegment } from "@/lib/preview-timeline.mjs";
 
-const WORKER_ORIGIN = "http://127.0.0.1:8787";
+const WORKER_ORIGIN = resolveWorkerOrigin(process.env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN);
 
 type WorkerHealth = {
   ok: boolean;
@@ -84,6 +109,8 @@ type ChatGPTSession = {
   email?: string | null;
   name?: string | null;
   expiresAt?: string | null;
+  needsSignIn?: boolean;
+  error?: string;
 };
 type WorkerSource = {
   id: string;
@@ -266,7 +293,18 @@ export default function Home() {
   const [instruction, setInstruction] = useState(DEFAULT_REQUEST.instruction || "");
   const [supplementalPrompt, setSupplementalPrompt] = useState("");
   const [customTimes, setCustomTimes] = useState<PartTime[] | null>(null);
-  const [subtitleSettings, setSubtitleSettings] = useState<SubtitleStyle>(DEFAULT_SUBTITLE_STYLE);
+  const [plan, setPlan] = useState<EditPlan>(() => mockPlan(DEFAULT_REQUEST));
+  const subtitleSettings = useMemo(() => resolvePlanVisualStyle(plan).subtitle, [plan]);
+  const setSubtitleSettings = useCallback((update: SubtitleStyle | ((current: SubtitleStyle) => SubtitleStyle)) => {
+    setPlan((current) => {
+      const subtitle = resolvePlanVisualStyle(current).subtitle;
+      const visualStyle = resolvePlanVisualStyle({ ...current, subtitles: typeof update === "function" ? update(subtitle) : update });
+      return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+    });
+  }, []);
+  const replacePlan = useCallback((next: EditPlan) => {
+    setPlan((current) => { const style = resolvePlanVisualStyle(current); return snapshotPlanVisualStyle({ ...next, visualStyle: style, subtitles: style.subtitle }); });
+  }, []);
   const [sourceCaptions, setSourceCaptions] = useState<CaptionTrack | null>(null);
   const subtitleRequestSerial = useRef(0);
   const subtitleSourceRef = useRef<string | undefined>(undefined);
@@ -274,12 +312,11 @@ export default function Home() {
   const [subtitleBusy, setSubtitleBusy] = useState(false);
   const [subtitleNotice, setSubtitleNotice] = useState("");
   const [speechModel, setSpeechModel] = useState<{ modelReady: boolean; installing: boolean; downloadedBytes?: number; totalBytes?: number } | null>(null);
-  const [plan, setPlan] = useState<EditPlan>(() => mockPlan(DEFAULT_REQUEST));
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [webAiPrompt, setWebAiPrompt] = useState("");
   const [webAiResult, setWebAiResult] = useState("");
-  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider } | null>(null);
+  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider; requestId: string; hookPlan?: EditPlan; mainSignature?: string } | null>(null);
   const [webAiNotice, setWebAiNotice] = useState("");
   const [webAiError, setWebAiError] = useState("");
   const [error, setError] = useState("");
@@ -340,27 +377,63 @@ export default function Home() {
   const previewPlayingRef = useRef(false);
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
 
-  const effectiveTiming = useMemo(() => {
-    let base = plan;
+  // Timing depends on cuts/provider, never on appearance-only edits.
+  const timing = useMemo(() => {
+    let base = { parts: plan.parts, providerUsed: plan.providerUsed };
     try {
-      base = { ...plan, parts: plan.parts.map(trimPartStart) };
-      return { plan: customTimes ? applyPartTimes(base, customTimes, preparedSource?.duration) : base, error: "" };
-    } catch (caught) { return { plan: base, error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ." }; }
-  }, [plan, customTimes, preparedSource?.duration]);
+      base = { ...base, parts: plan.parts.map(trimPartStart) };
+      return { parts: customTimes ? applyPartTimes(base, customTimes, preparedSource?.duration).parts : base.parts, error: "" };
+    } catch (caught) { return { parts: base.parts, error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ." }; }
+  }, [plan.parts, plan.providerUsed, customTimes, preparedSource?.duration]);
+  const effectiveTiming = { plan: { ...plan, parts: timing.parts }, error: timing.error };
   const previewPlan = effectiveTiming.plan;
+  const previewVisualStyle = useMemo(() => resolvePlanVisualStyle({ visualStyle: previewPlan.visualStyle, subtitles: subtitleSettings }), [previewPlan.visualStyle, subtitleSettings]);
+  const videoColorFilter = browserFilterStyle(previewVisualStyle.filter, { contrast: workerHealth?.render?.contrast ?? DEFAULT_VISUAL_STYLE.filter.contrast, saturation: workerHealth?.render?.saturation ?? DEFAULT_VISUAL_STYLE.filter.saturation });
   const activePart = previewPlan.parts[activePartIndex];
+  const playbackSegments = useMemo(() => presentationSegments(activePart), [activePart]);
+  const transitionWindows = useMemo(() => hasEditPlan ? partTransitionWindows(activePart, previewVisualStyle.cutTransition) : [], [hasEditPlan, previewVisualStyle.cutTransition, activePart]);
   const subtitleCues = useMemo(() => sourceCaptions?.sourceId === preparedSource?.id ? sourceCaptions?.cues || [] : [], [sourceCaptions, preparedSource?.id]);
-  const previewCaptions = useMemo(() => partCaptions(previewPlan.captionCues?.cues || subtitleCues, activePart, subtitleSettings), [previewPlan.captionCues, subtitleCues, activePart, subtitleSettings]);
+  const previewCaptions = useMemo(() => partCaptions(previewPlan.captionCues?.cues || subtitleCues, activePart, previewVisualStyle.subtitle), [previewPlan.captionCues, subtitleCues, activePart, previewVisualStyle.subtitle]);
   const previewCaption = previewCaptions.find((cue) => previewCurrentTime * PLAYBACK_RATE >= cue.start && previewCurrentTime * PLAYBACK_RATE < cue.end);
-  const partDuration = durationOf(activePart) / PLAYBACK_RATE;
+  const partDuration = finalDurationOf(activePart);
+  const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined })), cues: sourceCaptions?.cues });
+  const latestMainSignature = useRef(mainSignature);
+  useEffect(() => { latestMainSignature.current = mainSignature; }, [mainSignature]);
+  const hookIdentity = JSON.stringify({ sourceId: preparedSource?.id, provider, transcript, instruction, mainSignature });
+  const latestHookIdentity = useRef(hookIdentity);
+  useEffect(() => { latestHookIdentity.current = hookIdentity; }, [hookIdentity]);
   const timelineDuration = hasEditPlan ? partDuration : previewDuration;
   const fontStack = useMemo(
-    () => fontStackFor(`${plan.originalTitle} ${activePart.title}`),
-    [activePart.title, plan.originalTitle],
+    () => fontFamilyForStyle(previewVisualStyle.originalTitle.font, `${plan.originalTitle} ${activePart.title}`, { browser: true }).split(", "),
+    [activePart.title, plan.originalTitle, previewVisualStyle.originalTitle.font],
   );
-  const { original: originalTitleFit, part: partTitleFit } = useMemo(
+  const legacyTitlePair = useMemo(
     () => fitTitlePair(plan.originalTitle, activePart.title), [plan.originalTitle, activePart.title],
   );
+  const titleFitInput = useMemo(() => ({ original: plan.originalTitle, part: activePart.title, originalStyle: previewVisualStyle.originalTitle, partStyle: previewVisualStyle.partTitle, scale: previewWidth / 1080 }), [plan.originalTitle, activePart.title, previewVisualStyle.originalTitle, previewVisualStyle.partTitle, previewWidth]);
+  const [measuredTitlePair, setMeasuredTitlePair] = useState<{ input: typeof titleFitInput; pair: typeof legacyTitlePair } | null>(null);
+  useEffect(() => {
+    const style = { originalTitle: titleFitInput.originalStyle, partTitle: titleFitInput.partStyle };
+    if (!needsMeasuredTitleFit(style)) return;
+    let cancelled = false;
+    void (async () => {
+      for (const [text, appearance] of [[titleFitInput.original, style.originalTitle], [titleFitInput.part, style.partTitle]] as const) {
+        await document.fonts.load(`${appearance.fontWeight} 70px ${fontFamilyForStyle(appearance.font, text, { browser: true })}`, text || "A");
+      }
+      if (cancelled) return;
+      const context = document.createElement("canvas").getContext("2d");
+      if (!context) return;
+      const pair = await constrainTitlePair(titleFitInput.original, titleFitInput.part, legacyTitlePair, (text, size, role) => {
+        const appearance = role === "original" ? style.originalTitle : style.partTitle;
+        context.font = `${appearance.fontWeight} ${(size * titleFitInput.scale).toFixed(2)}px ${fontFamilyForStyle(appearance.font, role === "original" ? titleFitInput.original : titleFitInput.part, { browser: true })}`;
+        const metrics = context.measureText(text);
+        return Math.max(metrics.width, metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight) / titleFitInput.scale + appearance.outline * 2 + 2;
+      });
+      if (!cancelled) setMeasuredTitlePair({ input: titleFitInput, pair });
+    })().catch((error) => console.error("Title font measurement failed", error));
+    return () => { cancelled = true; };
+  }, [titleFitInput, legacyTitlePair]);
+  const { original: originalTitleFit, part: partTitleFit } = measuredTitlePair?.input === titleFitInput ? measuredTitlePair.pair : legacyTitlePair;
   const previewScale = previewWidth / 1080;
   const titleShineStyle = { maskImage: 'linear-gradient(to right, transparent, #000 50%, transparent)', maskRepeat: 'no-repeat', maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`, maskPosition: `${((1080 - TITLE_SHINE_WIDTH) * (previewCurrentTime % TITLE_SHINE_SECONDS) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0` };
   const previewVideoUrl = useMemo(
@@ -378,7 +451,7 @@ export default function Home() {
     setIsPreviewPlaying(false);
     background?.pause();
     previewSegmentIndex.current = 0;
-    video.currentTime = activePart.segments[0]?.start || 0;
+    video.currentTime = playbackSegments[0]?.start || 0;
     video.playbackRate = PLAYBACK_RATE;
     video.preservesPitch = true;
     if (background) {
@@ -387,14 +460,14 @@ export default function Home() {
     }
     const timer = window.setTimeout(() => setPreviewCurrentTime(0), 0);
     return () => window.clearTimeout(timer);
-  }, [hasEditPlan, activePart.segments, previewVideoUrl]);
+  }, [hasEditPlan, playbackSegments, previewVideoUrl]);
 
   useEffect(() => {
     let frame = 0;
     const tick = () => {
       const video = previewVideoRef.current;
       if (video && hasEditPlan && previewPlayingRef.current && !video.seeking) {
-        const segments = activePart.segments;
+        const segments = playbackSegments;
         const current = segments[previewSegmentIndex.current];
         if (!video.paused) updatePreviewClock();
         const complete = current && video.currentTime >= current.end - 0.025;
@@ -419,7 +492,7 @@ export default function Home() {
     return () => window.cancelAnimationFrame(frame);
   // The source media supplies the running clock across retained ranges.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasEditPlan, activePart.segments]);
+  }, [hasEditPlan, playbackSegments]);
 
   useEffect(() => {
     if (sourceMode !== "youtube" || !sourceUrl.trim() || !workerHealth?.ok) return;
@@ -611,7 +684,7 @@ export default function Home() {
           setManualPart1Ranges(values.part1Ranges);
           setManualPart2Title(values.part2Title);
           setManualPart2Ranges(values.part2Ranges);
-          setPlan(nextPlan);
+          replacePlan(nextPlan);
           setHasEditPlan(true);
           setEditMode("manual");
           setActivePartIndex(0);
@@ -628,7 +701,7 @@ export default function Home() {
     );
     void Promise.resolve(registration).catch(() => undefined);
     return () => lifecycle.abort();
-  }, []);
+  }, [replacePlan]);
 
   async function readChatGPTSession() {
     const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store" });
@@ -851,7 +924,7 @@ export default function Home() {
         .replace("Source duration in seconds: unknown; do not invent an end beyond the available source", "Source duration in seconds: __BATCH_DURATION__");
       const response = await fetch(`${WORKER_ORIGIN}/api/batches`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls, provider: batchProvider, promptTemplate, schema: EDIT_PLAN_SCHEMA, subtitles: subtitleSettings, batchId: batch && !batch.finished ? batch.id : undefined }),
+        body: JSON.stringify({ urls, provider: batchProvider, promptTemplate, schema: EDIT_PLAN_SCHEMA, visualStyle: previewVisualStyle, subtitles: subtitleSettings, batchId: batch && !batch.finished ? batch.id : undefined }),
       });
       const data = await response.json() as { batch?: BatchJob; error?: string };
       if (!response.ok || !data.batch) throw new Error(data.error || "Không tạo được hàng đợi.");
@@ -879,18 +952,24 @@ export default function Home() {
       return;
     }
     const popup = window.open("about:blank", "shortcut-chatgpt", "popup,width=560,height=760");
+    let attemptId: string | undefined;
     setIsChatGPTConnecting(true);
     try {
       const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/start`, { method: "POST" });
-      const data = (await response.json()) as { url?: string; error?: string };
+      const data = (await response.json()) as { url?: string; attemptId?: string; error?: string };
       if (!response.ok || !data.url) throw new Error(data.error || "Không bắt đầu được ChatGPT sign-in.");
       if (!popup) throw new Error("Trình duyệt đang chặn popup. Cho phép popup rồi thử lại.");
+      attemptId = data.attemptId;
+      if (!attemptId) throw new Error("Worker chưa hỗ trợ trạng thái đăng nhập. Khởi động DEV bản mới.");
       popup.location.href = data.url;
 
-      for (let attempt = 0; attempt < 80; attempt += 1) {
+      for (let attempt = 0; attempt < 360; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-        const session = await readChatGPTSession();
-        if (session.connected) {
+        const auth = await fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/status?attemptId=${encodeURIComponent(attemptId)}`, { cache: "no-store" }).then(r => r.json()) as { status: string; error?: string };
+        if (["failed", "cancelled", "expired"].includes(auth.status)) throw new Error(auth.error || "Đăng nhập bị hủy/hết hạn.");
+        if (auth.status !== "exchanging" && popup.closed && auth.status !== "connected") throw new Error("Bạn đã đóng cửa sổ đăng nhập. Bấm kết nối lại khi sẵn sàng.");
+        if (auth.status === "connected") {
+          const session = await readChatGPTSession();
           if (!session.sharing) setError("Đã đăng nhập nhưng ChatGPT plan usage chưa được cấp quyền. Bấm kết nối lại và cho phép plan usage.");
           return;
         }
@@ -900,6 +979,7 @@ export default function Home() {
       popup?.close();
       setError(caughtError instanceof Error ? caughtError.message : "Không kết nối được ChatGPT.");
     } finally {
+      if (attemptId) void fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/status?attemptId=${encodeURIComponent(attemptId)}`, { method: "DELETE" }).catch(() => {});
       setIsChatGPTConnecting(false);
     }
   }
@@ -932,7 +1012,7 @@ export default function Home() {
     setIsAnalyzing(true);
     try {
       if (provider === "mock") {
-        setPlan(mockPlan({ provider: "mock", originalTitle: sourceTitle, transcript, instruction }));
+        replacePlan(mockPlan({ provider: "mock", originalTitle: sourceTitle, transcript, instruction }));
         setHasEditPlan(true);
         setActivePartIndex(0);
         if (!preparedSource) await prepareSource();
@@ -955,7 +1035,7 @@ export default function Home() {
       if (selectionEpoch !== sourceSelectionEpoch.current) return;
       const refined = await refineAiPlan(normalizePlan(data.plan, "chatgpt"), source);
       if (selectionEpoch !== sourceSelectionEpoch.current) return;
-      setPlan(refined);
+      replacePlan(refined);
       setHasEditPlan(true);
       setActivePartIndex(0);
     } catch (caughtError) {
@@ -974,7 +1054,7 @@ export default function Home() {
   const webAiName = provider === "gemini" ? "Gemini Pro" : "Muse";
   const webAiUrl = provider === "gemini" ? "https://gemini.google.com/app" : "https://muse.ai/";
 
-  async function createWebAiPrompt() {
+  async function createWebAiPrompt(hookOnly = false) {
     const selectionEpoch = sourceSelectionEpoch.current;
     if (!isWebAi) return;
     setWebAiError(""); setWebAiNotice("");
@@ -985,8 +1065,9 @@ export default function Home() {
       const content = preparedSource ? transcript : source.transcript || transcript;
       if (!content.trim() && source.kind !== 'youtube') throw new Error("Chưa có transcript. Nhập transcript có timestamp trong mục Transcript trước; video không có phụ đề có thể dùng Manual cut.");
       const request = { provider, originalTitle: source.title, transcript: content, instruction, supplementalPrompt, sourceDuration: source.duration } satisfies AnalyzeRequest;
-      setWebAiPrompt(buildMusePrompt(buildPrompt(request), EDIT_PLAN_SCHEMA, { ...source, ...(source.kind === 'youtube' ? { sourceUrl: source.sourceUrl || sourceUrl } : {}) }));
-      setWebAiContext({ sourceId: source.id, transcript: content, instruction, provider });
+      const requestId = crypto.randomUUID();
+      setWebAiPrompt(hookOnly ? buildExternalHookOnlyPrompt(previewPlan, source, content, requestId) : buildMusePrompt(buildPrompt(request), EDIT_PLAN_SCHEMA, { ...source, ...(source.kind === 'youtube' ? { sourceUrl: source.sourceUrl || sourceUrl } : {}) }, { requestId }));
+      setWebAiContext({ sourceId: source.id, transcript: content, instruction, provider, requestId, ...(hookOnly ? { hookPlan: structuredClone(previewPlan), mainSignature } : {}) });
       setWebAiResult("");
       setWebAiNotice(`Prompt đã sẵn sàng. Copy rồi mở ${webAiName}, dán vào cuộc trò chuyện và gửi. App chưa gửi dữ liệu tới ${webAiName}.`);
     } catch (caughtError) {
@@ -997,21 +1078,37 @@ export default function Home() {
 
   // Transcript retrieval / editing rules cannot change the identity of a video.
   // The imported JSON's sourceId is validated separately by parseMusePlan.
-  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.sourceId === preparedSource.id);
+  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && (!webAiContext.hookPlan || webAiContext.mainSignature === mainSignature));
 
-  async function refineAiPlan(nextPlan: EditPlan, source: WorkerSource) {
+  async function refineAiPlan(nextPlan: EditPlan, source: WorkerSource, selectHooks = true) {
     const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/smart-cut`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: nextPlan }) });
     const data = await response.json() as { plan?: EditPlan; error?: string };
     if (!response.ok || !data.plan) throw new Error(data.error || "Không kiểm tra được Smart Cut.");
-    return data.plan;
+    return selectHooks ? chooseTeasers(data.plan, source) : data.plan;
+  }
+
+  async function chooseTeasers(nextPlan: EditPlan, source: WorkerSource) {
+    if (["gemini", "muse"].includes(nextPlan.providerUsed) && nextPlan.teaserPolicy === TEASER_POLICY) {
+      if (!await externalHooksCurrent(nextPlan, source, transcript)) throw new Error("Hook import đã cũ sau sửa nội dung/transcript. Tạo prompt mới cho provider này trước khi xuất; không tự thay bằng ChatGPT/fallback.");
+      return nextPlan;
+    }
+    const captionCues = sourceCaptions?.sourceId === source.id ? sourceCaptionTrack(sourceCaptions, source) : nextPlan.captionCues;
+    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/teaser-hooks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcript.slice(0,100_000), plan: { ...nextPlan, ...(captionCues ? { captionCues } : {}) } }) });
+    const result = await response.json() as { plan?: EditPlan; error?: string };
+    if (!response.ok || !result.plan) throw new Error(result.error || "Không chọn được teaser hook.");
+    return result.plan;
   }
 
   useEffect(() => {
     subtitleSourceRef.current = preparedSource?.id;
     subtitleRequestSerial.current += 1;
     subtitleAutoKey.current = "";
-    setSubtitleBusy(false); setSubtitleNotice("");
-    setSourceCaptions((current) => current?.sourceId === preparedSource?.id ? current : null);
+    const sourceId = preparedSource?.id;
+    queueMicrotask(() => {
+      if (subtitleSourceRef.current !== sourceId) return;
+      setSubtitleBusy(false); setSubtitleNotice("");
+      setSourceCaptions((current) => current?.sourceId === sourceId ? current : null);
+    });
   }, [preparedSource?.id]);
 
   const loadSubtitles = useCallback(async (install = false, regenerate = false) => {
@@ -1079,15 +1176,22 @@ export default function Home() {
     setIsAnalyzing(true);
     try {
       if (!preparedSource) throw new Error("Chuẩn bị source của video trước khi nhập JSON.");
-      const nextPlan = await refineAiPlan(normalizePlan(parseMusePlan(webAiResult, preparedSource, webAiName), provider), preparedSource);
+      if (!webAiPromptIsCurrent || !webAiContext) throw new Error("Source, transcript, quy tắc hoặc provider đã đổi. Tạo prompt mới trước khi nhập JSON.");
+      const context = webAiContext;
+      const identity = hookIdentity;
+      const imported = context.hookPlan ? null : parseMusePlan(webAiResult, preparedSource, webAiName, { requestId: context.requestId });
+      const refined = context.hookPlan || await refineAiPlan(normalizePlan(imported!, provider), preparedSource, false);
+      const selections = context.hookPlan ? parseExternalHookOnly(webAiResult, preparedSource, context.requestId, context.hookPlan) : imported!.hookSelections || [];
+      const nextPlan = await attachExternalHooks(refined, selections, preparedSource, context.transcript, context.provider, sourceCaptions?.cues);
+      if (latestHookIdentity.current !== identity) throw new Error("Nội dung/provider đã đổi trong lúc kiểm tra. Tạo prompt mới; kết quả cũ không được áp dụng.");
       if (selectionEpoch !== sourceSelectionEpoch.current) return;
       setCustomTimes(null);
-      setPlan(nextPlan);
+      replacePlan(nextPlan);
       setHasEditPlan(true);
       setActivePartIndex(0);
       setRenderJob(null);
       setError("");
-      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}, cộng 1 giây và kiểm tra Smart Cut. Có thể sửa Custom Time trước khi render.`);
+      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}, hook external-import đã kiểm tra range, bỏ 1 giây và kiểm tra Smart Cut. Có thể sửa Custom Time trước khi render.`);
     } catch (caughtError) {
       if (selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không nhập được JSON ${webAiName}.`);
     }
@@ -1105,7 +1209,7 @@ export default function Home() {
         part2Title: manualPart2Title,
         part2Ranges: manualPart2Ranges,
       });
-      setPlan(nextPlan);
+      replacePlan(nextPlan);
       setHasEditPlan(true);
       setActivePartIndex(0);
     } catch (caughtError) {
@@ -1137,10 +1241,10 @@ export default function Home() {
     if (!previewPlayingRef.current) {
       try {
         if (hasEditPlan) {
-          const last = activePart.segments.at(-1);
-          if (last && previewSegmentIndex.current === activePart.segments.length - 1 && video.currentTime >= last.end - 0.05) {
+          const last = playbackSegments.at(-1);
+          if (last && previewSegmentIndex.current === playbackSegments.length - 1 && video.currentTime >= last.end - 0.05) {
             previewSegmentIndex.current = 0;
-            video.currentTime = activePart.segments[0].start;
+            video.currentTime = playbackSegments[0].start;
           }
           video.playbackRate = PLAYBACK_RATE;
         }
@@ -1167,7 +1271,7 @@ export default function Home() {
     if (!video || !Number.isFinite(value)) return;
     let sourceTime = value;
     if (hasEditPlan) {
-      const position = locateTimelineTime(activePart.segments, value);
+      const position = locateTimelineTime(playbackSegments, value);
       previewSegmentIndex.current = position.index;
       sourceTime = position.sourceTime;
       if (previewPlayingRef.current) { void video.play(); void backgroundVideoRef.current?.play(); }
@@ -1175,7 +1279,7 @@ export default function Home() {
     video.currentTime = sourceTime;
     if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = sourceTime;
     setPreviewCurrentTime(value);
-  }, [hasEditPlan, activePart.segments]);
+  }, [hasEditPlan, playbackSegments]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -1194,7 +1298,7 @@ export default function Home() {
     if (!video) return;
     let timelineTime = video.currentTime;
     if (hasEditPlan) {
-      timelineTime = timelineTimeForSegment(activePart.segments, previewSegmentIndex.current, video.currentTime);
+      timelineTime = timelineTimeForSegment(playbackSegments, previewSegmentIndex.current, video.currentTime);
     }
     setPreviewCurrentTime(timelineTime);
     const background = backgroundVideoRef.current;
@@ -1259,7 +1363,7 @@ export default function Home() {
   async function startRender() {
     if (renderSubmissionPending.current) return;
     const selectionEpoch = sourceSelectionEpoch.current;
-    const submittedPlan = structuredClone(previewPlan);
+    let submittedPlan = structuredClone(previewPlan);
     setError("");
     if (effectiveTiming.error) { setError(effectiveTiming.error); return; }
     if (!submittedPlan.parts.every(isChronological)) {
@@ -1271,6 +1375,7 @@ export default function Home() {
     try {
       const source = preparedSource || await prepareSource();
       if (!source) return;
+      if (submittedPlan.teaserPolicy === TEASER_POLICY) submittedPlan = await chooseTeasers(submittedPlan, source);
       for (const part of submittedPlan.parts) {
         for (const segment of part.segments) {
           if (segment.end > source.duration + 0.05) {
@@ -1281,13 +1386,15 @@ export default function Home() {
       const response = await fetch(`${WORKER_ORIGIN}/api/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId: source.id, plan: { ...submittedPlan, subtitles: subtitleSettings, ...(subtitleSettings.enabled && sourceCaptions?.sourceId === source.id ? { captionCues: sourceCaptionTrack(sourceCaptions, source) } : {}) } }),
+        body: JSON.stringify({ sourceId: source.id, plan: snapshotPlanVisualStyle({ ...submittedPlan, subtitles: subtitleSettings, ...(subtitleSettings.enabled && sourceCaptions?.sourceId === source.id ? { captionCues: sourceCaptionTrack(sourceCaptions, source) } : {}) }) }),
       });
       const data = (await response.json()) as { job?: RenderJob; error?: string };
       if (!response.ok || !data.job) throw new Error(data.error || "Không thể bắt đầu render.");
       setEditorRenderJobs((jobs) => [data.job!, ...jobs.filter((job) => job.id !== data.job!.id)]);
       if (selectionEpoch === sourceSelectionEpoch.current) {
         setRenderJob(data.job);
+        const renderedPlan = data.job.plan;
+        if (renderedPlan && submittedPlan.teaserPolicy === TEASER_POLICY && latestMainSignature.current === mainSignature) setPlan((current) => ({ ...current, parts: renderedPlan.parts, teaserPolicy: TEASER_POLICY }));
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Không thể bắt đầu render.");
@@ -1556,6 +1663,7 @@ export default function Home() {
                   >
                     {isChatGPTConnecting ? <><Loader2 className="animate-spin" /> Waiting for ChatGPT…</> : chatGPTSession?.sharing ? <><LogIn /> Reconnect ChatGPT</> : <><LogIn /> Continue with ChatGPT</>}
                   </Button>
+                  {chatGPTSession?.error && <p role="status" className="mt-2 text-xs text-amber-300">{chatGPTSession.error}</p>}
                   <p className="mt-2 text-[10px] leading-4 text-zinc-600">Phiên OAuth được bảo vệ trên máy này (macOS Keychain / Windows DPAPI), không lưu token trong web.</p>
                 </div>
               )}
@@ -1581,6 +1689,7 @@ export default function Home() {
               {isWebAi ? <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[.025] p-3">
                 <p className="text-sm font-semibold">{webAiName} bán tự động</p>
                 <p className="text-xs leading-5 text-zinc-400">Tạo prompt → copy và gửi trong {webAiName} → dán JSON bên dưới. Không API key, không kết nối CLI; app không đọc token hay tài khoản {webAiName}.</p>
+                {hasEditPlan && <Button onClick={() => void createWebAiPrompt(true)} disabled={isAnalyzing || !preparedSource || Boolean(effectiveTiming.error)} variant="outline" className="w-full text-xs">Chỉ chọn lại hook · giữ các range hiện tại</Button>}
                 {provider === "gemini" && <p className="text-xs leading-5 text-zinc-400">Mở Gemini web bằng tài khoản Google AI Pro và tự chọn model Pro trước khi gửi prompt.</p>}
                 <Button onClick={() => void createWebAiPrompt()} disabled={isAnalyzing || isPreparingSource || !workerHealth?.ok} className="w-full rounded-xl bg-white text-xs text-black hover:bg-zinc-200">{isAnalyzing ? <Loader2 className="animate-spin" /> : <WandSparkles />}{isAnalyzing ? "Đang chuẩn bị prompt…" : `1. Tạo prompt cho ${webAiName}`}</Button>
                 {webAiPrompt && <>
@@ -1593,7 +1702,7 @@ export default function Home() {
                 </>}
                 <label htmlFor="web-ai-result" className="field-label block">2. JSON kết quả từ {webAiName}</label>
                 <Textarea id="web-ai-result" value={webAiResult} onChange={(event) => setWebAiResult(event.target.value)} placeholder={`Dán toàn bộ JSON ${webAiName} trả về, gồm sourceId, originalTitle, language và parts…`} className="studio-textarea studio-transcript min-h-[130px] font-mono text-[11px] leading-5" />
-                <Button onClick={applyWebAiResult} disabled={!preparedSource || !webAiResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check /> 3. Kiểm tra và áp dụng 2 part</Button>
+                <Button onClick={applyWebAiResult} disabled={!preparedSource || !webAiPromptIsCurrent || !webAiResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check /> 3. Kiểm tra và áp dụng 2 part</Button>
                 {webAiError && <p role="alert" className="break-words text-xs leading-5 text-red-300">{webAiError}</p>}
                 {webAiNotice && <p role="status" className="text-xs leading-5 text-emerald-300">{webAiNotice}</p>}
               </div> : <Button onClick={analyze} disabled={isAnalyzing} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
@@ -1641,33 +1750,25 @@ export default function Home() {
 
           <div
             ref={setPreviewElement}
+            aria-busy={needsMeasuredTitleFit(previewVisualStyle) && measuredTitlePair?.input !== titleFitInput}
             className="portrait-preview relative aspect-[9/16] shrink-0 overflow-hidden rounded-[20px] border border-white/12 bg-black shadow-[0_20px_60px_rgba(0,0,0,.45)]"
             style={{ width: "min(100%, 240px)" }}
           >
+            <VideoFilterDefinition filter={previewVisualStyle.filter} id="studio-preview-video-color" />
             {previewVideoUrl ? (
-              <video ref={backgroundVideoRef} className="absolute inset-0 size-full object-cover opacity-50" style={{ filter: `contrast(${workerHealth?.render?.contrast || 1.04}) saturate(${workerHealth?.render?.saturation || 1.06}) blur(${40 * previewScale}px)` }} src={previewVideoUrl} muted preload="metadata" playsInline />
+              <video ref={backgroundVideoRef} className="absolute inset-0 size-full object-cover" style={{ filter: `${videoColorFilter} blur(${40 * previewScale}px)`, opacity: previewVisualStyle.background.mode === "source-blur" ? previewVisualStyle.background.opacity : 0 }} src={previewVideoUrl} muted preload="metadata" playsInline />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
             )}
-            <div className="absolute inset-x-[8.35%] z-10 flex items-end justify-center text-center" style={{ top: TITLE_LAYOUT.original.top * previewScale, height: (TITLE_LAYOUT.original.bottom - TITLE_LAYOUT.original.top) * previewScale, clipPath: `inset(-${20 * previewScale}px)` }}>
-              <p
-                className="social-copy overlay-copy-block relative"
-                style={{
-                  fontFamily: fontStackFor(plan.originalTitle).join(", "),
-                  fontSize: `${(originalTitleFit.fontSize * previewScale).toFixed(2)}px`,
-                  lineHeight: (originalTitleFit.fontSize + originalTitleFit.lineSpacing) / originalTitleFit.fontSize,
-                }}
-              >
-                {originalTitleFit.text}
-                <span aria-hidden="true" className="title-shine pointer-events-none absolute inset-0" style={titleShineStyle}>{originalTitleFit.text}</span>
-              </p>
-            </div>
+            {previewVisualStyle.background.mode !== "source-blur" && <div data-studio-background className="absolute inset-0" style={backgroundCss(previewVisualStyle.background)} />}
+            <SceneOverlays overlays={previewVisualStyle.overlays} />
+            <CutTransitionVeil value={previewVisualStyle.cutTransition} windows={transitionWindows} time={previewCurrentTime} />
             <div className="absolute inset-x-0 overflow-hidden" style={{ top: `${FOREGROUND_Y / 1920 * 100}%`, height: `${FOREGROUND_HEIGHT / 1920 * 100}%` }}>
               {previewVideoUrl ? (
                 <video
                   ref={previewVideoRef}
                   className="native-preview-video cursor-pointer"
-                  style={{ width: `${(preparedSource?.width || sourceSize.width) * FOREGROUND_SCALE * previewScale}px`, height: 'auto', filter: `contrast(${workerHealth?.render?.contrast || 1.04}) saturate(${workerHealth?.render?.saturation || 1.06})` }}
+                  style={{ width: `${(preparedSource?.width || sourceSize.width) * FOREGROUND_SCALE * previewScale}px`, height: 'auto', filter: videoColorFilter }}
                   src={previewVideoUrl}
                   preload="metadata"
                   playsInline
@@ -1677,7 +1778,7 @@ export default function Home() {
                     setPreviewDuration(duration);
                     setSourceSize({ width: event.currentTarget.videoWidth || 1920, height: event.currentTarget.videoHeight || 1080 });
                     if (hasEditPlan) {
-                      event.currentTarget.currentTime = activePart.segments[0]?.start || 0;
+                      event.currentTarget.currentTime = playbackSegments[0]?.start || 0;
                       event.currentTarget.playbackRate = PLAYBACK_RATE;
                     }
                     setPreviewError("");
@@ -1691,24 +1792,39 @@ export default function Home() {
               ) : (
                 <div className="absolute inset-0 bg-[linear-gradient(125deg,#111_0%,#572317_42%,#ef6b32_43%,#241716_47%,#0b0c0f_100%)]" />
               )}
-              {previewVideoUrl && !isPreviewPlaying && <button type="button" onClick={() => void togglePreview()} aria-label="Play preview" className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
+              {previewVideoUrl && !isPreviewPlaying && <button type="button" onClick={() => void togglePreview()} aria-label="Play preview" style={{ zIndex: transitionWindows.length ? 30 : undefined }} className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
+            </div>
+            <div data-title-animation={previewVisualStyle.titleAnimation || "none"} className="pointer-events-none absolute inset-0 z-10" style={titleAnimationPreviewCss(previewVisualStyle.titleAnimation, previewCurrentTime, previewScale)}>
+            <div className="absolute inset-x-[8.35%] z-10 flex items-end justify-center text-center" style={{ top: TITLE_LAYOUT.original.top * previewScale, height: (TITLE_LAYOUT.original.bottom - TITLE_LAYOUT.original.top) * previewScale, clipPath: `inset(-${20 * previewScale}px)` }}>
+              <p
+                className="social-copy overlay-copy-block relative"
+                style={{
+                  ...textPreviewCss(previewVisualStyle.originalTitle, plan.originalTitle, previewScale),
+                  fontSize: `${(originalTitleFit.fontSize * previewScale).toFixed(2)}px`,
+                  lineHeight: (originalTitleFit.fontSize + originalTitleFit.lineSpacing) / originalTitleFit.fontSize,
+                }}
+              >
+                {originalTitleFit.text}
+                {previewVisualStyle.originalTitle.effect === "current-title-glow-shine" && <span aria-hidden="true" className="title-shine pointer-events-none absolute inset-0" style={titleShineStyle}>{originalTitleFit.text}</span>}
+              </p>
             </div>
             <div className="absolute inset-x-[8.35%] z-10 flex items-start justify-center text-center" style={{ top: TITLE_LAYOUT.part.top * previewScale, height: (TITLE_LAYOUT.part.bottom - TITLE_LAYOUT.part.top) * previewScale, clipPath: `inset(-${20 * previewScale}px)` }}>
               <p
                 className="social-copy overlay-copy-block relative"
                 style={{
-                  fontFamily: fontStackFor(activePart.title).join(", "),
+                  ...textPreviewCss(previewVisualStyle.partTitle, activePart.title, previewScale),
                   fontSize: `${(partTitleFit.fontSize * previewScale).toFixed(2)}px`,
                   lineHeight: (partTitleFit.fontSize + partTitleFit.lineSpacing) / partTitleFit.fontSize,
                 }}
               >
                 {partTitleFit.text}
-                <span aria-hidden="true" className="title-shine pointer-events-none absolute inset-0" style={titleShineStyle}>{partTitleFit.text}</span>
+                {previewVisualStyle.partTitle.effect === "current-title-glow-shine" && <span aria-hidden="true" className="title-shine pointer-events-none absolute inset-0" style={titleShineStyle}>{partTitleFit.text}</span>}
               </p>
             </div>
-            <div className="absolute inset-x-0 z-10 text-center" style={{ top: 1804 * previewScale, lineHeight: 1 }}><span className="social-copy" style={{ fontSize: `${58 * previewScale}px` }}>{activePart.id}/{plan.parts.length}</span></div>
-            {hasEditPlan && subtitleSettings.enabled && previewCaption && <div className="pointer-events-none absolute inset-x-[10%] z-20 text-center" style={{ bottom: `${(1920 - subtitleY(subtitleSettings, preparedSource?.height || sourceSize.height)) / 1920 * 100}%` }}>
-              <p className="whitespace-pre-line break-words font-bold" style={{ fontFamily: subtitleSettings.font === "auto" ? fontStackFor(previewCaption.text).join(", ") : `${subtitleSettings.font}, ${fontStackFor(previewCaption.text).join(", ")}`, fontSize: subtitleSettings.size * previewScale, lineHeight: 1.2, color: subtitleSettings.color, WebkitTextStroke: `${subtitleSettings.outline * 2 * previewScale}px ${subtitleSettings.outlineColor}`, paintOrder: "stroke fill", textShadow: `0 ${2 * previewScale}px ${3 * previewScale}px #000` }}>{previewCaption.text}</p>
+            <div className="absolute inset-x-0 z-10 text-center" style={{ top: 1804 * previewScale, lineHeight: 1 }}><span className="social-copy" style={{ ...textPreviewCss(previewVisualStyle.partIndicator, activePart.title, previewScale, "indicator"), fontSize: `${58 * previewScale}px` }}>{activePart.id}/{plan.parts.length}</span></div>
+            </div>
+            {hasEditPlan && previewVisualStyle.subtitle.enabled && previewCaption && <div className="pointer-events-none absolute inset-x-[10%] z-20 text-center" style={{ bottom: `${(1920 - subtitleY(previewVisualStyle.subtitle, preparedSource?.height || sourceSize.height)) / 1920 * 100}%` }}>
+              <p className="whitespace-pre-line break-words font-bold" style={{ ...subtitlePreviewCss(previewVisualStyle.subtitle, previewCaption.text, previewScale), fontSize: previewVisualStyle.subtitle.size * previewScale, lineHeight: 1.2 }}>{previewCaption.text}</p>
             </div>}
           </div>
 
@@ -1739,6 +1855,11 @@ export default function Home() {
             <div className="preview-stat accent"><span>After 1.25×</span><strong>{formatTime(finalDurationOf(activePart))}</strong></div>
             <div className="preview-stat"><span>Font preset</span><strong>{fontStack[0]}</strong></div>
           </div>
+          {activePart.teaser && <details className="mt-3 w-full max-w-[520px] rounded-xl border border-white/10 p-3 text-xs text-zinc-400">
+            <summary className="cursor-pointer">Teaser Part {activePart.id} · {activePart.teaser.status === "selected" ? `${((activePart.teaser.end - activePart.teaser.start) / PLAYBACK_RATE).toFixed(1)}s · ${activePart.teaser.selection === "ai" ? "AI API" : activePart.teaser.selection === "external-import" ? "External import · API chưa xác minh" : "Fallback — chưa xác minh AI"}` : "Không có đoạn phù hợp"}</summary>
+            <p className="mt-2">{activePart.teaser.reason}</p>
+            {activePart.teaser.status === "selected" && <><p className="mt-1">{activePart.teaser.relation}</p><p className="mt-1">{activePart.teaser.provider} / {activePart.teaser.model} · {activePart.teaser.limitations.join(" · ")}</p></>}
+          </details>}
         </section>
 
         <aside className="min-w-0 bg-[#0d0e11] p-5 xl:p-6">
@@ -1770,6 +1891,46 @@ export default function Home() {
           </div>}
 
 
+          <VisualTemplatePanel style={previewVisualStyle} onTemplate={(id) => setPlan((current) => {
+            const visualStyle = applyVisualTemplate(resolvePlanVisualStyle(current), id);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />
+          <VisualCustomizePanel style={previewVisualStyle} controls={{
+            overlay: <OverlayPanel overlays={previewVisualStyle.overlays} onPreset={(id) => setPlan((current) => {
+            const visualStyle = applyOverlayPreset(resolvePlanVisualStyle(current), id);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} onOpacity={(opacity) => setPlan((current) => {
+            const visualStyle = applyOverlayOpacity(resolvePlanVisualStyle(current), opacity);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />,
+            background: <BackgroundPanel background={previewVisualStyle.background} onPreset={(id) => setPlan((current) => {
+            const visualStyle = applyBackgroundPreset(resolvePlanVisualStyle(current), id);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />,
+            filter: <VideoFilterPanel filter={previewVisualStyle.filter} onPreset={(id) => setPlan((current) => {
+            const visualStyle = applyFilterPreset(resolvePlanVisualStyle(current), id);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} onIntensity={(intensity) => setPlan((current) => {
+            const visualStyle = applyFilterIntensity(resolvePlanVisualStyle(current), intensity);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />,
+            animation: <TextAnimationPanel value={previewVisualStyle.titleAnimation} onChange={(id) => setPlan((current) => {
+            const visualStyle = normalizeVisualStyle({ ...resolvePlanVisualStyle(current), titleAnimation: id });
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />,
+            transition: <CutTransitionPanel value={previewVisualStyle.cutTransition} onChange={(id) => setPlan((current) => {
+            const visualStyle = normalizeVisualStyle({ ...resolvePlanVisualStyle(current), cutTransition: id });
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />,
+            text: <TextStylePanel style={previewVisualStyle} onPreset={(id) => setPlan((current) => {
+            const visualStyle = applyTextPreset(resolvePlanVisualStyle(current), id);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />,
+            font: <TextFontSelector style={previewVisualStyle} onFont={(font) => setPlan((current) => {
+            const visualStyle = applyFontOverride(resolvePlanVisualStyle(current), font);
+            return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
+          })} />,
+          }} />
           <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}</summary>
             <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => {
@@ -1785,7 +1946,7 @@ export default function Home() {
               <p className="text-[11px] leading-5 text-zinc-500">Whisper base đa ngôn ngữ · 142 MB · xử lý trên máy. {speechModel?.modelReady ? 'Model đã sẵn sàng.' : speechModel?.installing ? `Đang tải ${Math.round((speechModel.downloadedBytes || 0) / (speechModel.totalBytes || 1) * 100)}%.` : 'Cần tải model một lần.'}</p>
               <p className="text-[11px] leading-5 text-zinc-500">Vị trí dưới chừa 420 px vùng giao diện TikTok. Mô tả mở rộng vẫn có thể che video; kiểm tra màn hình đăng trước khi xuất bản.</p>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <label>Font<select aria-label="Font phụ đề" value={subtitleSettings.font} onChange={(event) => setSubtitleSettings((current) => ({ ...current, font: event.target.value }))} className="studio-input mt-1 w-full"><option value="auto">Tự chọn theo ngôn ngữ</option><option>Noto Sans</option><option>Noto Sans JP</option><option>Noto Sans KR</option></select></label>
+                <label>Font<select aria-label="Font phụ đề" value={subtitleSettings.font} onChange={(event) => setSubtitleSettings((current) => ({ ...current, font: event.target.value }))} className="studio-input mt-1 w-full">{listFonts().map((font) => <option key={font.id} value={font.id}>{font.label}</option>)}</select></label>
                 <label>Vị trí<select aria-label="Vị trí phụ đề" value={subtitleSettings.position} onChange={(event) => setSubtitleSettings((current) => ({ ...current, position: event.target.value }))} className="studio-input mt-1 w-full"><option value="bottom">Dưới khung video</option><option value="center">Giữa khung video</option><option value="top">Trên khung video</option></select></label>
                 <label>Cỡ chữ<Input aria-label="Cỡ chữ phụ đề" type="number" min={28} max={72} value={subtitleSettings.size} onChange={(event) => setSubtitleSettings((current) => ({ ...current, size: Math.max(28, Math.min(72, Number(event.target.value) || 48)) }))} className="studio-input mt-1 w-full" /></label>
                 <label>Độ dày viền<Input aria-label="Độ dày viền phụ đề" type="number" min={0} max={8} value={subtitleSettings.outline} onChange={(event) => setSubtitleSettings((current) => ({ ...current, outline: Math.max(0, Math.min(8, Number(event.target.value) || 0)) }))} className="studio-input mt-1 w-full" /></label>
@@ -1897,7 +2058,7 @@ export default function Home() {
           </Button>
 
           {renderJob && ["queued", "rendering"].includes(renderJob.state) && <Button variant="outline" onClick={() => void stopRender(renderJob)} disabled={stoppingRenderIds.includes(renderJob.id)} className="mt-2 w-full rounded-xl border-red-400/30 text-red-300 hover:bg-red-400/10"><Square /> {stoppingRenderIds.includes(renderJob.id) ? "Đang dừng…" : "Dừng render"}</Button>}
-          <button onClick={() => setPlan(mockPlan({ ...DEFAULT_REQUEST, originalTitle: sourceTitle, transcript, instruction }))} className="mt-3 flex w-full items-center justify-center gap-2 py-2 text-xs text-zinc-600 transition hover:text-zinc-300"><RotateCcw className="size-3.5" /> Reset demo plan</button>
+          <button onClick={() => replacePlan(mockPlan({ ...DEFAULT_REQUEST, originalTitle: sourceTitle, transcript, instruction }))} className="mt-3 flex w-full items-center justify-center gap-2 py-2 text-xs text-zinc-600 transition hover:text-zinc-300"><RotateCcw className="size-3.5" /> Reset demo plan</button>
           {!isChronological(activePart) && <p className="mt-3 text-xs text-red-300">Timeline is invalid. Regenerate this plan.</p>}
           <p className="mt-3 text-center text-[10px] leading-5 text-zinc-600">Timestamps luôn giữ theo source gốc. Worker chỉ apply 1.25× sau layout + typography.</p>
         </aside>

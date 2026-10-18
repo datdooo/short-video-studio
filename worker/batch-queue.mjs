@@ -1,3 +1,4 @@
+import { assertRenderableVisualStyle, snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { randomUUID } from "node:crypto";
 
 function fail(message, status) {
@@ -13,6 +14,8 @@ export function createBatchSubmissionQueue({ batches, controllers, prepare, onCh
   let preparationQueue = Promise.resolve();
   return {
     submit(body) {
+      body = snapshotPlanVisualStyle(body);
+      assertRenderableVisualStyle(body.visualStyle);
       let batch;
       if (body.batchId !== undefined) {
         batch = batches.get(body.batchId);

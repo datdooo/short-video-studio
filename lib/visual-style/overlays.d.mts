@@ -1,0 +1,12 @@
+export type OverlayPresetId = "none" | "grain" | "vignette" | "soft-glow" | "film-frame" | "rec-hud";
+export type SceneOverlay = { id: string; presetId: Exclude<OverlayPresetId, "none">; kind: "image"; assetId: string; opacity: number; blendMode: "normal"; layer: "scene"; scaleMode: "canvas"; enabled: boolean };
+export type OverlayAsset = { id: string; file: string; width: number; height: number };
+export const OVERLAY_ASSETS: Readonly<Record<string, Readonly<OverlayAsset>>>;
+export const OVERLAY_PRESET_IDS: readonly OverlayPresetId[];
+export function getOverlayAsset(id: string): OverlayAsset;
+export function getOverlayPreset(id?: string): { id: OverlayPresetId; label: string; overlays: SceneOverlay[] };
+export function listOverlayPresets(): ReturnType<typeof getOverlayPreset>[];
+export function normalizeCuratedOverlay(input: Record<string, unknown>): SceneOverlay;
+export function assertRenderableOverlays(overlays: import("./types").OverlayStyle[]): SceneOverlay[];
+export function activeSceneOverlays(overlays: import("./types").OverlayStyle[]): SceneOverlay[];
+export function overlayAssetUrl(assetId: string): string;

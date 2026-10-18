@@ -1,0 +1,36 @@
+{
+  "repository": "https://github.com/google/fonts",
+  "revision": "1d0e46c7933245c8180fe83e47917961c913bbdb",
+  "fonts": [
+    {
+      "file": "Inter-Variable.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+      "licenseFile": "Inter-OFL.txt",
+      "license": "OFL-1.1",
+      "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+      "bytes": 876576,
+      "fontVersion16_16": 262210,
+      "version": 4.001
+    },
+    {
+      "file": "RobotoCondensed-Variable.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/robotocondensed/RobotoCondensed%5Bwght%5D.ttf",
+      "licenseFile": "RobotoCondensed-OFL.txt",
+      "license": "OFL-1.1",
+      "sha256": "dace262afcee68a5276f200d8026c57221735c0118ab5fda8c2c0d3dc409a8d0",
+      "bytes": 371616,
+      "fontVersion16_16": 197132,
+      "version": 3.008
+    },
+    {
+      "file": "Oswald-Variable.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/oswald/Oswald%5Bwght%5D.ttf",
+      "licenseFile": "Oswald-OFL.txt",
+      "license": "OFL-1.1",
+      "sha256": "5b38c246e255a12f5712d640d56bcced0472466fc68983d2d0410ec0457c2817",
+      "bytes": 172088,
+      "fontVersion16_16": 268894,
+      "version": 4.103
+    }
+  ]
+}

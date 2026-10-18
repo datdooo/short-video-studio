@@ -39,6 +39,7 @@ test('macOS retains the exact existing app-specific Keychain service/account', (
   const store = createChatGPTStore({ dataRoot: '/tmp/fake', platform: 'darwin', env: {}, exists: () => true,
     execute: (binary, args) => {
       assert.equal(binary, '/usr/bin/security');
+      if (args[0] === 'default-keychain') return {status:0,stdout:'"/account/login.keychain-db"'};
       assert.equal(args[args.indexOf('-s') + 1], 'ShortCut Studio ChatGPT');
       assert.equal(args[args.indexOf('-a') + 1], 'default');
       return { status: 0, stdout: JSON.stringify(fake) };
@@ -49,4 +50,35 @@ test('macOS retains the exact existing app-specific Keychain service/account', (
 test('missing macOS credential is disconnected, not a fabricated successful session', () => {
   const store = createChatGPTStore({ dataRoot: '/tmp/fake', platform: 'darwin', env: {}, exists: () => true, execute: () => ({ status: 44 }) });
   assert.equal(store.read(), null); assert.equal(store.delete(), false);
+});
+
+test('DEV Keychain read/write/delete always use a separate service, with no production fallback', () => {
+  const calls = [];
+  const store = createChatGPTStore({ dataRoot: '/tmp/fake-dev', platform: 'darwin', env: { CHATGPT_KEYCHAIN_SERVICE: 'ShortCut Studio Dev ChatGPT' }, exists: () => true,
+    execute: (binary, args) => {
+      if (args[0] === 'default-keychain') return {status:0,stdout:'"/account/login.keychain-db"'};
+      calls.push(args[0]);
+      assert.equal(binary, '/usr/bin/security');
+      assert.equal(args[args.indexOf('-s') + 1], 'ShortCut Studio Dev ChatGPT');
+      return { status: args[0] === 'find-generic-password' ? 44 : 0 };
+    },
+  });
+  assert.equal(store.read(), null);
+  store.write(fake);
+  assert.equal(store.delete(), true);
+  assert.deepEqual(calls, ['find-generic-password', 'add-generic-password', 'delete-generic-password']);
+});
+
+test('isolated QA HOME never leaks into macOS security; default is an account, not a keychain path',()=>{
+ const calls=[];const store=createChatGPTStore({dataRoot:'/dev/media',platform:'darwin',env:{HOME:'/private/qa/home',CFFIXED_USER_HOME:'/private/qa/home',CHATGPT_KEYCHAIN_SERVICE:'ShortCut Studio Dev ChatGPT'},accountHome:()=>'/Users/account',exists:()=>true,execute:(bin,args,options)=>{
+   assert.equal(options.env.HOME,'/Users/account');assert.equal(options.env.CFFIXED_USER_HOME,'/Users/account');
+   calls.push(args);return {status:0,stdout:args[0]==='default-keychain'?'"/Users/account/Library/Keychains/login.keychain-db"':JSON.stringify(fake)};
+ }});store.read();store.write(fake);store.delete();
+ assert.equal(calls[0][calls[0].indexOf('-a')+1],'default');
+ assert.equal(calls[2][calls[2].indexOf('-s')+1],'ShortCut Studio Dev ChatGPT');
+ assert.equal(calls[2].at(-1),'/usr/bin/security');
+});
+test('missing default keychain fails before add-generic-password can show a create/reset dialog',()=>{
+ const calls=[];const store=createChatGPTStore({dataRoot:'/dev',platform:'darwin',env:{CHATGPT_KEYCHAIN_SERVICE:'ShortCut Studio Dev ChatGPT'},exists:()=>true,execute:(bin,args)=>{calls.push(args[0]);return {status:1,stdout:''};}});
+ assert.throws(()=>store.write(fake),/không tạo\/reset/);assert.deepEqual(calls,['default-keychain']);
 });
