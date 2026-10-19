@@ -151,3 +151,16 @@ stays `1`, and source cache identity is unchanged (identity never depends on com
 - Re-normalizing a `SourceContext` no longer silently drops `transcript`, `comments`, `heatmap`, `visualSignals` or `audioSignals`; present optional fields are deep-cloned and preserved.
 - YouTube contexts normalize `info.comments` when present and otherwise report an `unavailable` comment signal; local sources report `disabled` and keep working with no YouTube metadata.
 - Checkpoint A description-timestamp parsing was reused, not refactored.
+
+## A/B wiring checkpoint — 2026-10-19
+
+Previously A/B supplied normalization helpers and an independently callable downloader;
+source imports did not populate `sourceContext`. Imports now retain bounded context
+from existing metadata/download/transcript info, and local uploads receive local
+context. Explicit hook analysis enriches comments once (<=200, dedicated 180s total
+budget), persists context, and supplies existing description/chapter/comment-cluster
+inputs. Preview/render/source reload perform no signal acquisition. Disk cache is
+source/duration/revision-specific, cloned and rebound to each imported source ID.
+Subscriber-aware cancellation and optional failure isolation are retained. No main
+planner/fusion or new batch orchestration was added. Fixture focused checks: 73/73;
+live YouTube acceptance is intentionally deferred to the user.

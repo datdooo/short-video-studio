@@ -41,6 +41,7 @@ import { trimPartStart } from "./part-start.mjs";
 import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
 import { smartCutPlan } from "./smart-cut.mjs";
+import { createSourceContextService, sourceContextFor, saveSourceContext } from "./source-context.mjs";
 import { createYouTubeDownloader } from "./youtube-downloader.mjs";
 import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth, localAuthOrigin } from "./chatgpt-auth-state.mjs";
 import { createChatGPTStore } from './chatgpt-store.mjs';
@@ -235,6 +236,7 @@ const ytDlp = resolveBinary("YT_DLP_PATH", "yt-dlp", [
   path.join(projectRoot, ".local-tools", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
 ]);
 const youtube = createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMedia, upscaleEncoder: () => preferredVideoEncoder });
+const sourceContexts = createSourceContextService({ youtube, cacheRoot: path.join(dataRoot, "cache", "source-context") });
 
 function supportsEncoder(binary, encoder) {
   if (!binary) return false;
@@ -726,6 +728,9 @@ const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cac
   },
 });
 async function planTeasers(plan, source, signal, transcript) {
+  const sourceContext = await sourceContexts.ensure(source, { signal, comments: true });
+  if (source.directory) await saveSourceContext(source.directory, sourceContext);
+  source = { ...source, sourceContext };
   let cues = Array.isArray(source.captions) ? source.captions : [];
   if (plan.captionCues) cues = sourceCaptionTrack(plan.captionCues, source).cues;
   else {
@@ -890,6 +895,7 @@ async function fetchYouTubeTranscript(url, signal) {
   const info = await youtube.transcript(url, signal);
   return {
     title: String(info.title || "YouTube video"),
+    sourceContext: youtube.peekContext(url),
     transcript: vttToTranscript(info.vtt || ""), captions: parseCaptions(info.vtt || ""),
     language: info.language || "",
     message: info.vtt ? "" : "YouTube không cung cấp phụ đề cho video này. Có thể dùng Manual cut hoặc Auto Subtitle.",
@@ -907,8 +913,9 @@ async function importYouTube(url, signal) {
     try {
       const filename = `source${path.extname(mediaPath)}`;
       await rename(mediaPath, path.join(directory, filename));
+      const sourceContext = await sourceContexts.ensure({ id, kind: "youtube", sourceUrl: parsed.url, title: info.title, ...media }, { signal: activeSignal });
       return await saveSourceMetadata(directory, {
-        id, kind: "youtube", title: String(info.title || "YouTube video"), sourceUrl: `https://www.youtube.com/watch?v=${parsed.id}`,
+        sourceContext, id, kind: "youtube", title: String(info.title || "YouTube video"), sourceUrl: `https://www.youtube.com/watch?v=${parsed.id}`,
         originalFilename: filename, ...media, transcript: captions.transcript || "",
         transcriptMessage: captions.message || "", captions: captions.captions || [],
         language: captions.language || info.language || "", subtitleFound: Boolean(captions.transcript),
@@ -949,6 +956,7 @@ async function importUpload(request, url) {
     subtitleFile: null,
     createdAt: new Date().toISOString(),
   };
+  source.sourceContext = sourceContextFor(source);
   return saveSourceMetadata(directory, source);
 }
 
@@ -1068,7 +1076,8 @@ async function loadSource(sourceId) {
   const metadata = JSON.parse(await readFile(path.join(directory, "source.json"), "utf8"));
   const mediaPath = await findSourceMedia(directory);
   const media = await probeMedia(mediaPath);
-  return { ...metadata, ...media, directory, mediaPath };
+  const source = { ...metadata, ...media, directory, mediaPath };
+  return { ...source, sourceContext: sourceContextFor(source) };
 }
 
 async function renderTitleOverlay({ outputPath, shineOutputPath, originalTitle, partTitle, partId, totalParts, visualStyle = DEFAULT_VISUAL_STYLE }) {

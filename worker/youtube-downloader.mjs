@@ -3,6 +3,8 @@ import path from 'node:path';
 import { homedir } from 'node:os';
 import { youtubeUrl, fallback } from './youtube-common.mjs';
 import { YOUTUBE_FORMAT, YOUTUBE_SORT, upscaleDimensions } from './youtube-quality.mjs';
+import { createSharedOperations } from './shared-operation.mjs';
+import { normalizeSourceContext } from '../lib/source-context/index.mjs';
 import { buildYouTubeCommentArgs } from '../lib/source-context/comments.mjs';
 
 // Comment scraping is far slower than metadata and needs its own bounded budget.
@@ -16,9 +18,39 @@ function attemptTimeoutMs(operation, timeouts) {
 }
 
 export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMedia, adapters, env = process.env, timeouts = {}, upscaleEncoder = () => 'libx264' }) {
-  const pending = new Map();
+  const shared = createSharedOperations();
+  const contextCache = new Map();
   const metadataCache = new Map();
   const scratchRoot = path.join(dataRoot, 'youtube-downloads');
+
+  // Keep only bounded normalized intelligence, never format URLs/cookies/raw info.
+  function rememberContext(parsed, info, engine) {
+    if (info.id && info.id !== parsed.id) throw new Error('Source metadata identity mismatch');
+    if (metadataCache.size >= 128) metadataCache.delete(metadataCache.keys().next().value);
+    if (info.title) metadataCache.set(parsed.id, { value: { videoId: parsed.id, title: info.title, channelName: info.channelName || info.uploader || '', thumbnailUrl: info.thumbnailUrl || info.thumbnail || '' }, expires: Date.now() + 5 * 60_000 });
+    const next = normalizeSourceContext({ info: { ...info, id: parsed.id, webpage_url: parsed.url }, url: parsed.url });
+    const provider = engine === 'yt' ? 'yt-dlp' : engine === 'js' ? 'youtubejs' : 'oembed';
+    next.provenance.source = provider;
+    for (const [field, origin] of Object.entries(next.provenance.fields)) {
+      if (origin === 'yt-dlp') next.provenance.fields[field] = provider;
+    }
+    next.provenance.fields.contextMetadata = provider;
+    if (Array.isArray(info.comments)) next.provenance.fields.contextComments = provider;
+    const previous = contextCache.get(parsed.id)?.value;
+    if (previous) {
+      next.metadata = { ...previous.metadata, ...next.metadata };
+      if (!next.chapters.length) next.chapters = previous.chapters;
+      if (!next.descriptionMarkers.length) next.descriptionMarkers = previous.descriptionMarkers;
+      if (!Array.isArray(info.comments)) next.comments = previous.comments;
+      next.provenance.fields = { ...previous.provenance.fields, ...next.provenance.fields };
+    }
+    if (contextCache.size >= 128) contextCache.delete(contextCache.keys().next().value);
+    contextCache.set(parsed.id, { value: next, expires: Date.now() + 5 * 60_000 });
+  }
+  function peekContext(url) {
+    const cached = contextCache.get(youtubeUrl(url).id);
+    return cached && cached.expires > Date.now() ? structuredClone(cached.value) : undefined;
+  }
 
   async function configuration() {
     let config = {};
@@ -31,28 +63,6 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     return { browser, file };
   }
 
-  function shared(key, operation, signal) {
-    signal?.throwIfAborted();
-    let entry = pending.get(key);
-    if (!entry) {
-      const controller = new AbortController();
-      entry = { controller, consumers: 0 };
-      entry.promise = Promise.resolve().then(() => operation(controller.signal)).finally(() => { if (pending.get(key) === entry) pending.delete(key); });
-      pending.set(key, entry);
-    }
-    entry.consumers++;
-    return new Promise((resolve, reject) => {
-      let finished = false;
-      const finish = (callback, value) => {
-        if (finished) return; finished = true; signal?.removeEventListener('abort', abort);
-        if (--entry.consumers === 0) { entry.controller.abort(); if (pending.get(key) === entry) pending.delete(key); }
-        callback(value);
-      };
-      const abort = () => finish(reject, signal.reason || new Error('Đã huỷ tải video.'));
-      signal?.addEventListener('abort', abort, { once: true });
-      entry.promise.then((value) => finish(resolve, value), (error) => finish(reject, error));
-    });
-  }
 
   async function attempt(operation, parsed, directory, auth, signal) {
     const timeout = AbortSignal.timeout(attemptTimeoutMs(operation, timeouts));
@@ -149,6 +159,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
       try {
         const info = await attempt(operation, parsed, directory, auth, signal);
         signal.throwIfAborted();
+        rememberContext(parsed, info, auth.engine);
         if (operation !== 'download') return info;
         const name = (await readdir(directory)).find((file) => /^source\.(mp4|mkv|webm|mov)$/.test(file));
         if (!name) throw new Error('Media validation failed');
@@ -178,12 +189,23 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
   }
 
   return {
+    peekContext,
+    context: async (url, signal) => {
+      signal?.throwIfAborted();
+      const cached = peekContext(url);
+      if (cached) return cached;
+      const parsed = youtubeUrl(url);
+      await shared(`context:${parsed.id}`, (activeSignal) => execute('metadata', parsed, activeSignal), signal);
+      return peekContext(url);
+    },
     metadata: async (url, signal) => {
       const parsed = youtubeUrl(url), cached = metadataCache.get(parsed.id);
       if (cached && cached.expires > Date.now()) return cached.value;
       return shared(`metadata:${parsed.id}`, async (activeSignal) => {
-        const info = await execute('metadata', parsed, activeSignal);
-        const value = { videoId: parsed.id, title: info.title, channelName: info.channelName || info.uploader || '', thumbnailUrl: info.thumbnailUrl || info.thumbnail || '' };
+        await shared(`context:${parsed.id}`, (signal) => execute('metadata', parsed, signal), activeSignal);
+        const context = peekContext(parsed.url);
+        const info = { title: context.metadata.title, uploader: context.metadata.uploader };
+        const value = metadataCache.get(parsed.id)?.value || { videoId: parsed.id, title: info.title, channelName: info.uploader || '', thumbnailUrl: '' };
         if (metadataCache.size >= 128) metadataCache.delete(metadataCache.keys().next().value);
         metadataCache.set(parsed.id, { value, expires: Date.now() + 5 * 60_000 }); return value;
       }, signal);
