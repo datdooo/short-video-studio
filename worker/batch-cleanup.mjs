@@ -2,7 +2,7 @@ import path from "node:path";
 import { mkdir, rename } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 
-const terminalStates = new Set(["done", "error", "cancelled"]);
+const terminalStates = new Set(["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"]);
 const validId = /^[a-f0-9-]{16,64}$/i;
 
 function fail(message, status) {

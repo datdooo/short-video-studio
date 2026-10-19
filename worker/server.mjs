@@ -33,7 +33,12 @@ import { cutTransitionFilters } from "./cut-transition.mjs";
 import { normalizeTitleAnimation } from "../lib/visual-style/animations.mjs";
 import { renderSceneOverlay } from "./scene-overlays.mjs";
 import { removeBatchItem } from "./batch-cleanup.mjs";
-import { createBatchSubmissionQueue } from "./batch-queue.mjs";
+import { youtubeUrl } from "./youtube-common.mjs";
+import { verifiedRenderOutput } from "./render-resume.mjs";
+import { createSourceReuse } from "./source-reuse.mjs";
+import { createBatchProcessor } from "./batch-pipeline.mjs";
+import { externalHooksCurrent } from "../lib/teaser-import.mjs";
+import { createBatchSubmissionQueue, restoreBatchPreparation } from "./batch-queue.mjs";
 import { createCommandLifecycle } from "./command-lifecycle.mjs";
 import { createMediaLibrary } from "./media-library.mjs";
 import { validatePlan } from "./plan-validation.mjs";
@@ -75,16 +80,13 @@ const renderControllers = new Map();
 const commandLifecycle = createCommandLifecycle();
 const batchHistoryPath = path.join(dataRoot, "batch-history.json");
 let historyWriteQueue = Promise.resolve();
-function persistBatchHistory() {
-  const snapshot = JSON.stringify({ batches: [...batches.values()], jobs: [...jobs.values()].filter((job) => job.origin === "editor" || [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && item.jobId === job.id))) });
-  historyWriteQueue = historyWriteQueue.then(async () => {
-    await mkdir(dataRoot, { recursive: true });
-    const temporary = `${batchHistoryPath}.tmp`;
-    await writeFile(temporary, snapshot);
-    await rename(temporary, batchHistoryPath);
-  }).catch((error) => console.error(`Không lưu được lịch sử hàng đợi: ${error.message}`));
-  return historyWriteQueue;
+function persistBatchHistory({strict=false}={}) {
+  const snapshot=JSON.stringify({batches:[...batches.values()],jobs:[...jobs.values()].filter(job=>job.origin==="editor"||[...batches.values()].some(batch=>batch.items.some(item=>!item.deleted&&(item.jobId===job.id||item.submissionId===job.id))))});
+  const write=historyWriteQueue.then(async()=>{await mkdir(dataRoot,{recursive:true});const temporary=`${batchHistoryPath}.tmp`;await writeFile(temporary,snapshot);await rename(temporary,batchHistoryPath);});
+  historyWriteQueue=write.catch(error=>console.error(`Queue history write failed: ${error.code||'IO_ERROR'}`));
+  return strict?write:historyWriteQueue;
 }
+
 async function restoreBatchHistory() {
   try {
     const history = JSON.parse(await readFile(batchHistoryPath, "utf8"));
@@ -96,13 +98,8 @@ async function restoreBatchHistory() {
       jobs.set(job.id, job);
     }
     for (const batch of history.batches || []) {
-      for (const item of batch.items) {
-        item.id ||= randomUUID();
-        if (!item.jobId && !["done", "error", "cancelled"].includes(item.state)) {
-          item.state = "cancelled";
-          item.error = "App đã đóng trước khi xử lý xong.";
-        }
-      }
+      for(const item of batch.items||[])item.id ||= randomUUID();
+      restoreBatchPreparation(batch,jobs);
       batches.set(batch.id, batch);
     }
     await importLegacyRenderHistory();
@@ -166,7 +163,7 @@ const mediaLibrary = createMediaLibrary({
     speech.isBusy(sourceId) ||
     localSignals.isBusy(sourceId) ||
     [...jobs.values()].some((job) => job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id))) ||
-    [...batches.values()].some((batch) => batch.items.some((item) => (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing"].includes(item.state))))
+    [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing", "paused", "awaiting-import", "review-required", "render-ready", "submitting"].includes(item.state))))
   ),
   onMoved: async (item) => {
     if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
@@ -742,6 +739,9 @@ function protectedAnalysisKeys() {
   return keys;
 }
 
+const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
+function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
+const processBatch = createBatchProcessor({acquire:importYouTube,load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
 const analyzeSource = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers});
 
 async function mainAnalysisInputs(source, body, signal) {
@@ -949,7 +949,9 @@ async function fetchYouTubeTranscript(url, signal) {
   };
 }
 
-async function importYouTube(url, signal) {
+async function importYouTube(url,signal){return sourceReuse.get(url,signal);}
+
+async function downloadYouTubeSource(url, signal) {
   return youtube.download(url, async ({ info, media, mediaPath, parsed, signal: activeSignal }) => {
     const id = randomUUID(), directory = path.join(sourcesRoot, id);
     let captions;
@@ -986,7 +988,10 @@ async function importUpload(request, url) {
   await mkdir(directory, { recursive: true });
   const temporaryPath = path.join(directory, `upload${extension}.partial`);
   const mediaPath = path.join(directory, `source${extension}`);
-  await pipeline(request, createWriteStream(temporaryPath, { flags: "wx" }));
+  const uploadBytes=Number(request.headers['content-length']);
+  await requireDiskSpace(dataRoot,(Number.isFinite(uploadBytes)&&uploadBytes>0?uploadBytes:512*1024*1024)+256*1024*1024);
+  try{await pipeline(request, createWriteStream(temporaryPath, { flags: "wx" }));}
+  catch(error){await rm(temporaryPath,{force:true});throw error;}
   await rename(temporaryPath, mediaPath);
   const media = await probeMedia(mediaPath);
   const source = {
@@ -1392,6 +1397,7 @@ async function executeRender(job, source, plan, signal) {
     await mkdir(outputDirectory, { recursive: true });
     const exportNames = job.exportNames || await reserveExportNames(plan, source);
     job.exportNames = exportNames;
+    await persistBatchHistory({strict:true});
     const sceneAsset = await renderSceneOverlay({ overlays: plan.visualStyle?.overlays || [], publicRoot: path.join(projectRoot, "public"), outputPath: path.join(outputDirectory, "scene-overlays.png") });
     // One static gradient per job, shared by all parts; never rasterize per frame.
     const background = assertRenderableBackground(plan.visualStyle?.background);
@@ -1407,6 +1413,10 @@ async function executeRender(job, source, plan, signal) {
     }
     for (const [index, part] of plan.parts.entries()) {
       signal?.throwIfAborted();
+      const prior=job.outputs.find(o=>o.part===part.id);
+      const completed=await verifiedRenderOutput({file:path.join(outputDirectory,`part-${part.id}`,exportNames[index]),filename:exportNames[index],record:prior,sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
+      if(completed){if(!prior)job.outputs.push(completed);job.progress=Math.round((index+1)/plan.parts.length*100);await persistBatchHistory({strict:true});continue;}
+      job.outputs=job.outputs.filter(o=>o.part!==part.id);
       job.currentPart = part.id;
       const filename = exportNames[index];
       const partDirectory = path.join(outputDirectory, `part-${part.id}`);
@@ -1432,6 +1442,7 @@ async function executeRender(job, source, plan, signal) {
         size: outputStat.size,
         url: `/files/${source.id}/outputs/${job.id}/part-${part.id}/${encodeURIComponent(filename)}`,
       });
+      await persistBatchHistory({strict:true});
     }
     job.progress = 100;
     job.state = "done";
@@ -1459,8 +1470,10 @@ async function startRender(body, parentSignal) {
   const renderPlan = originalPlan;
   validatePlan(renderPlan, source);
   if (mediaLibrary.isLocked(source.id)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
+  if(body.submissionId){assertId(body.submissionId);const existing=jobs.get(body.submissionId);if(existing){if(existing.sourceId!==source.id)throw new Error("Submission belongs to another source");return existing;}
+    if(existsSync(path.join(source.directory,"outputs",body.submissionId)))throw new Error("Render output exists without its history; inspect it before another submission.");}
   const job = {
-    id: randomUUID(),
+    id: body.submissionId || randomUUID(),
     sourceId: source.id,
     origin: parentSignal ? "batch" : "editor",
     plan: originalPlan,
@@ -1474,7 +1487,12 @@ async function startRender(body, parentSignal) {
     createdAt: new Date().toISOString(),
   };
   jobs.set(job.id, job);
-  void persistBatchHistory();
+  if(body.submissionId)await persistBatchHistory({strict:true});else void persistBatchHistory();
+  enqueueRender(job,source,renderPlan,parentSignal);
+  return job;
+}
+
+function enqueueRender(job,source,renderPlan,parentSignal){
   const controller = new AbortController();
   renderControllers.set(job.id, controller);
   const abort = () => cancelRender(job);
@@ -1488,7 +1506,12 @@ async function startRender(body, parentSignal) {
     parentSignal?.removeEventListener("abort", abort);
     void persistBatchHistory();
   });
-  return job;
+}
+async function resumeRender(job,parentSignal){
+  if(!['error','cancelled'].includes(job.state)||renderControllers.has(job.id))throw new Error('Render still active or already complete; no duplicate submission.');
+  if(mediaLibrary.isLocked(job.sourceId))throw new Error('Source is in use/trash.');
+  const source=await loadSource(job.sourceId);validatePlan(job.plan,source);job.state='queued';job.error=null;
+  await persistBatchHistory({strict:true});enqueueRender(job,source,structuredClone(job.plan),parentSignal);return job;
 }
 
 function cancelRender(job) {
@@ -1513,41 +1536,7 @@ function cancelBatch(batch) {
   }
 }
 
-async function prepareBatch(batch, body, items) {
-  const signal = batchControllers.get(batch.id).signal;
-  for (const item of items) {
-    if (item.deleted) continue;
-    if (signal.aborted) break;
-    try {
-      item.state = "downloading";
-      const source = await importYouTube(item.url, signal);
-      signal.throwIfAborted();
-      item.title = source.title;
-      item.sourceId = source.id;
-      if (!source.transcript?.trim()) throw new Error("Video không có transcript. Hãy dùng Manual cut cho video này.");
-      item.state = "analyzing";
-      const input = body.promptTemplate
-        .replace("__BATCH_TITLE__", source.title)
-        .replace("__BATCH_DURATION__", String(source.duration))
-        .replace("__BATCH_TRANSCRIPT__", source.transcript);
-      const result = await analyzeWithChatGPTPlan({ input, schema: body.schema }, signal);
-      signal.throwIfAborted();
-      item.plan = snapshotPlanVisualStyle({ ...result.plan, originalTitle: source.title, providerUsed: "chatgpt", visualStyle: body.visualStyle, subtitles: body.subtitles });
-      item.plan.parts?.forEach((part, index) => { part.id = index + 1; });
-      if (item.plan.parts?.length !== 2 || item.plan.parts.some((part) => !Array.isArray(part.hashtags) || new Set(part.hashtags).size !== 10)) {
-        throw new Error("AI phải trả về đúng 2 part và 10 hashtag khác nhau cho mỗi part. Thử lại video này.");
-      }
-      validatePlan(item.plan, source);
-      const job = await startRender({ sourceId: source.id, plan: item.plan, selectTeasers: true }, signal);
-      item.plan = structuredClone(job.plan);
-      item.jobId = job.id;
-      item.state = "queued";
-    } catch (error) {
-      item.state = signal.aborted ? "cancelled" : "error";
-      item.error = signal.aborted ? null : error instanceof Error ? error.message : String(error);
-    }
-  }
-}
+async function prepareBatch(batch,body,items){return processBatch(batch,body,items,batchControllers.get(batch.id).signal);}
 
 function batchSnapshot(batch) {
   const items = batch.items.filter((item) => !item.deleted).map((item) => {
@@ -1555,7 +1544,7 @@ function batchSnapshot(batch) {
     return { ...item, state: job?.state || item.state, error: job?.error || item.error, job };
   });
   void persistBatchHistory();
-  return { id: batch.id, items, finished: items.every((item) => ["done", "error", "cancelled"].includes(item.state)) };
+  return { id: batch.id, items, finished: items.every((item) => ["done", "error", "cancelled", "paused", "awaiting-import", "review-required"].includes(item.state)) };
 }
 
 function mediaContentType(target) {
@@ -1735,7 +1724,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/youtube") {
       const body = await readJson(request);
       const controller=new AbortController(),abort=()=>controller.abort(new Error("Source import cancelled"));response.once("close",abort);
-      try{const source=await importYouTube(String(body.url||"").trim(),controller.signal);sendJson(request,response,201,{source});}
+      try{const source=await importYouTube(String(body.url||"").trim(),controller.signal);sendJson(request,response,201,{source:publicSource(source)});}
       finally{response.removeListener("close",abort);}
       return;
     }
@@ -1746,6 +1735,8 @@ const server = createServer(async (request, response) => {
       await readJson(request); await speech.installModel();
       sendJson(request, response, 200, await speech.status()); return;
     }
+    const sourceMetadataMatch=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})$/i);
+    if(request.method==='GET'&&sourceMetadataMatch){sendJson(request,response,200,{source:publicSource(await loadSource(sourceMetadataMatch[1]))});return;}
     const mainSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/auto-cut$/i);
     if (request.method === "POST" && mainSource) {
       const controller = new AbortController(), abort = () => controller.abort(new Error("Analysis cancelled"));
@@ -1820,16 +1811,17 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/batches") {
       const body = await readJson(request);
-      if (body.provider && body.provider !== "chatgpt") {
+      if (body.provider && !["chatgpt","gemini","muse"].includes(body.provider)) {
         sendJson(request, response, 400, { error: "Hàng loạt tự động chỉ dùng ChatGPT. Gemini Pro và Muse cần copy/dán JSON từng video." });
         return;
       }
-      if (!Array.isArray(body.urls) || body.urls.length < 1 || body.urls.length > 20 || !body.schema || typeof body.promptTemplate !== "string") {
+      if (!Array.isArray(body.urls) || body.urls.length < 1 || body.urls.length > 20) {
         sendJson(request, response, 400, { error: "Nhập từ 1 đến 20 link YouTube cùng cấu hình chia part." });
         return;
       }
       const urls = [...new Set(body.urls.map((value) => String(value).trim()))];
       for (const value of urls) {
+        youtubeUrl(value);
         const url = new URL(value);
         if (!["https:", "http:"].includes(url.protocol) || !/^(www\.|m\.)?(youtube\.com|youtu\.be)$/.test(url.hostname)) {
           sendJson(request, response, 400, { error: `Không phải link YouTube: ${value}` });
@@ -1837,10 +1829,10 @@ const server = createServer(async (request, response) => {
         }
       }
       if (body.batchId !== undefined) body.batchId = assertId(body.batchId);
-      await activeChatGPTCredentials();
+      if(!body.provider||body.provider==="chatgpt")await activeChatGPTCredentials();
       let batch;
       try {
-        batch = batchPreparationQueue.submit({ ...body, urls });
+        batch = batchPreparationQueue.submit({ ...body, urls,provider:body.provider||"chatgpt",resumeVersion:1 });
       } catch (error) {
         if (!error.status) throw error;
         sendJson(request, response, error.status, { error: error.message });
@@ -1848,6 +1840,27 @@ const server = createServer(async (request, response) => {
       }
       sendJson(request, response, 202, { batch: batchSnapshot(batch) });
       return;
+    }
+    const resumeBatchMatch=requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/resume$/i);
+    if(request.method==='POST'&&resumeBatchMatch){
+      const body=await readJson(request),id=assertId(resumeBatchMatch[1]),batch=batches.get(id);
+      if(!batch)throw new Error('Queue not found');
+      const targets=batch.items.filter(i=>!i.deleted&&(!body.itemIds||body.itemIds.includes(i.id)));
+      if(targets.some(i=>i.jobId&&renderControllers.has(i.jobId)))throw new Error('Wait for stopping renders before resume.');
+      if(targets.some(i=>i.needsAnalysis&&i.settings?.provider==='chatgpt'))await activeChatGPTCredentials();
+      const resumed=batchPreparationQueue.resume(id,body.itemIds);await persistBatchHistory({strict:true});sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
+    }
+    const batchPlanMatch=requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})\/plan$/i);
+    if(request.method==='POST'&&batchPlanMatch){
+      const body=await readJson(request),batch=batches.get(assertId(batchPlanMatch[1])),item=batch?.items.find(i=>i.id===assertId(batchPlanMatch[2])&&!i.deleted);
+      if(!item||!item.sourceId)throw new Error('Prepared item not found');
+      if(item.jobId||!['awaiting-import','review-required','paused','error','cancelled'].includes(item.state))throw new Error('Render/preparation snapshot is immutable while submitted; finish/stop it first.');
+      if(body.sourceId!==item.sourceId)throw new Error('Plan belongs to another source');
+      const source=await loadSource(item.sourceId);validatePlan(body.plan,source);
+      if(['gemini','muse'].includes(body.plan.providerUsed)&&!await externalHooksCurrent(body.plan,source,String(body.transcript||'')))throw new Error('External hooks are missing/stale; generate/import hook selections before queueing.');
+      item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
+      item.approved=true;item.needsAnalysis=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
+      await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
     }
     const deleteBatchItemMatch = requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})$/i);
     if (request.method === "DELETE" && deleteBatchItemMatch) {

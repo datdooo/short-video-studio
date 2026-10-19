@@ -16,6 +16,7 @@ export interface SourceIdentity {
 }
 
 export interface SourceMetadata {
+  estimatedDownloadBytes?: number;
   videoId?: string;
   canonicalUrl?: string;
   title: string;

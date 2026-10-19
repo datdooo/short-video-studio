@@ -150,7 +150,8 @@ type BatchJob = {
     url: string;
     title?: string;
     sourceId?: string;
-    state: "pending" | "downloading" | "analyzing" | "queued" | "rendering" | "done" | "error" | "cancelled";
+    state: "pending" | "downloading" | "analyzing" | "queued" | "rendering" | "done" | "error" | "cancelled" | "paused" | "awaiting-import" | "review-required" | "render-ready" | "submitting";
+    settings?:{provider?:AiProvider;instruction?:string;supplementalPrompt?:string;visualStyle?:EditPlan["visualStyle"];subtitles?:SubtitleStyle};
     error: string | null;
     plan?: EditPlan;
     job?: RenderJob;
@@ -349,6 +350,7 @@ export default function Home() {
   const [isStartingRender, setIsStartingRender] = useState(false);
   const [batchUrls, setBatchUrls] = useState("");
   const [batch, setBatch] = useState<BatchJob | null>(null);
+  const [batchEditing,setBatchEditing]=useState<{batchId:string;itemId:string;sourceId:string}|null>(null);
   const [pastBatches, setPastBatches] = useState<BatchJob[]>([]);
   const [selectedBatchPreviewKey, setSelectedBatchPreviewKey] = useState("");
   const [batchPreviewError, setBatchPreviewError] = useState("");
@@ -914,6 +916,30 @@ export default function Home() {
     } finally { deletingAllPending.current = false; setDeletingAllRenders(false); }
   }
 
+  async function resumeBatchItem(group:BatchJob,item:BatchJob["items"][number]){
+    setBatchError("");
+    try{const response=await fetch(`${WORKER_ORIGIN}/api/batches/${group.id}/resume`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({itemIds:[item.id]})});const data=await response.json() as {batch?:BatchJob;error?:string};if(!response.ok||!data.batch)throw new Error(data.error||"Không tiếp tục được item.");batchPollEpoch.current++;setBatchPollVersion(v=>v+1);setBatch(data.batch);setBatchId(data.batch.id);}
+    catch(error){setBatchError(error instanceof Error?error.message:"Không tiếp tục được item.");}
+  }
+  async function openBatchItem(group:BatchJob,item:BatchJob["items"][number]){
+    if(!item.sourceId)return;invalidateAnalysis();const ticket=analysisRequests.current.begin();const epoch=++sourceSelectionEpoch.current;setBatchError("");
+    try{const response=await fetch(`${WORKER_ORIGIN}/api/sources/${item.sourceId}`,{signal:ticket.controller.signal});const data=await response.json() as {source?:WorkerSource;error?:string};if(!response.ok||!data.source)throw new Error(data.error||"Không mở được source đã lưu.");if(!analysisRequests.current.isCurrent(ticket)||epoch!==sourceSelectionEpoch.current)return;
+      const source=data.source;setSourceMode("youtube");setSourceUrl(source.sourceUrl||item.url);setPreparedSource(source);setSourceTitle(source.title);setTranscript(source.transcript||"");setCustomTimes(null);setRenderJob(null);
+      setProvider(item.settings?.provider||"chatgpt");setInstruction(item.settings?.instruction||"");setSupplementalPrompt(item.settings?.supplementalPrompt||"");
+      setSourceCaptions(source.captions?.length?sourceCaptionTrack({sourceId:source.id,cues:source.captions,origin:"youtube"},source):null);
+      if(item.plan){setPlan(snapshotPlanVisualStyle(item.plan));setHasEditPlan(true);}else{setPlan(current=>snapshotPlanVisualStyle({...current,originalTitle:source.title,visualStyle:item.settings?.visualStyle,subtitles:item.settings?.subtitles}));setHasEditPlan(false);}
+      setBatchEditing({batchId:group.id,itemId:item.id,sourceId:source.id});setWebAiPrompt("");setWebAiResult("");setWebAiContext(null);setWorkspace("editor");
+    }catch(error){if(analysisRequests.current.isCurrent(ticket))setBatchError(error instanceof Error?error.message:"Không mở được item.");}finally{analysisRequests.current.finish(ticket);}
+  }
+  async function queueEditedBatchItem(){
+    if(!batchEditing||preparedSource?.id!==batchEditing.sourceId)return;
+    setError("");setIsStartingRender(true);
+    try{if(effectiveTiming.error)throw new Error(effectiveTiming.error);const submitted=await chooseTeasers(previewPlan,preparedSource);
+      const response=await fetch(`${WORKER_ORIGIN}/api/batches/${batchEditing.batchId}/items/${batchEditing.itemId}/plan`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sourceId:preparedSource.id,transcript,instruction,supplementalPrompt,plan:snapshotPlanVisualStyle({...submitted,...(sourceCaptions?.sourceId===preparedSource.id?{captionCues:sourceCaptions}:{})})})});const data=await response.json() as {batch?:BatchJob;error?:string};if(!response.ok||!data.batch)throw new Error(data.error||"Không lưu được plan item.");
+      batchPollEpoch.current++;setBatchPollVersion(v=>v+1);setBatch(data.batch);setBatchId(data.batch.id);setBatchEditing(null);setWorkspace("batch");
+    }catch(error){setError(error instanceof Error?error.message:"Không lưu được plan item.");}finally{setIsStartingRender(false);}
+  }
+
   async function startBatch() {
     if (batchSubmitPending.current || isStoppingBatch) return;
     batchSubmitPending.current = true;
@@ -922,15 +948,12 @@ export default function Home() {
     setBatchNotice("");
     setIsStartingBatch(true);
     try {
-      if (provider !== "chatgpt") throw new Error("Hàng loạt tự động chỉ dùng ChatGPT. Gemini Pro và Muse cần copy/dán JSON trong tab chỉnh từng video.");
+      if(!["chatgpt","gemini","muse"].includes(provider))throw new Error("Chọn ChatGPT Auto hoặc Gemini/Muse import thủ công.");
       const urls = [...new Set(submittedInput.split(/\s+/).filter(Boolean))];
       if (!urls.length || urls.length > 20) throw new Error("Nhập từ 1 đến 20 link, mỗi link một dòng.");
-      const batchProvider = "chatgpt";
-      const promptTemplate = buildPrompt({ provider: batchProvider, originalTitle: "__BATCH_TITLE__", transcript: "__BATCH_TRANSCRIPT__", instruction, supplementalPrompt })
-        .replace("Source duration in seconds: unknown; do not invent an end beyond the available source", "Source duration in seconds: __BATCH_DURATION__");
       const response = await fetch(`${WORKER_ORIGIN}/api/batches`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls, provider: batchProvider, promptTemplate, schema: EDIT_PLAN_SCHEMA, visualStyle: previewVisualStyle, subtitles: subtitleSettings, batchId: batch && !batch.finished ? batch.id : undefined }),
+        body: JSON.stringify({ urls, provider, instruction, supplementalPrompt, visualStyle: previewVisualStyle, subtitles: subtitleSettings, batchId: batch && !batch.finished ? batch.id : undefined }),
       });
       const data = await response.json() as { batch?: BatchJob; error?: string };
       if (!response.ok || !data.batch) throw new Error(data.error || "Không tạo được hàng đợi.");
@@ -1456,11 +1479,11 @@ export default function Home() {
         <Textarea id="batch-extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…" />
         <label className="mt-3 flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => setSubtitleSettings((current) => ({ ...current, enabled: event.target.checked }))} /> Auto Subtitle cho lượt chạy mới · dùng style ở tab chỉnh từng video</label>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-            <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {isWebAi ? `${webAiName} không hỗ trợ tự động` : "ChatGPT"}</label>
+            <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {isWebAi ? `${webAiName} · chuẩn bị + import từng item` : "ChatGPT Auto"}</label>
             <Textarea id="batch-urls" value={batchUrls} onChange={(event) => setBatchUrls(event.target.value)} placeholder={"https://www.youtube.com/watch?v=...\nhttps://youtu.be/..."} className="studio-textarea mt-2 min-h-[100px] text-xs leading-6" />
             <p className="mt-2 text-[11px] leading-5 text-zinc-500">Tối đa 20 link mỗi lần thêm, mỗi dòng một link. Ô link tự xoá khi thêm thành công. Có thể thêm link vào cuối hàng đợi đang chạy; chuẩn bị video tiếp theo trong lúc render video trước, chỉ render một video mỗi lần.</p>
-            <Button onClick={() => void startBatch()} disabled={provider !== "chatgpt" || isStartingBatch || isStoppingBatch || !batchUrls.trim() || !workerHealth?.ok || !chatGPTSession?.sharing} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
-              {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />} {isStartingBatch ? "Đang thêm link…" : batch && !batch.finished ? "Thêm vào hàng đợi đang chạy" : "Chạy hàng đợi tự động"}
+            <Button onClick={() => void startBatch()} disabled={!["chatgpt","gemini","muse"].includes(provider) || isStartingBatch || isStoppingBatch || !batchUrls.trim() || !workerHealth?.ok || (provider==="chatgpt"&&!chatGPTSession?.sharing)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
+              {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />} {isStartingBatch ? "Đang thêm link…" : batch && !batch.finished ? "Thêm vào hàng đợi đang chạy" : isWebAi?"Chuẩn bị nguồn · chờ import thủ công":"Chạy hàng đợi tự động"}
             </Button>
             <Button variant="outline" onClick={() => void stopBatch()} disabled={!batch || batch.finished || isStoppingBatch || isStartingBatch} className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10">
               {isStoppingBatch ? <Loader2 className="animate-spin" /> : <Square />} {isStoppingBatch ? "Đang dừng…" : "Dừng hàng đợi"}
@@ -1472,7 +1495,7 @@ export default function Home() {
               {autoDownloadRequests > 0 && <p className="mt-1">Đã gửi {autoDownloadRequests} yêu cầu tải trong phiên này. Kiểm tra mục Downloads của trình duyệt.</p>}
               {autoDownloadError && <p className="mt-1 text-red-300">{autoDownloadError}</p>}
             </div>
-            <p className="mt-2 text-[11px] leading-5 text-zinc-600">Đóng tab không dừng xử lý. Thoát app sẽ dừng tác vụ; kết quả và lịch sử video cũ vẫn được giữ để tải lại hoặc xoá.</p>
+            <p className="mt-2 text-[11px] leading-5 text-zinc-600">Đóng tab không dừng xử lý. Thoát app sẽ tạm dừng. Bấm Tiếp tục/thử lại để dùng source/plan đã lưu; part render hoàn tất không bị render lại. Gemini/Muse chờ import từng item trong editor, không chạy AI unattended.</p>
             {batchError && <p className="mt-3 text-xs leading-5 text-red-300">{batchError}</p>}
             {batchNotice && <p role="status" className="mt-3 text-xs leading-5 text-emerald-300">{batchNotice}</p>}
             {(batch || pastBatches.length > 0) && <div className="mt-4 max-h-[480px] space-y-3 overflow-y-auto">
@@ -1482,11 +1505,15 @@ export default function Home() {
                 <div key={item.id || item.url} className="rounded-xl border border-white/8 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="min-w-0 break-words text-xs font-semibold leading-5">{index + 1}. {item.title || item.url}</p>
-                    <Button variant="outline" size="sm" onClick={() => void deleteBatchVideo(group, item)} disabled={!item.id || !["done", "error", "cancelled"].includes(item.state) || deletingBatchItems.includes(item.id)} title={["done", "error", "cancelled"].includes(item.state) ? "Xoá video và file render" : "Dừng hoặc chờ xử lý xong trước khi xoá"} className="h-8 shrink-0 rounded-lg border-red-400/20 bg-transparent text-xs text-red-300 hover:bg-red-400/10">
+                    <Button variant="outline" size="sm" onClick={() => void deleteBatchVideo(group, item)} disabled={!item.id || !["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) || deletingBatchItems.includes(item.id)} title={["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) ? "Xoá video và file render" : "Dừng hoặc chờ xử lý xong trước khi xoá"} className="h-8 shrink-0 rounded-lg border-red-400/20 bg-transparent text-xs text-red-300 hover:bg-red-400/10">
                       {deletingBatchItems.includes(item.id) ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />} Xoá
                     </Button>
                   </div>
-                  <p className="mt-1 text-[11px] text-[#ff806a]">{{ pending: "Đang chờ", downloading: "Đang tải video + transcript", analyzing: "AI đang chia part + tạo hashtag", queued: "Đang chờ render", rendering: `Đang render ${item.job?.progress || 0}%`, done: "Hoàn tất", error: "Lỗi", cancelled: "Đã dừng" }[item.state]}</p>
+                  <p className="mt-1 text-[11px] text-[#ff806a]">{{ paused:"Tạm dừng · có thể tiếp tục", "awaiting-import":"Chờ prompt/import thủ công trong editor", "review-required":"Fallback · cần xem và duyệt trong editor", "render-ready":"Plan đã lưu · chuẩn bị render", submitting:"Đang ghi render submission", pending: "Đang chờ", downloading: "Đang tải video + transcript", analyzing: "AI đang chia part + tạo hashtag", queued: "Đang chờ render", rendering: `Đang render ${item.job?.progress || 0}%`, done: "Hoàn tất", error: "Lỗi", cancelled: "Đã dừng" }[item.state]}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {item.sourceId&&<Button variant="outline" size="sm" onClick={()=>void openBatchItem(group,item)} className="h-8 text-xs">{["awaiting-import","review-required"].includes(item.state)?"Mở editor · chọn/import/duyệt":"Mở bản sao trong editor"}</Button>}
+                    {["error","cancelled","paused","render-ready"].includes(item.state)&&<Button variant="outline" size="sm" onClick={()=>void resumeBatchItem(group,item)} className="h-8 text-xs">Tiếp tục / thử lại item</Button>}
+                  </div>
                   {item.error && <p className="mt-2 text-xs leading-5 text-red-300">{item.error}</p>}
                   {item.plan?.parts.map((part) => <div key={part.id} className="mt-3">
                     <p className="text-[10px] text-zinc-500">TITLE SAU CÙNG · Part {part.id}</p>
@@ -1699,6 +1726,7 @@ export default function Home() {
                 {isAnalyzing ? <><Loader2 className="animate-spin" /> Building edit plan…</> : <><WandSparkles /> Generate 2-part plan</>}
               </Button>}
               {isAnalyzing&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice("Đã dừng phân tích; plan cũ được giữ.");}} className="w-full text-xs">Dừng phân tích</Button>}
+              {batchEditing&&preparedSource?.id===batchEditing.sourceId&&hasEditPlan&&<Button variant="outline" disabled={isAnalyzing||isStartingRender||Boolean(effectiveTiming.error)} onClick={()=>void queueEditedBatchItem()} className="w-full text-xs">Lưu plan đã duyệt & tiếp tục item này</Button>}
               {analysisNotice&&<p role="status" className="text-xs leading-5 text-zinc-400">{analysisNotice}</p>}
               {previewPlan.analysis&&<details className="rounded-xl border border-white/10 p-3 text-xs"><summary className="cursor-pointer">Lý do chọn · {previewPlan.analysis.method} · {previewPlan.analysis.provider}</summary><p className="mt-2 text-zinc-400">Điểm heuristic, không phải xác suất. Replay không phải retention/lượt xem.</p>{previewPlan.analysis.parts.map(p=><div key={p.id} className="mt-2"><strong>Part {p.id}</strong><p>{p.reason}</p><p className="text-zinc-400">{Object.entries(p.signals).map(([name,s])=>`${name}: ${s.contribution.toFixed(3)}`).join(" · ")||"Không có tín hiệu nội dung; fallback theo cấu trúc."}</p></div>)}{previewPlan.analysis.limitations.map((line,i)=><p key={i} className="mt-1 text-zinc-500">{line}</p>)}</details>}
 

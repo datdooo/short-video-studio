@@ -313,3 +313,46 @@ replacement. Provider/model assertions remain self-reported external provenance.
 
 Focused orchestration/import/stale-request/legacy-hook tests use mock inference,
 not a new real-provider qualification. End-to-end UI/package smoke follows G.
+
+## G checkpoint — existing batch lifecycle extended
+
+The existing FIFO preparation queue (one active link; at most20 links/submission,
+100 pending per queue) and serial renderer are retained. Each item owns immutable
+provider/instruction/style settings and its own editable plan. Source, plan and
+submission stages are strictly persisted before moving on. Restart pauses unfinished
+preparation; explicit per-item Resume/Retry uses saved source/analysis/plan. Completed
+items are not analyzed/downloaded again. A known failed/cancelled render resumes
+its immutable job; expected output names are retained and completed parts are
+reused only after size/1080×1920/audio/duration verification. Each completed part
+is persisted. Durable submission IDs bind a lost response to its existing job;
+output-without-history ambiguity is rejected, never blindly submitted again.
+
+An auth failure pauses later automatic items until explicit reconnect/retry.
+Fallback plans require review/approval rather than unattended rendering. Gemini/Muse
+batches prepare sources and stop at Awaiting Import; Open Editor → context prompt →
+validated external import/manual edit → Save Approved Plan continues that item.
+No Gemini/Muse automatic API or unattended web automation is implied. Submitted
+render snapshots cannot be edited through the item-plan endpoint; editor copies
+remain independent. Legacy history without saved resume settings is preserved and
+requires opening in the editor, not guessed into a new automatic run.
+
+`worker/source-reuse.mjs` reuses one physical YouTube source across aliases/duplicate
+links and restarts, while plans/styles stay independent. A small atomic identity
+index points at authoritative saved source records. Legacy indexing scans at most
+2,000 source directories; beyond that, an unindexed URL is refused instead of
+risking a duplicate download (index limit10,000). No source/export/plan is pruned.
+Fresh downloads preflight available metadata size or a conservative duration estimate
+(2MB/source-second; unknown duration1GiB), with15% headroom +512MiB reserve. A2s
+free-space monitor cancels unknown-size streaming before reserve is consumed;
+existing downloader cleanup removes its own partial attempts. Known oversized
+sources fail before download. Uploads preflight Content-Length and remove only
+failed upload partials; fully uploaded media is retained if probing fails.
+
+New main/local analysis caches each cap24MiB/14days/512 entries, with <=2MiB entries.
+Active and job/item-referenced resume keys are excluded from eviction; if those
+fill the budget, cache writes are skipped. Existing A/B/C and historical user caches
+are preserved; this task does not silently purge unrelated data. No analysis media
+transcodes or retained WAVs are introduced; optional existing ASR cleans its own WAV.
+Focused G tests cover resume, partial failure, cancellation, duplicate source reuse,
+identity/disk refusal, explicit external review and output reuse. H remains user
+acceptance; final UI/render/package smoke and full-check record are separate.
