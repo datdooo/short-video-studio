@@ -5,7 +5,7 @@ import { assertRenderableVisualStyle, resolvePlanVisualStyle } from "../lib/visu
 import { validateTeaser, TEASER_POLICY } from "../lib/teaser-hooks.mjs";
 export function validatePlan(plan, source) {
   if (!plan || !Array.isArray(plan.parts) || plan.parts.length !== 2) throw new Error("Edit plan phải có đúng 2 Part.");
-  if(plan.hookTransition!==undefined&&!["rainbow-light-leak","dip-black","flash-white","none"].includes(plan.hookTransition))throw Error("Invalid hook transition.");
+  if(plan.hookTransition!==undefined&&!["rainbow-light-leak","vr-light-leak-v2","dip-black","flash-white","none"].includes(plan.hookTransition))throw Error("Invalid hook transition.");
   normalizeMusic(plan.music);
   if(plan.musicSpeech!==undefined)validateSpeechActivity(plan.musicSpeech,source);
   assertRenderableVisualStyle(resolvePlanVisualStyle(plan));

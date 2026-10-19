@@ -35,7 +35,7 @@ export type EditPart = {
 };
 
 export type EditPlan = {
-  hookTransition?: "rainbow-light-leak"|"dip-black"|"flash-white"|"none";
+  hookTransition?: "rainbow-light-leak" | "vr-light-leak-v2"|"dip-black"|"flash-white"|"none";
   music?: import("./music/settings.mjs").MusicSettings;
   musicSpeech?: import("./music/settings.mjs").SpeechActivity;
   analysis?: import("./auto-cut/main-content.mjs").MainAnalysis;

@@ -1,10 +1,11 @@
+import {partContextWindows,candidateFrameTimes} from "../lib/teaser-candidates.mjs";
 import { checkHookSpeechBoundaries } from "../lib/teaser-boundaries.mjs";
-import { HOOK_SCHEMA, HOOK_INSTRUCTIONS } from "../lib/teaser-prompt.mjs";
+import { HOOK_SCHEMA, HOOK_INSTRUCTIONS, validateHookResponse, validateEditorialEvidence, replayEvidence } from "../lib/teaser-prompt.mjs";
 export { HOOK_SCHEMA, HOOK_INSTRUCTIONS };
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
-import { HOOK_SELECTION_POLICY,permittedHookRanges,unavailableHook,TEASER_POLICY, HOOK_PROMPT_VERSION, mainRanges, hookRangeKey, fallbackTeaser, validateTeaser } from "../lib/teaser-hooks.mjs";
+import { hookCandidates,hookDurationLimits,HOOK_SELECTION_POLICY,permittedHookRanges,unavailableHook,TEASER_POLICY, HOOK_PROMPT_VERSION, mainRanges, hookRangeKey, fallbackTeaser, validateTeaser } from "../lib/teaser-hooks.mjs";
 
 const clean = (s, max) => String(s || "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "").slice(0, max);
 import { validateHeatmap } from "../lib/source-context/heatmap.mjs";
@@ -16,10 +17,10 @@ export function hookInput(part, source, cues = [], supporting = {}) {
   const bounded = available.length > 120 ? Array.from({ length: 120 }, (_, i) => available[Math.floor(i * available.length / 120)]) : available;
   const heatmap = validateHeatmap(supporting.heatmap, { durationMs: Math.round(source.duration * 1000) });
   const relevantBins = heatmap?.status === 'available' ? heatmap.bins.filter(b => ranges.some(r => b.startMs < r.end * 1000 && b.endMs > r.start * 1000)) : [];
-  // Uniform bounded sampling of existing bins, no candidate generation or new ranking.
+  // Bounded evidence summary; actual peak proposals are built by hookCandidates.
   const replayBins = relevantBins.length > 24 ? Array.from({ length: 24 }, (_, i) => relevantBins[Math.floor(i * relevantBins.length / 24)]) : relevantBins;
   return { sourceTitle: clean(source.title, 500), partTitle: clean(part.title, 500), partContext: clean(part.hook, 500), partId: part.id,
-    selectionPolicy:HOOK_SELECTION_POLICY,mainContentRanges:allRanges.map(({start,end})=>({start,end})),excludedMainPresentationSeconds:10,permittedHookRanges:permitted,
+    durationLimits:hookDurationLimits(),contextWindows:partContextWindows(ranges,cues),transcriptCandidates:hookCandidates(part,cues,undefined,{...supporting,heatmap,sourceDurationMs:Math.round(source.duration*1000)}),selectionPolicy:HOOK_SELECTION_POLICY,mainContentRanges:allRanges.map(({start,end})=>({start,end})),excludedMainPresentationSeconds:10,permittedHookRanges:permitted,
     allowedRanges: permitted.map(({ start, end }) => ({ start, end })),
     transcript: bounded.map((c) => ({ start: c.start, end: c.end, text: clean(c.text, 180) })),
     untimedTranscript: available.length ? "" : clean(source.transcript, 6000),
@@ -40,7 +41,7 @@ export function hookFailure(error) {
 
 export function createTeaserSelector({ cacheRoot, resolveProvider, frames = async () => [], fingerprint, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const pending = new Map();
-  async function selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure) {
+  async function selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, maxAttempts = 2) {
     const input = hookInput(part, source, cues, supporting);
     // Edited/rounded transcript text remains authoritative for meaning, while
     // source caption timing still protects known speech from being split.
@@ -48,31 +49,33 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
       Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start && c.end-c.start <= 10 && String(c.text || '').trim() &&
       input.allowedRanges.some(r => c.start < r.end && c.end > r.start)
     ).slice(0, 240).map(({start,end}) => ({start,end}));
-    const key = hash({ version: HOOK_PROMPT_VERSION, sourceHash, sourceId: source.id, transcriptHash: hash(source.transcript || ""), ranges: hookRangeKey(part), input, provider: provider?.id || "none", model: provider?.model || "none", frames: "6x512-jpeg-v1" });
+    const key = hash({ version: HOOK_PROMPT_VERSION, sourceHash, sourceId: source.id, transcriptHash: hash(source.transcript || ""), ranges: hookRangeKey(part), input, provider: provider?.id || "none", model: provider?.model || "none", frames: "candidate-local-9x512-v3" });
     const file = path.join(cacheRoot, `${key}.json`);
     try {
       const cached = JSON.parse(await readFile(file, "utf8"));
       validateTeaser({ ...part, teaser: cached.teaser }, source.duration);
       checkHookSpeechBoundaries(cached.teaser, boundaryCues);
-      if (cached.teaser.inputKey === key && (cached.teaser.selection === "ai" || Date.now() - cached.at < 60_000)) return cached.teaser;
+      if (cached.teaser.promptVersion === HOOK_PROMPT_VERSION && cached.teaser.selectionPolicy === HOOK_SELECTION_POLICY && cached.teaser.inputKey === key && (cached.teaser.selection === "ai" || Date.now() - cached.at < 60_000)) return cached.teaser;
     } catch { /* Missing/invalid cache is not selection evidence. */ }
     if (pending.has(key)) return structuredClone(await pending.get(key));
     const task = (async () => {
       let result, failure = providerFailure || "provider-not-configured";
-      if(!input.allowedRanges.some(r=>(r.end-r.start)/1.25>=.5))return unavailableHook(part,"No eligible later hook after the first 10 rendered seconds of retained main content.");
+      if(!input.allowedRanges.some(r=>(r.end-r.start)/hookDurationLimits().playbackRate>=.5))return unavailableHook(part,"No eligible later hook after the first 10 rendered seconds of retained main content.");
       if (provider) {
         let images = [];
-        try { images = await frames(part, source, signal); } catch { input.missing.push("Representative frames unavailable."); }
-        for (let attempt = 0; attempt < 2; attempt++) {
+        try { images = await frames(part, source, signal, candidateFrameTimes(input.transcriptCandidates)); } catch { input.missing.push("Representative frames unavailable."); }
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
           signal?.throwIfAborted();
           try {
             const response = await provider.analyze({ input: { ...input, ...(attempt ? { retry: "Previous selection was invalid or split known speech; recheck all bounds and choose complete timed cues." } : {}) }, images, instructions: HOOK_INSTRUCTIONS, schema: HOOK_SCHEMA, signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(90_000)]) });
-            const value = response.value || {};
+            const value = validateHookResponse(response.value);
             if(value.start===null&&value.end===null&&typeof value.reason==='string'&&value.reason.trim())return unavailableHook(part,value.reason);
+            validateEditorialEvidence(value,{candidates:input.transcriptCandidates,images,cues});
+            for(const choice of value.alternatives){validateEditorialEvidence(choice,{candidates:input.transcriptCandidates,images,cues});checkHookSpeechBoundaries(choice,boundaryCues);}
             checkHookSpeechBoundaries(value,boundaryCues);
             if (!value || Object.keys(value).some((k) => !HOOK_SCHEMA.required.includes(k))) throw new Error("INVALID_RESPONSE");
             result = { ...value, limitations: [...(Array.isArray(value.limitations) ? value.limitations : []), ...input.missing, ...(!images.length ? ["Text only: visual/action evidence was not analyzed."] : ["Sparse still frames only; audio/video input not verified."])].slice(0, 12),
-              version: 1, selectionPolicy:HOOK_SELECTION_POLICY, status: "selected", selection: "ai", provider: provider.id, model: provider.model, promptVersion: HOOK_PROMPT_VERSION, inputKey: key, rangeKey: hookRangeKey(part), transition: "inherit-or-dip-black" };
+              heatmapEvidence:replayEvidence(value,input.transcriptCandidates,supporting.heatmap),version: 1, selectionPolicy:HOOK_SELECTION_POLICY, status: "selected", selection: "ai", provider: provider.id, model: provider.model, promptVersion: HOOK_PROMPT_VERSION, inputKey: key, rangeKey: hookRangeKey(part), transition: "inherit-or-dip-black" };
             validateTeaser({ ...part, teaser: result }, source.duration);
             break;
           } catch (error) {
@@ -101,16 +104,16 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
     pending.set(key, task);
     try { return structuredClone(await task); } finally { pending.delete(key); }
   }
-  return async function select(plan, source, { cues = [], boundaryCues = cues, supporting = {}, signal } = {}) {
+  return async function select(plan, source, { cues = [], boundaryCues = cues, supporting = {}, signal, targetPartId, maxAttempts = 2 } = {}) {
     signal?.throwIfAborted();
     let provider, providerFailure;
     try { provider = await resolveProvider(signal); } catch (e) { providerFailure = hookFailure(e); }
     const sourceHash = await fingerprint(source, signal);
     const result = structuredClone(plan);
-    if(plan.teaserPolicy===undefined&&!plan.parts.some(p=>p.teaser)&&plan.hookTransition===undefined)result.hookTransition="rainbow-light-leak";
+    if(plan.teaserPolicy===undefined&&!plan.parts.some(p=>p.teaser)&&plan.hookTransition===undefined)result.hookTransition="vr-light-leak-v2";
     result.teaserPolicy = TEASER_POLICY;
     // Sequential parts bound provider cost/concurrency and never share context.
-    for (const part of result.parts) part.teaser = await selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure);
+    for (const part of result.parts) if(targetPartId===undefined||targetPartId===part.id)part.teaser = await selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, Math.min(2,Math.max(1,maxAttempts)));
     return result;
   };
 }

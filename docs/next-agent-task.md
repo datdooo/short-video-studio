@@ -1,3 +1,25 @@
+# Current checkpoint — user acceptance and explicit blockers
+
+Branch `recovery/visual-dev-reconstructed`; integration base9c315ec; actual final
+HEAD is `git log -1`. Preserve historical records below. Current scope implemented:
+adaptive/editorial teasers with replay-peak proposals and alternatives/manual range,
+foreground warm leak v2, generated-part music preview and personal music library.
+See `docs/adaptive-teaser-qualification.md` and `docs/warm-cloud-light-leak.md`.
+
+Next: user editorial/audio/visual acceptance. New real inference was blocked BEFORE
+inference by OAuth refresh/secure Keychain read. Do not repeat login dialogs, reset
+Keychain or treat historic provider success as current proof.54 music files decoded,
+0 audition-verified;26 downloads failed. Audition/taste and arrangement diversity
+still need review. Missing real fishing/vlog samples prevent broad genre claims.
+
+Do not automatically rerun research/Git recovery/full historical RC/builds, resume
+bulk downloads, push/merge, touch production or start another feature. The normal
+DEV app was kept running while the new package was tested privately. Open the new
+app in place after closing the existing DEV instance through its normal controls.
+Package/bundle/check details are in the current qualification report.
+
+---
+
 # Current checkpoint — music/ducking/rainbow and later-main hooks
 
 Implementation `186e01a`, preview repair `d9911f4`, on `recovery/visual-dev-reconstructed`, based cleanly on

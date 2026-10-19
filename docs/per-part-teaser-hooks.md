@@ -1,3 +1,33 @@
+# Current adaptive/editorial selection — 2026-10-20
+
+New selections use `same-part-hook-v3-editorial` / `adaptive-editorial-v3`.
+Prefer5–9 rendered seconds; hard9 including any boundary adjustment; a complete
+shorter unit >=0.5s is allowed. Limits derive from playback speed (1.25× means
+max11.25 source seconds). First10 rendered main seconds remain excluded across
+retained gaps. Main/locks/original occurrence and queued snapshots are preserved.
+
+`teaser-candidates.mjs` supplies up to12 diverse speech/visual-review/relative-replay
+proposals plus bounded early/middle/late context. No fixed genre or keyword winner.
+Replay peaks actually propose windows; model compares context/completeness first.
+Correlated comment/replay evidence is corroboration, never two additive quality votes.
+Selected metadata records `heatmapEvidence.available/supportsSelection/peakTimes`.
+
+One analysis compares proposals and returns concise evidence/complete-ending claims
+and up to2 diverse alternatives. Up to9 candidate-local stills cover3 proposals;
+stills never prove continuous action. Shared web/GPT schema and cue/range checks
+reject unsupported evidence, opening overlap and >9s choices. Cache/prompt identity
+is versioned; styling/music does not invalidate analysis. Legacy stored hooks retain
+old validators/hash/transition behavior until explicit reselection. The UI permits
+cached alternatives or labeled manual range adjustment without changing main.
+Fallback is explicitly editorial-unverified; several competing speech candidates
+require semantic selection, otherwise unavailable rather than earliest/longest.
+
+See `docs/adaptive-teaser-qualification.md` for actual tests and auth blocker.
+New real inference/editorial quality is NOT established by historical provider QA.
+Everything below records the earlier contract and evidence.
+
+---
+
 # Current hook additions — 2026-10-19
 
 New `selectionPolicy:later-main-v1` excludes the first10 rendered seconds of main

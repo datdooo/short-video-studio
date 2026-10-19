@@ -1,3 +1,20 @@
+# Active checkpoint — adaptive/editorial teasers, warm foreground leak, music
+
+2026-10-20, branch `recovery/visual-dev-reconstructed`, integration base9c315ec.
+Resolve actual final HEAD with `git log -1`; original missing history stays missing.
+Read `docs/adaptive-teaser-qualification.md`, `docs/next-agent-task.md`, then targeted
+architecture rows. No recovery/research/historical RC restart is needed.
+
+New adaptive5–9 rendered-second semantic contract, replay-peak proposals, cached
+alternatives/manual controls and warm foreground-only effect are implemented.
+Music preview lifecycle is repaired;54 real local tracks installed with credits,
+all decoded but none audition-verified. This is NOT evidence of broad genre accuracy,
+new authenticated inference,54 verified instrumentals or exact Adobe parity.
+Auth/Keychain blocked before inference; do not keep retrying dialogs or reset it.
+No unrelated Smart Auto Cut expansion/Sports Voiceover/production/push/merge.
+
+---
+
 ---
 handoff_version: 1
 verified_date: 2026-10-19

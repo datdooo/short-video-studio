@@ -1,0 +1,1 @@
+export function createMusicPlayback(options:{read:()=>{audio:HTMLAudioElement|null;video:HTMLVideoElement|null;key:string;expectedKey:string;playing:boolean;time:number;duration:number};onStatus?:(status:string,error?:string)=>void}):{play:(explicit?:boolean)=>Promise<boolean>;pause:()=>void;invalidate:()=>void;ready:()=>void;tick:()=>void;dispose:()=>void};

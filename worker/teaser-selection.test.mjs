@@ -1,3 +1,4 @@
+import {editorialFixture} from "../lib/teaser-test-fixture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createTeaserSelector, hookInput, HOOK_INSTRUCTIONS } from "./teaser-selection.mjs";
 import { applyPartTimes } from "../lib/custom-time.mjs";
-import { partTransitionWindows, presentationSegments } from "../lib/teaser-hooks.mjs";
+import { permittedHookRanges,partTransitionWindows, presentationSegments } from "../lib/teaser-hooks.mjs";
 import { cutTransitionFilters } from "./cut-transition.mjs";
 import { cutTransitionPose } from "../lib/visual-style/cut-transitions.mjs";
 const source = { id: "test-source", title: "Tutorial", duration: 80 };
@@ -13,11 +14,11 @@ const plan = () => ({ providerUsed: "manual", parts: [0, 40].map((start, i) => (
 async function setup(t, analyze) {
   const cacheRoot = await mkdtemp(path.join(tmpdir(), "hook-unit-")); t.after(() => rm(cacheRoot, { recursive: true, force: true }));
   let calls = 0, frameCalls = 0;
-  const select = createTeaserSelector({ cacheRoot, fingerprint: async s => s.digest || "digest", frames: async () => { frameCalls++; return [{time: 1, data: "fake"}]; },
+  const select = createTeaserSelector({ cacheRoot, fingerprint: async s => s.digest || "digest", frames: async part => { frameCalls++; return [{time:permittedHookRanges(part)[0].start+7.25,data:"fake"}]; },
     resolveProvider: async () => ({ id: "chatgpt", model: "unit-test-only", analyze: async args => { calls++; return analyze(args); } }), sleep: async () => {} });
   return { select, calls: () => calls, frameCalls: () => frameCalls };
 }
-const valid = ({ input }) => { const start = input.allowedRanges[0].start + 1; return { value: { start, end: start + 6.25, reason: "A specific demonstrable action", relation: "Introduces this part's demonstration", evidenceTimes: [start], limitations: ["Unit mock, not real provider verification."] } }; };
+const valid = ({ input }) => { const start = input.allowedRanges[0].start + 1; return { value: { ...editorialFixture(input,start,start+6.25),start, end: start + 6.25, reason: "A specific demonstrable action", relation: "Introduces this part's demonstration", ending:"Fixture sentence finishes at the selected end; synthetic evidence only.",evidenceTimes: [start], limitations: ["Unit mock, not real provider verification."] } }; };
 test("structured selection is per-part, preserves all main locks, copies outputs; style edits use disk cache without frames/AI", async t => {
   const ctx = await setup(t, valid), input = plan(), before = structuredClone(input);
   const result = await ctx.select(input, source);
@@ -41,14 +42,14 @@ test("ranges, content fingerprint and transcript edits invalidate selection; Cus
   await ctx.select(locked, source, { cues: [{ start: 3, end: 5, text: "Changed sentence." }] }); assert.equal(ctx.calls(), 6);
 });
 test("out-of-part or malformed model timestamps retry twice then explicitly fall back; never label as AI", async t => {
-  const ctx = await setup(t, () => ({ value: { start: 70, end: 76.25, reason: "bad", relation: "bad", evidenceTimes: [70], limitations: [] } }));
+  const ctx = await setup(t, () => ({ value: { start: 70, end: 76.25, reason: "bad", relation: "bad", ending:"Fixture sentence finishes at the selected end; synthetic evidence only.",evidenceTimes: [70], limitations: [] } }));
   const result = await ctx.select(plan(), source);
   assert.equal(ctx.calls(), 4);
   assert.ok(result.parts.every(p => p.teaser.status === "unavailable" && p.teaser.reason.includes("no coherent")));
 });
 test("image rejection uses a bounded text-only retry and records lost evidence", async t => {
   const ctx = await setup(t, args => { if (args.images.length) throw Object.assign(new Error("unsupported"), {status:400}); return valid(args); });
-  const result = await ctx.select(plan(), source);
+  const result = await ctx.select(plan(), source,{cues:[{start:15.5,end:21.75,text:"A complete fixture sentence."},{start:55.5,end:61.75,text:"The second complete fixture sentence."}]});
   assert.equal(ctx.calls(), 4);
   assert.ok(result.parts.every(p => p.teaser.selection === "ai" && p.teaser.limitations.some(x => x.includes("Text only"))));
 });
@@ -84,14 +85,14 @@ test("hook-only Dip Black leaves ordinary None cuts unchanged; Flash choice is h
 test('edited transcript with unchanged captions and model changes cannot hit the old cache',async t=>{
  let model='one';let calls=0;const cacheRoot=await mkdtemp(path.join(tmpdir(),'hook-cache-'));t.after(()=>rm(cacheRoot,{recursive:true,force:true}));
  const select=createTeaserSelector({cacheRoot,fingerprint:async()=> 'digest',resolveProvider:async()=>({id:'chatgpt',model,analyze:async args=>{calls++;return valid(args);}})});
- const cues=[{start:1,end:7.25,text:'Complete sentence.'}];
+ const cues=[{start:15.5,end:21.75,text:'Complete fixture sentence.'},{start:55.5,end:61.75,text:'Second complete fixture sentence.'}];
  await select(plan(),{...source,transcript:'old'},{cues});assert.equal(calls,2);
  await select(plan(),{...source,transcript:'edited'},{cues});assert.equal(calls,4);
  model='two';await select(plan(),{...source,transcript:'edited'},{cues});assert.equal(calls,6);
 });
 test('known timed speech clipping is retried then explicit fallback; no invented sentence coherence',async t=>{
  const ctx=await setup(t,valid);const result=await ctx.select(plan(),source,{cues:[{start:15,end:18,text:'A complete sentence.'}]});
- assert.equal(result.parts[0].teaser.status,'unavailable');assert.equal(result.parts[1].teaser.selection,'ai');assert.equal(ctx.calls(),3);
+ assert.equal(result.parts[0].teaser.selection,'fallback');assert.equal(result.parts[0].teaser.start,15);assert.equal(result.parts[0].teaser.end,18);assert.match(result.parts[0].teaser.limitations.join(' '),/editorial quality unverified/);assert.equal(result.parts[1].teaser.selection,'ai');assert.equal(ctx.calls(),3);
 });
 test('rounded edited text does not replace precise source timing; changed timing invalidates cache', async t => {
  const ctx=await setup(t,args=>{
@@ -124,8 +125,17 @@ test('hook context receives bounded source-time replay bins only for this part, 
   assert.equal(unavailable.supporting.heatmap, undefined);
 });
 
-test('only newly introduced teaser policies default to rainbow; legacy inheritance and explicit None survive selection',async t=>{
- const ctx=await setup(t,valid);const fresh=await ctx.select(plan(),source);assert.equal(fresh.hookTransition,'rainbow-light-leak');
+test('only newly introduced teaser policies default to versioned foreground leak; legacy inheritance and explicit None survive selection',async t=>{
+ const ctx=await setup(t,valid);const fresh=await ctx.select(plan(),source);assert.equal(fresh.hookTransition,'vr-light-leak-v2');
  const legacy=await ctx.select({...plan(),teaserPolicy:'per-part-v1'},source);assert.equal(legacy.hookTransition,undefined);
  const explicit=await ctx.select({...plan(),teaserPolicy:'per-part-v1',hookTransition:'none'},source);assert.equal(explicit.hookTransition,'none');assert.deepEqual(explicit.parts.map(p=>p.segments),plan().parts.map(p=>p.segments));
+});
+
+test('selector passes replay proposals to semantic choice, accepts a lower peak, records support and reuses it across style',async t=>{
+ const {normalizeHeatmap}=await import('../lib/source-context/index.mjs');
+ const root=await mkdtemp(path.join(tmpdir(),'replay-choice-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ const p={parts:[{id:1,title:'Meaning first',manualLocked:true,segments:[{start:0,end:80}]}]},before=structuredClone(p),cues=[{start:14,end:19,text:'A generic introduction ends.'},{start:47,end:55,text:'The quiet discovery reveals the distinctive result.'}],heatmap=normalizeHeatmap([{start_time:15,end_time:17,value:1},{start_time:49,end_time:51,value:.6}],{durationMs:80000});let calls=0;
+ const selector=createTeaserSelector({cacheRoot:root,fingerprint:async()=> 'stable',resolveProvider:async()=>({id:'chatgpt',model:'fixture',analyze:async({input})=>{calls++;const c=input.transcriptCandidates.find(c=>c.supporting.replayPeak?.startMs===49000);assert.ok(c);assert.ok(input.transcriptCandidates.some(c=>c.supporting.replayPeak?.intensity===1));return{value:{...editorialFixture(input,c.start,c.end),candidateId:c.id,start:c.start,end:c.end,replayUse:'supports-context',reason:'Synthetic semantic choice prefers a complete distinctive result to the higher generic peak.',relation:'The same part explains this result.',ending:'Complete statement ends at55.',evidenceTimes:[50],limitations:['Unit fixture; no live editorial proof.']}};}})});
+ const result=await selector(p,{id:'source',title:'Unknown genre',duration:80},{cues,supporting:{heatmap}});assert.equal(result.parts[0].teaser.start,47);assert.equal(result.parts[0].teaser.heatmapEvidence.supportsSelection,true);assert.deepEqual(result.parts[0].teaser.heatmapEvidence.peakTimes,[50]);assert.deepEqual(p,before);
+ await selector({...p,visualStyle:{ignored:true}},{id:'source',title:'Unknown genre',duration:80},{cues,supporting:{heatmap}});assert.equal(calls,1);
 });

@@ -1,3 +1,4 @@
+import {VR_LEAK_ID,VR_LEAK_SPRITE,vrLeakForegroundFilters} from '../lib/music/vr-light-leak.mjs';
 import {createMusicPreview} from './music-preview.mjs';
 import {rainbowSceneFilters} from '../lib/music/light-leak.mjs';
 import {createMusicLibrary} from './music-library.mjs';
@@ -706,20 +707,20 @@ async function hookSourceFingerprint(source, signal) {
   if (sourceDigests.size >= 32) sourceDigests.delete(sourceDigests.keys().next().value);
   sourceDigests.set(key, value); return value;
 }
-async function hookFrames(part, source, signal) {
+async function hookFrames(part, source, signal, candidateTimes) {
   const ranges = part.segments.filter((s) => !s.isPadding).slice(0,200), total = timelineDuration(ranges), frames = [];
   const directory = path.join(dataRoot, "cache", "hook-frames");
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < (candidateTimes?.length || 6); i++) {
     let offset = (i + 0.5) / 6 * total, range = ranges[0];
     for (const s of ranges) { range = s; if (offset < s.end - s.start) break; offset -= s.end - s.start; }
-    const time = Math.min(range.end - 0.001, range.start + offset);
+    const time = candidateTimes?.[i]?.time ?? Math.min(range.end - 0.001, range.start + offset);
     const file = path.join(directory, `${randomUUID()}.jpg`);
     try {
       await run(ffmpeg, ["-y", "-v", "error", "-ss", String(time), "-i", source.mediaPath, "-frames:v", "1", "-vf", "scale=512:288:force_original_aspect_ratio=decrease", "-q:v", "5", file], { signal });
       const bytes = await readFile(file);
       if (bytes.length > 300_000) throw new Error("Hook frame exceeds budget");
-      frames.push({ time, data: bytes.toString("base64") });
+      frames.push({ time, ...(candidateTimes?.[i]?.candidateId?{candidateId:candidateTimes[i].candidateId}:{}), data: bytes.toString("base64") });
     } finally { await rm(file, { force: true }); }
   }
   return frames;
@@ -730,7 +731,7 @@ async function resolveEditingProvider(signal) {
     const model = models.find((m) => /gpt|o[1-9]/i.test(m.slug))?.slug;
     if (!model) throw new Error("MODEL_UNAVAILABLE");
     return { id: "chatgpt", model, analyze: async ({ input, images, schema, instructions, signal, maxTokens }) => {
-      const content = [{ type: "input_text", text: JSON.stringify(input) }, ...images.flatMap((f) => [{ type: "input_text", text: `Source frame at ${f.time.toFixed(3)} seconds.` }, { type: "input_image", image_url: `data:image/jpeg;base64,${f.data}`, detail: "low" }])];
+      const content = [{ type: "input_text", text: JSON.stringify(input) }, ...images.flatMap((f) => [{ type: "input_text", text: `Source frame at ${f.time.toFixed(3)} seconds${f.candidateId?" for "+f.candidateId:""}. Sparse still only.` }, { type: "input_image", image_url: `data:image/jpeg;base64,${f.data}`, detail: "low" }])];
       const result = await analyzeWithChatGPTPlan({ model, schema, instructions, maxTokens }, signal, content);
       return { value: result.plan };
     } };
@@ -784,7 +785,7 @@ async function mainAnalysisInputs(source, body, signal) {
   return { context, options: { cues, boundaryCues:boundaryCues.length?boundaryCues:cues, local, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
 }
 
-async function planTeasers(plan, source, signal, transcript) {
+async function planTeasers(plan, source, signal, transcript, selectionOptions = {}) {
   const sourceContext = await sourceContexts.ensure(source, { signal, comments: true });
   if (source.directory) {
     try { await saveSourceContext(source.directory, sourceContext); }
@@ -803,7 +804,7 @@ async function planTeasers(plan, source, signal, transcript) {
     if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter((c) => c.end > c.start);
   }
   const context = source.sourceContext;
-  return selectTeasers(plan, sourceInput, { cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap } : source, signal });
+  return selectTeasers(plan, sourceInput, { ...selectionOptions, cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap } : source, signal });
 }
 
 function safeName(value) {
@@ -1250,6 +1251,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   // at most three EOF frames without shortening the independently finite audio.
   const hookTail = segments !== part.segments ? `,tpad=stop_mode=clone:stop_duration=0.1,trim=end_frame=${Math.round(presentationDuration(part) / PLAYBACK_RATE * 30)}` : "";
   const transitionWindows=partTransitionWindows(part,plan.visualStyle?.cutTransition,plan.hookTransition);
+  const vrLeak=transitionWindows.some(w=>w.presetId===VR_LEAK_ID);
   const rainbow=transitionWindows.some(w=>w.presetId==="rainbow-light-leak");
   const transitionFilters = cutTransitionFilters(plan.visualStyle?.cutTransition, segments, partTransitionWindows(part, plan.visualStyle?.cutTransition,plan.hookTransition));
   let titleInputPath = titleOverlayPath;
@@ -1259,7 +1261,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   }
   const audioInput = source.hasAudio ? "0:a" : "1:a";
   const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
-  const strictSegmentTiming=part.teaser?.selectionPolicy==='later-main-v1';
+  const strictSegmentTiming=['later-main-v1','adaptive-editorial-v3'].includes(part.teaser?.selectionPolicy);
   const segmentFilters = segments.flatMap((segment, index) => [
     `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS,fps=30,setsar=1${strictSegmentTiming?`,tpad=stop_mode=clone:stop_duration=0.5,trim=duration=${segment.end-segment.start}`:""}[v${index}]`,
     `[${audioInput}]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${index}]`,
@@ -1274,6 +1276,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   const overlayFormat = rgbFilter ? ":format=rgb" : "";
   const outputColor = rgbFilter ? "scale=out_color_matrix=bt709:out_range=tv," : "";
   const animatedSceneInput = (animated || transitionFilters) && sceneAsset ? overlayInput + 2 + (subtitlesPath ? 1 : 0) + (backgroundAsset ? 1 : 0) : undefined;
+  const vrInput=overlayInput+2+(subtitlesPath?1:0)+(backgroundAsset?1:0)+(animatedSceneInput!==undefined?1:0);
   const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput: overlayInput + 1, sceneInput: transitionFilters ? undefined : animatedSceneInput, overlayFormat });
   const filters = [
     ...segmentFilters,
@@ -1288,7 +1291,8 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
       `[graded]null[mainsrc]`,
       background.mode === "solid" ? `color=c=black:s=1080x1920:r=30,format=rgb24[bg]` : `[${overlayInput + 2 + (subtitlesPath ? 1 : 0)}:v]format=rgb24[bg]`,
     ]),
-    `[mainsrc]${foregroundFilter()}[main]`,
+    `[mainsrc]${foregroundFilter()}[${vrLeak?"mainUnlit":"main"}]`,
+    ...(vrLeak?vrLeakForegroundFilters("mainUnlit","main",transitionWindows,vrInput):[]),
     `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[${transitionFilters ? "cutScene" : "layout"}]`,
     ...(transitionFilters ? [
       ...(animatedSceneInput !== undefined ? [`[${animatedSceneInput}:v]format=rgba[cutDecoration]`, `[cutScene][cutDecoration]overlay=0:0:shortest=1${overlayFormat}[decoratedCutScene]`] : []),
@@ -1319,6 +1323,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
     if (backgroundAsset) args.push("-loop", "1", "-framerate", "30", "-i", backgroundAsset);
     if (animatedSceneInput !== undefined) args.push("-loop", "1", "-framerate", "30", "-i", sceneAsset);
+    if(vrLeak)args.push("-loop","1","-framerate","30","-i",path.join(projectRoot,"public",VR_LEAK_SPRITE.slice(1)));
     const renderFilters=[...filters];
     if(musicAsset){const input=args.filter(a=>a==="-i").length;args.push("-stream_loop","-1","-i",musicAsset.file);renderFilters.push(...musicMixFilters({input,settings:musicSettings,part,activity:plan.musicSpeech,duration:presentationDuration(part)/PLAYBACK_RATE}));}
     args.push(
@@ -1801,7 +1806,8 @@ const server = createServer(async (request, response) => {
         response.once("close", abort);
         try {
           if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 100_000)) throw new Error("Invalid hook transcript.");
-          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript);
+          if(body.partId!==undefined&&!body.plan.parts.some(p=>p.id===body.partId))throw Error("Invalid hook part ID.");
+          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2});
           validatePlan(next, source); sendJson(request, response, 200, { plan: next });
         } finally { response.removeListener("close", abort); }
         return;

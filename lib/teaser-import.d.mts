@@ -1,10 +1,11 @@
 import type { EditPlan, EditPart } from './edit-plan';
 import type { MuseSource } from './muse-plan.mjs';
-export type ExternalSelection = {start:number|null;end:number|null;reason:string;relation:string;evidenceTimes:number[];limitations:string[];model:string};
+export type ExternalChoice = {start:number|null;end:number|null;reason:string;relation:string;ending:string;evidenceTimes:number[];limitations:string[];candidateId:string;kind:string;partUnderstanding:string;contentTypes:string;observed:string;startContext:string;standalone:boolean;complete:boolean;endingBasis:string;cueIds:string[];replayUse:string};
+export type ExternalSelection = ExternalChoice & {alternatives:ExternalChoice[];model:string};
 export function externalHookSchema(): object;
 export const externalHookInstructions: string;
 export function externalHookKey(source:MuseSource,part:EditPart,transcript:string,provider:string,model:string,selectionPolicy?:string):Promise<string>;
 export function attachExternalHooks(plan:EditPlan,selections:ExternalSelection[],source:MuseSource,transcript:string,provider:string,cues?:{start:number|null;end:number|null;text:string}[]):Promise<EditPlan>;
 export function externalHooksCurrent(plan:EditPlan,source:MuseSource,transcript:string):Promise<boolean>;
-export function buildExternalHookOnlyPrompt(plan:EditPlan,source:MuseSource,transcript:string,requestId:string):string;
+export function buildExternalHookOnlyPrompt(plan:EditPlan,source:MuseSource,transcript:string,requestId:string,cues?:{start:number;end:number;text:string}[]):string;
 export function parseExternalHookOnly(raw:string,source:MuseSource,requestId:string,plan:EditPlan):ExternalSelection[];

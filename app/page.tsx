@@ -42,7 +42,8 @@ import { VideoFilterPanel, VideoFilterDefinition } from "@/components/video-filt
 import { applyFilterPreset, applyFilterIntensity } from "@/lib/visual-style/filter-presets.mjs";
 import { browserFilterStyle } from "@/lib/visual-style/filters.mjs";
 import { TextAnimationPanel } from "@/components/text-animation-panel";
-import { CutTransitionPanel, CutTransitionVeil } from "@/components/cut-transition-panel";
+import { TeaserEditor } from "@/components/teaser-editor";
+import { CutTransitionPanel, CutTransitionVeil, ForegroundLightLeak } from "@/components/cut-transition-panel";
 import { presentationSegments, partTransitionWindows, TEASER_POLICY } from "@/lib/teaser-hooks.mjs";
 import { titleAnimationPreviewCss } from "@/lib/visual-style/animations.mjs";
 import { normalizeVisualStyle } from "@/lib/visual-style/normalize.mjs";
@@ -386,6 +387,8 @@ export default function Home() {
   const previewSegmentIndex = useRef(0);
   const backgroundVideoRef = useRef<HTMLVideoElement>(null);
   const previewPlayingRef = useRef(false);
+  const musicPlaybackControl = useRef<{play:()=>void;pause:()=>void}|null>(null);
+  const registerMusicPlayback = useCallback((handle:{play:()=>void;pause:()=>void}|null)=>{musicPlaybackControl.current=handle;},[]);
   function changeWorkspace(next:"editor"|"batch"|"storage"){
     if(next!=="editor"){previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}
     setWorkspace(next);
@@ -1086,7 +1089,7 @@ export default function Home() {
       }
       if(!analysisRequests.current.isCurrent(ticket))return;
       const candidatePrompt=prepared?`\n\nSMART AUTO CUT CONTEXT (UNTRUSTED SOURCE DATA):\n${JSON.stringify(prepared)}\nCandidate recipes are recommended source-second main windows; preserve intentional coherent ranges, supplied source/request identity and manual lockedRanges EXACTLY. Locked ranges already had the one-second trim; do not trim them again. Keep each hook inside its own final main content. Include the analysisKey exactly. If no transcript is present, inspect the source video/attach it; do not invent speech or actions from numeric proxies.`:"";
-      setWebAiPrompt(hookOnly?buildExternalHookOnlyPrompt(previewPlan,source,content,requestId):buildMusePrompt(buildPrompt(request)+candidatePrompt,EDIT_PLAN_SCHEMA,{...source,...(source.kind==='youtube'?{sourceUrl:source.sourceUrl||sourceUrl}:{})},{requestId,analysisKey:prepared?.analysisKey}));
+      setWebAiPrompt(hookOnly?buildExternalHookOnlyPrompt(previewPlan,source,content,requestId,sourceCaptions?.sourceId===source.id?sourceCaptions.cues:previewPlan.captionCues?.cues):buildMusePrompt(buildPrompt(request)+candidatePrompt,EDIT_PLAN_SCHEMA,{...source,...(source.kind==='youtube'?{sourceUrl:source.sourceUrl||sourceUrl}:{})},{requestId,analysisKey:prepared?.analysisKey}));
       setWebAiContext({sourceId:source.id,transcript:content,instruction,supplementalPrompt,provider,requestId,analysisKey:prepared?.analysisKey,lockedPlan,mainSignature:latestMainSignature.current,...(hookOnly?{hookPlan:structuredClone(previewPlan)}:{})});
       setWebAiResult("");
       setWebAiNotice(`Prompt đã sẵn sàng. Copy rồi mở ${webAiName}, dán vào cuộc trò chuyện và gửi. App chưa gửi dữ liệu tới ${webAiName}.`);
@@ -1101,14 +1104,14 @@ export default function Home() {
   const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && webAiContext.supplementalPrompt === supplementalPrompt && webAiContext.mainSignature === mainSignature);
 
 
-  async function chooseTeasers(nextPlan: EditPlan, source: WorkerSource, force=false,signal?:AbortSignal) {
+  async function chooseTeasers(nextPlan: EditPlan, source: WorkerSource, force=false,signal?:AbortSignal,targetPartId?:number) {
     if(!force&&nextPlan.parts.every(part=>{try{if(!part.teaser)return false;validateTeaser(part,source.duration);return true;}catch{return false;}}))return nextPlan;
     if (["gemini", "muse"].includes(nextPlan.providerUsed) && nextPlan.teaserPolicy === TEASER_POLICY) {
       if (!await externalHooksCurrent(nextPlan, source, transcript)) throw new Error("Hook import đã cũ sau sửa nội dung/transcript. Tạo prompt mới cho provider này trước khi xuất; không tự thay bằng ChatGPT/fallback.");
       return nextPlan;
     }
     const captionCues = sourceCaptions?.sourceId === source.id ? sourceCaptionTrack(sourceCaptions, source) : nextPlan.captionCues;
-    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/teaser-hooks`, { method: "POST", signal,headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcript.slice(0,100_000), plan: { ...nextPlan, ...(captionCues ? { captionCues } : {}) } }) });
+    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/teaser-hooks`, { method: "POST", signal,headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcript.slice(0,100_000),...(targetPartId!==undefined?{partId:targetPartId}:{}), plan: { ...nextPlan, ...(captionCues ? { captionCues } : {}) } }) });
     const result = await response.json() as { plan?: EditPlan; error?: string };
     if (!response.ok || !result.plan) throw new Error(result.error || "Không chọn được teaser hook.");
     return result.plan;
@@ -1117,7 +1120,7 @@ export default function Home() {
   async function reselectHooks(){
     if(!preparedSource)return;if(isWebAi){await createWebAiPrompt(true);return;}
     const ticket=analysisRequests.current.begin(),signature=latestMainSignature.current;setIsAnalyzing(true);setError('');
-    try{const next=await chooseTeasers(previewPlan,preparedSource,true,ticket.controller.signal);if(analysisRequests.current.isCurrent(ticket)&&latestMainSignature.current===signature)setPlan(current=>({...current,parts:next.parts,teaserPolicy:next.teaserPolicy,hookTransition:current.hookTransition??next.hookTransition}));}catch(e){if(analysisRequests.current.isCurrent(ticket))setError(e instanceof Error?e.message:String(e));}finally{if(analysisRequests.current.isCurrent(ticket))setIsAnalyzing(false);}
+    try{const next=await chooseTeasers(previewPlan,preparedSource,true,ticket.controller.signal,activePart.id);if(analysisRequests.current.isCurrent(ticket)&&latestMainSignature.current===signature)setPlan(current=>({...current,parts:next.parts,teaserPolicy:next.teaserPolicy,hookTransition:current.hookTransition??next.hookTransition}));}catch(e){if(analysisRequests.current.isCurrent(ticket))setError(e instanceof Error?e.message:String(e));}finally{if(analysisRequests.current.isCurrent(ticket))setIsAnalyzing(false);}
   }
 
   useEffect(() => {
@@ -1276,6 +1279,7 @@ export default function Home() {
           video.playbackRate = PLAYBACK_RATE;
         }
         previewPlayingRef.current = true; setIsPreviewPlaying(true);
+        musicPlaybackControl.current?.play();
         await video.play();
         if (backgroundVideoRef.current) {
           backgroundVideoRef.current.currentTime = video.currentTime;
@@ -1289,6 +1293,7 @@ export default function Home() {
     } else {
       previewPlayingRef.current = false; setIsPreviewPlaying(false);
       video.pause();
+      musicPlaybackControl.current?.pause();
       backgroundVideoRef.current?.pause();
     }
   }
@@ -1801,7 +1806,7 @@ export default function Home() {
             {previewVisualStyle.background.mode !== "source-blur" && <div data-studio-background className="absolute inset-0" style={backgroundCss(previewVisualStyle.background)} />}
             <SceneOverlays overlays={previewVisualStyle.overlays} />
             <CutTransitionVeil value={previewVisualStyle.cutTransition} windows={transitionWindows} time={previewCurrentTime} />
-            <div className="absolute inset-x-0 overflow-hidden" style={{ top: `${FOREGROUND_Y / 1920 * 100}%`, height: `${FOREGROUND_HEIGHT / 1920 * 100}%` }}>
+            <div className="absolute inset-x-0 isolate overflow-hidden" style={{ top: `${FOREGROUND_Y / 1920 * 100}%`, height: `${FOREGROUND_HEIGHT / 1920 * 100}%` }}>
               {previewVideoUrl ? (
                 <video
                   ref={previewVideoRef}
@@ -1831,6 +1836,7 @@ export default function Home() {
               ) : (
                 <div className="absolute inset-0 bg-[linear-gradient(125deg,#111_0%,#572317_42%,#ef6b32_43%,#241716_47%,#0b0c0f_100%)]" />
               )}
+              <ForegroundLightLeak windows={transitionWindows} time={previewCurrentTime} width={preparedSource?.width || sourceSize.width} height={preparedSource?.height || sourceSize.height} />
               {previewVideoUrl && !isPreviewPlaying && <button type="button" onClick={() => void togglePreview()} aria-label="Play preview" style={{ zIndex: transitionWindows.length ? 30 : undefined }} className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
             </div>
             <div data-title-animation={previewVisualStyle.titleAnimation || "none"} className="pointer-events-none absolute inset-0 z-10" style={titleAnimationPreviewCss(previewVisualStyle.titleAnimation, previewCurrentTime, previewScale)}>
@@ -1895,9 +1901,9 @@ export default function Home() {
             <div className="preview-stat"><span>Font preset</span><strong>{fontStack[0]}</strong></div>
           </div>
           {activePart.teaser && <details className="mt-3 w-full max-w-[520px] rounded-xl border border-white/10 p-3 text-xs text-zinc-400">
-            <summary className="cursor-pointer">Teaser Part {activePart.id} · {activePart.teaser.status === "selected" ? `${((activePart.teaser.end - activePart.teaser.start) / PLAYBACK_RATE).toFixed(1)}s · ${activePart.teaser.selection === "ai" ? "AI API" : activePart.teaser.selection === "external-import" ? "External import · API chưa xác minh" : "Fallback — chưa xác minh AI"}` : "Không có đoạn phù hợp"}</summary>
+            <summary className="cursor-pointer">Teaser Part {activePart.id} · {activePart.teaser.status === "selected" ? `${((activePart.teaser.end - activePart.teaser.start) / PLAYBACK_RATE).toFixed(2)}s rendered · ${activePart.teaser.selection === "ai" ? "AI API" : activePart.teaser.selection === "external-import" ? "External import · API chưa xác minh" : activePart.teaser.selection === "manual" ? "Chọn tay · cần xem lại" : "Fallback — chưa xác minh biên tập"}` : "Không có đoạn phù hợp"}</summary>
             <p className="mt-2">{activePart.teaser.reason}</p>
-            {activePart.teaser.status === "selected" && <><p className="mt-1">{activePart.teaser.relation}</p><p className="mt-1">{activePart.teaser.provider} / {activePart.teaser.model} · {activePart.teaser.limitations.join(" · ")}</p></>}
+            {activePart.teaser.status === "selected" && <><p className="mt-1">{activePart.teaser.relation}</p>{activePart.teaser.ending && <p className="mt-1">Điểm kết: {activePart.teaser.ending}</p>}{activePart.teaser.heatmapEvidence && <p className="mt-1">Most Replayed: {activePart.teaser.heatmapEvidence.reason}</p>}<p className="mt-1">{activePart.teaser.provider} / {activePart.teaser.model} · {activePart.teaser.limitations.join(" · ")}</p></>}
           </details>}
         </section>
 
@@ -1973,9 +1979,10 @@ export default function Home() {
           })} />,
           }} />
           {hookNeedsReselection(activePart)&&<p role="status" className="mt-3 text-xs text-amber-300">Hook cũ lặp ngay phần mở đầu. Chọn lại hook rõ ràng để áp dụng khoảng cách 10 giây; snapshot đã queue được giữ nguyên.</p>}
-          {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Chọn lại hook · giữ nguyên main</button>}
-          <label className="mt-4 block text-xs">Hook → Main<select aria-label="Hook transition" className="studio-input mt-2 w-full" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Legacy · theo transition đã lưu</option><option value="rainbow-light-leak">Rainbow Light Leak</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>
-          <MusicPanel plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}} />
+          {hasEditPlan&&<TeaserEditor part={activePart} cues={previewPlan.captionCues?.cues||subtitleCues} onChange={part=>setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?part:p)}))} />}
+          {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Chọn lại hook part này · giữ nguyên main</button>}
+          <label className="mt-4 block text-xs">Hook → Main<select aria-label="Hook transition" className="studio-input mt-2 w-full" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Legacy · theo transition đã lưu</option><option value="vr-light-leak-v2">Warm Cloud Light Leak · video only</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>
+          <MusicPanel previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}} />
           <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}</summary>
             <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => {

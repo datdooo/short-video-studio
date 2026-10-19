@@ -1,3 +1,38 @@
+# Current music/preview update — 2026-10-20
+
+Normal DEV library now holds54 playable compressed tracks (256,196,532 audio bytes)
+from official Incompetech downloads, CC BY4.0 with per-track copyable credits.
+All54 decoded;0 audition-verified instrumental;54 uncertain;26 planned downloads
+failed bounded network attempts. Mood suggestions and arrangement variants are
+metadata-based, not acoustic verification. No audio is shipped/committed. Existing
+Mixkit entries remain links only; its mass-download restriction was respected.
+`lib/music/personal-collection.mjs` and `scripts/install-personal-music.mjs` retain
+source/license/credits; script is explicit, DEV-only,2 concurrent,120s per attempt,
+3 attempts/430s per track. Failed partials are resume data, capped512MiB by refusing
+new acquisition (not eviction). SIGINT/TERM cancels active work, preserves partials.
+
+Managed library is now128 tracks/1GiB, max64MiB/600s each, no automatic deletion.
+MP3/M4A/AAC/OGG/Opus retain exact imported compressed bytes after full decode;
+WAV/FLAC retain the existing prepared crossfade loop. Original compressed tracks
+loop at their natural ends (no newly baked seam crossfade). Existing FLAC assets
+and snapshots stay readable; changed/missing hashes fail safely.
+
+Search/mood filtering covers installed files; source links cannot appear installed.
+Status distinguishes waiting for a plan, preparing, ready, playing, blocked/error.
+Music selection made BEFORE Generate persists through both parts/regenerate.
+No mix is requested against the pre-generation demo plan. One playback controller
+owns the full source/part/segment/hook/gain identity; stale async completions cannot
+mute new source. Browser play must succeed before source is muted. Pause/workspace
+changes stop the mix; autoplay failure restores voice and requires an explicit retry,
+not a per-frame request loop. Volume/ducking changes affect only audio preparation.
+
+New foreground-only `vr-light-leak-v2` replaces the default only for new hook policies;
+legacy rainbow remains explicit/saved behavior. See `docs/warm-cloud-light-leak.md`.
+Ducking gain/envelope and existing VAD remain unchanged. Qualification/limitations:
+`docs/adaptive-teaser-qualification.md`. Earlier sections below are historical.
+
+---
+
 # DEV background music, speech ducking and hook light leak
 
 Scope: optional managed local music, speech-aware music-only attenuation, and a

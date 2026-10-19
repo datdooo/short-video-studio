@@ -1,0 +1,23 @@
+// One explicitly authorized inference, one part, no repair/provider campaign.
+import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import {once} from 'node:events';
+import {readFile,writeFile,mkdir,mkdtemp,rm} from 'node:fs/promises';import path from 'node:path';
+import {resolveRuntime,runtimeEnvironment,prepareRuntimeDirectories,assertRuntimePortsAvailable} from '../desktop/runtime-config.mjs';
+const project=path.resolve(import.meta.dirname,'..'),rootBase=path.join(project,'.isolation-verification/adaptive-teaser');await mkdir(rootBase,{recursive:true});
+const root=await mkdtemp(path.join(rootBase,'live-')),runtime=resolveRuntime({profile:'development',home:path.join(root,'private-home')}),port=8898,api=`http://127.0.0.1:${port}`,bin=path.join(project,'release/dev/ShortCut Studio Dev.app/Contents/Resources/runtime/bin');
+await assertRuntimePortsAvailable({name:'Editorial live QA',webPort:port,workerPort:port});await prepareRuntimeDirectories(runtime);
+const delay=ms=>new Promise(r=>setTimeout(r,ms));let logs='';const env={...runtimeEnvironment(runtime),MEDIA_WORKER_PORT:String(port),FFMPEG_PATH:path.join(bin,'ffmpeg'),FFPROBE_PATH:path.join(bin,'ffprobe'),CHATGPT_KEYCHAIN_SERVICE:'ShortCut Studio Dev ChatGPT'};
+const worker=spawn(process.execPath,['--use-env-proxy','worker/server.mjs'],{cwd:project,env,stdio:['ignore','pipe','pipe']});worker.stdout.on('data',b=>logs=(logs+b).slice(-2000));worker.stderr.on('data',b=>logs=(logs+b).slice(-2000));
+const report={authorizedInferenceLimit:1,partId:2,sourceFixture:'existing real-building-200s.mp4',realSampleCount:1,editorialAcceptance:'user review required',root};
+try{
+ const call=async(route,body)=>{const r=await fetch(api+route,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(220000)});const v=await r.json();assert.ok(r.ok,String(v.error||r.status).slice(0,300));return v;};
+ let ready=false;for(let i=0;i<100;i++){try{assert.equal((await call('/health')).dataRoot,runtime.dataRoot);ready=true;break;}catch{}await delay(200);}assert.ok(ready);
+ const session=(await call('/api/chatgpt/session')).session;report.auth={connected:session.connected,sharing:session.sharing,...(session.error?{error:session.error}:{})};assert.ok(session.connected&&session.sharing,'DEV configured ChatGPT session unavailable; no inference was made');
+ const previous=JSON.parse(await readFile(path.join(project,'.isolation-verification/teaser-resume-20261019/real-ai-plan.json'),'utf8'));
+ const uploaded=await fetch(api+'/api/sources/upload?filename=real-building-200s.mp4',{method:'POST',body:await readFile(path.join(project,'.isolation-verification/teaser-finish/real-building-200s.mp4'))});assert.equal(uploaded.status,201);const{source}=await uploaded.json();
+ const cues=previous.plan.captionCues.cues;const plan={providerUsed:'manual',originalTitle:'real-building-200s',teaserPolicy:'per-part-v1',parts:[{id:1,title:'Site clearing and preparation',segments:[{start:0,end:95}]},{id:2,title:'Measuring house lifting progress',segments:[{start:100,end:200}]}].map(p=>({...p,manualLocked:true,startTrimApplied:true,smartCutApplied:true})),captionCues:{...previous.plan.captionCues,sourceId:source.id,sourceDuration:200}};
+ const before=structuredClone(plan);const next=(await call(`/api/sources/${source.id}/teaser-hooks`,{plan,partId:2,singleAttempt:true})).plan;
+ assert.deepEqual(next.parts.map(p=>p.segments),before.parts.map(p=>p.segments));assert.equal(next.parts[0].teaser,undefined);
+ const h=next.parts[1].teaser;report.outcome=h;report.actualAISelection=h?.selection==='ai';report.previous=previous.plan.parts[1].teaser;report.literalCues=cues.filter(c=>h?.status==='selected'&&c.start<h.end&&c.end>h.start).map(({start,end,text})=>({start,end,text}));report.mainUnchanged=true;report.success=report.actualAISelection;
+ if(!report.actualAISelection)report.blocker=h?.reason||'No verified AI selection';
+}catch(e){report.success=false;report.blocker=String(e.message).slice(0,350);}
+finally{worker.kill('SIGTERM');await Promise.race([once(worker,'exit'),delay(3000)]);if(worker.exitCode===null)worker.kill('SIGKILL');await writeFile(path.join(rootBase,'live-editorial-report.json'),JSON.stringify(report,null,2));if(report.success)await rm(root,{recursive:true,force:true});console.log(JSON.stringify({success:report.success,auth:report.auth,selection:report.outcome?.selection,provider:report.outcome?.provider,model:report.outcome?.model,start:report.outcome?.start,end:report.outcome?.end,blocker:report.blocker}));}

@@ -1,3 +1,14 @@
+# Current integration qualification — 2026-10-20
+
+Read `docs/adaptive-teaser-qualification.md` for this update. Historical results
+below remain unchanged. Current library54 installed /0 audition-verified /54
+uncertain,26 bounded download failures. Source editor music Generate/both-parts/
+seek/pause/workspace/regenerate and real MP3 mix checks passed. New warm effect
+is foreground-only; legacy rainbow remains available. Current limits128tracks/
+1GiB, partial acquisition cache512MiB; no automatic user music deletion.
+
+---
+
 # Music / ducking / rainbow / hook distance — DEV qualification
 
 2026-10-19, `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`,
