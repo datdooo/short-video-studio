@@ -42,6 +42,7 @@ import { normalizeTitleAnimation } from "../lib/visual-style/animations.mjs";
 import { renderSceneOverlay } from "./scene-overlays.mjs";
 import { removeBatchItem } from "./batch-cleanup.mjs";
 import { youtubeUrl } from "./youtube-common.mjs";
+import { EXPORT_METADATA_POLICY, EXPORT_METADATA_ARGS, requireCurrentExportPolicy } from './export-metadata.mjs';
 import { verifiedRenderOutput } from "./render-resume.mjs";
 import { createSourceReuse } from "./source-reuse.mjs";
 import { createBatchProcessor } from "./batch-pipeline.mjs";
@@ -1320,6 +1321,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
       "-filter_complex", renderFilters.join(";"),
       "-map", "[vout]",
       "-map", "[aout]",
+      // OUTPUT scope, after all -i inputs and before the output filename.
+      // Only rendered A/V: no source tags, chapters, subtitles/data/attachments.
+      ...EXPORT_METADATA_ARGS,
       "-r", "30",
       "-pix_fmt", "yuv420p",
       "-color_range", "tv",
@@ -1406,6 +1410,7 @@ function reserveExportNames(plan, source) {
 async function executeRender(job, source, plan, signal) {
   try {
     signal?.throwIfAborted();
+    requireCurrentExportPolicy(job);
     job.state = "rendering";
     job.startedAt = new Date().toISOString();
     const outputDirectory = path.join(source.directory, "outputs", job.id);
@@ -1431,6 +1436,11 @@ async function executeRender(job, source, plan, signal) {
       const prior=job.outputs.find(o=>o.part===part.id);
       const completed=await verifiedRenderOutput({file:path.join(outputDirectory,`part-${part.id}`,exportNames[index]),filename:exportNames[index],record:prior,sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
       if(completed){if(!prior)job.outputs.push(completed);job.progress=Math.round((index+1)/plan.parts.length*100);await persistBatchHistory({strict:true});continue;}
+      // An existing unrecorded/legacy/corrupt file is never overwritten or
+      // adopted as a clean export. Keep it and require a separate new job.
+      const existingFile=path.join(outputDirectory,`part-${part.id}`,exportNames[index]);
+      const existingOutput=await lstat(existingFile).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
+      if(existingOutput)throw new Error('MP4 đã tồn tại nhưng không đủ bằng chứng chính sách metadata hiện tại. Xuất thành job mới; không ghi đè/xóa file cũ.');
       job.outputs=job.outputs.filter(o=>o.part!==part.id);
       job.currentPart = part.id;
       const filename = exportNames[index];
@@ -1455,6 +1465,7 @@ async function executeRender(job, source, plan, signal) {
         part: part.id,
         filename,
         size: outputStat.size,
+        metadataPolicy: EXPORT_METADATA_POLICY,
         url: `/files/${source.id}/outputs/${job.id}/part-${part.id}/${encodeURIComponent(filename)}`,
       });
       await persistBatchHistory({strict:true});
@@ -1489,12 +1500,13 @@ async function startRender(body, parentSignal) {
   const renderPlan = originalPlan;
   validatePlan(renderPlan, source);
   if (mediaLibrary.isLocked(source.id)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
-  if(body.submissionId){assertId(body.submissionId);const existing=jobs.get(body.submissionId);if(existing){if(existing.sourceId!==source.id)throw new Error("Submission belongs to another source");return existing;}
+  if(body.submissionId){assertId(body.submissionId);const existing=jobs.get(body.submissionId);if(existing){if(existing.sourceId!==source.id)throw new Error("Submission belongs to another source");requireCurrentExportPolicy(existing);return existing;}
     if(existsSync(path.join(source.directory,"outputs",body.submissionId)))throw new Error("Render output exists without its history; inspect it before another submission.");}
   const job = {
     id: body.submissionId || randomUUID(),
     sourceId: source.id,
     origin: parentSignal ? "batch" : "editor",
+    metadataPolicy: EXPORT_METADATA_POLICY,
     plan: originalPlan,
     startTrimSeconds: 1,
     state: "queued",
@@ -1527,6 +1539,7 @@ function enqueueRender(job,source,renderPlan,parentSignal){
   });
 }
 async function resumeRender(job,parentSignal){
+  requireCurrentExportPolicy(job);
   if(!['error','cancelled'].includes(job.state)||renderControllers.has(job.id))throw new Error('Render still active or already complete; no duplicate submission.');
   if(mediaLibrary.isLocked(job.sourceId))throw new Error('Source is in use/trash.');
   const source=await loadSource(job.sourceId);validatePlan(job.plan,source);job.state='queued';job.error=null;

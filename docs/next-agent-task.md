@@ -1,3 +1,17 @@
+# Active follow-up — MP4 metadata output policy + source publication
+
+2026-10-20, base `9ae42dd`, current branch `recovery/visual-dev-reconstructed`.
+Read `docs/export-metadata.md`. All rendered-export encoders share output-side
+metadata/chapter suppression; legacy output reuse is blocked, not migrated.
+No actual MP4 inspection/test/render/AI/browser QA was requested or performed.
+DEV package build completed successfully. Only reviewed source/history is
+authorized for publication to the verified origin in this checkpoint; inspect
+actual upstream SHA for publication status. Normal push only; never main/force
+push. Next acceptance is manual inspection of a newly exported MP4 by the user.
+Historical delivery notes below remain preserved.
+
+---
+
 # Active DEV delivery — transitions / Bright Social / Custom Teaser / credit UI
 
 2026-10-20. Base `dfc141641bc2ad9b2d55026a445f02c3816442f0`, branch
