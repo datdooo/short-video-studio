@@ -1,9 +1,9 @@
+import { sentenceBoundaries } from "../lib/auto-cut/boundaries.mjs";
 import { PLAYBACK_RATE } from '../lib/render-config.mjs';
 
 export function smartCutPlan(plan, { cues = [], silences = [] }, duration) {
   const parts = structuredClone(plan.parts);
-  const sentenceEnds = cues.filter((cue) => /[.!?。！？]["”’']?\s*$/u.test(cue.text)).map((cue) => cue.end);
-  const sentenceStarts = cues.filter((cue, index) => index === 0 || /[.!?。！？]["”’']?\s*$/u.test(cues[index - 1].text) || cue.start - cues[index - 1].end >= 0.2).map((cue) => cue.start);
+  const { ends: sentenceEnds, starts: sentenceStarts } = sentenceBoundaries(cues);
   const candidates = [...silences.map(({ start, end }) => (start + end) / 2), ...sentenceEnds, ...sentenceStarts];
   const snap = (target, low, high) => {
     if (silences.some((range) => target >= range.start && target <= range.end)) return target;

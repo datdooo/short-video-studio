@@ -41,6 +41,7 @@ import { trimPartStart } from "./part-start.mjs";
 import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
 import { smartCutPlan } from "./smart-cut.mjs";
+import { createMainContentSelector } from "./main-content.mjs";
 import { createSourceContextService, sourceContextFor, saveSourceContext } from "./source-context.mjs";
 import { createYouTubeDownloader } from "./youtube-downloader.mjs";
 import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth, localAuthOrigin } from "./chatgpt-auth-state.mjs";
@@ -624,7 +625,7 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
       model,
       store: false,
       stream: true,
-      ...(content ? { max_output_tokens: 1200 } : {}),
+      ...(content ? { max_output_tokens: Math.max(1200, Math.min(3000, Number(body.maxTokens) || 1200)) } : {}),
       instructions: body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
       input: [{ role: "user", content: content || String(body.input || "") }],
       text: {
@@ -714,19 +715,36 @@ async function hookFrames(part, source, signal) {
   }
   return frames;
 }
-const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames,
-  resolveProvider: async (signal) => {
+async function resolveEditingProvider(signal) {
     const credentials = await activeChatGPTCredentials();
     const models = await listChatGPTModels(credentials, AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(20_000)]));
     const model = models.find((m) => /gpt|o[1-9]/i.test(m.slug))?.slug;
     if (!model) throw new Error("MODEL_UNAVAILABLE");
-    return { id: "chatgpt", model, analyze: async ({ input, images, schema, instructions, signal }) => {
+    return { id: "chatgpt", model, analyze: async ({ input, images, schema, instructions, signal, maxTokens }) => {
       const content = [{ type: "input_text", text: JSON.stringify(input) }, ...images.flatMap((f) => [{ type: "input_text", text: `Source frame at ${f.time.toFixed(3)} seconds.` }, { type: "input_image", image_url: `data:image/jpeg;base64,${f.data}`, detail: "low" }])];
-      const result = await analyzeWithChatGPTPlan({ model, schema, instructions }, signal, content);
+      const result = await analyzeWithChatGPTPlan({ model, schema, instructions, maxTokens }, signal, content);
       return { value: result.plan };
     } };
-  },
-});
+}
+const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
+const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
+
+async function mainAnalysisInputs(source, body, signal) {
+  if (body.currentPlan) {
+    if (body.currentPlan.analysis?.sourceId && body.currentPlan.analysis.sourceId !== source.id) throw new Error("Plan belongs to another source.");
+    validatePlan(body.currentPlan, source);
+  }
+  const context = await sourceContexts.ensure(source, { signal, comments: true });
+  try { await saveSourceContext(source.directory, context); } catch { signal?.throwIfAborted(); }
+  let cues = source.captions || [];
+  if (!cues.length) {
+    try { cues = sourceCaptionTrack(JSON.parse(await readFile(path.join(source.directory, "speech-captions.json"), "utf8")), source).cues; } catch { /* Missing cached speech is normal. */ }
+  }
+  const lines = typeof body.transcript === "string" ? transcriptCues(body.transcript.slice(0, 100000)).filter(c => c.at < source.duration) : [];
+  if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter(c => c.end > c.start);
+  return { context, options: { cues, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
+}
+
 async function planTeasers(plan, source, signal, transcript) {
   const sourceContext = await sourceContexts.ensure(source, { signal, comments: true });
   if (source.directory) {
@@ -1700,6 +1718,19 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && requestUrl.pathname === "/api/speech/model") {
       await readJson(request); await speech.installModel();
       sendJson(request, response, 200, await speech.status()); return;
+    }
+    const mainSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/auto-cut$/i);
+    if (request.method === "POST" && mainSource) {
+      const controller = new AbortController(), abort = () => controller.abort(new Error("Analysis cancelled"));
+      response.once("close", abort);
+      try {
+        const body = await readJson(request), source = await loadSource(mainSource[1]);
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(420000)]);
+        const { context, options } = await mainAnalysisInputs(source,body,signal);
+        if (body.mode === "context") sendJson(request,response,200,{ context:await mainContent.prepare(source,context,options) });
+        else sendJson(request,response,200,{ plan:await mainContent.select(source,context,options) });
+      } finally { response.removeListener("close",abort); }
+      return;
     }
     const speechSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/(smart-cut|captions|teaser-hooks)$/i);
     if (request.method === "POST" && speechSource) {

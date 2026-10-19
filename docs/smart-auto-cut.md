@@ -238,3 +238,28 @@ copy/paste prompts do not receive these new signals. Batch source imports inheri
 ordinary saved context, but no new batch planner/orchestration was implemented.
 D–H remain unimplemented. See `smart-auto-cut-abc-qualification.md` for checks and
 user acceptance steps; the existing built DEV app needs rebuilding to include A–C.
+
+## D checkpoint (backend; ordinary UI wiring follows in F)
+
+`lib/auto-cut/main-content.mjs` and `worker/main-content.mjs` generate at most48
+chronological two-entry recipes from actual cue/scene/chapter boundaries. Windows
+preserve continuity through source end; AI can exclude only validated boundary
+ranges with reasons. Existing >60s/1.25x/one-second-trim constraints and explicit
+real-footage short-source padding remain. Known cue interiors are not split;
+missing boundaries are documented, never claimed word aligned.
+
+Contributions: structural coverage<=.25, balance<=.20, lexical transcript relevance
+<=.20, chapter entry<=.10, shared engagement max(comments,replay)<=.15, visual<=.05,
+audio<=.05. Missing evidence contributes zero. These are heuristic budgets, not
+probabilities. Existing GPT structured adapter ranks supplied recipes; malformed
+output gets at most one repair attempt, auth/rate/model failures stop retries,
+and deterministic fallback is explicit. No new provider API is claimed.
+
+The worker `/api/sources/:id/auto-cut` consumer supports context preparation and
+main selection; F connects ordinary Auto/Semi UI and existing per-part hooks.
+Manual Custom Time changes mark only edited parts locked; selection cannot alter
+their segments. Shared cue-boundary extraction retains legacy Smart Cut behavior.
+New analysis cache is atomic, 24MiB/14days/512 files, <=2MiB per entry; active and
+referenced resume keys are protected, and writes are skipped if protection fills
+the budget. No user media/exports/plans/credentials or other cache directories
+are deleted. See `smart-auto-cut-reuse.md`; H is not qualified by fixtures.

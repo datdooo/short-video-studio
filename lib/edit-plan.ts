@@ -8,7 +8,7 @@ export { transcriptCues };
 import { presentationDuration, validateTeaser, TEASER_POLICY } from "./teaser-hooks.mjs";
 
 export type AiProvider = "mock" | "chatgpt" | "gemini" | "muse" | "openai" | "qwen";
-export type PlanSource = AiProvider | "manual";
+export type PlanSource = AiProvider | "manual" | "deterministic";
 
 export type Segment = {
   type?: "source" | "summary_card" | "freeze";
@@ -23,6 +23,7 @@ export type Segment = {
 };
 
 export type EditPart = {
+  manualLocked?: boolean;
   teaser?: import("./teaser-hooks.mjs").Teaser;
   startTrimApplied?: boolean;
   smartCutApplied?: boolean;
@@ -34,6 +35,7 @@ export type EditPart = {
 };
 
 export type EditPlan = {
+  analysis?: import("./auto-cut/main-content.mjs").MainAnalysis;
   teaserPolicy?: "per-part-v1";
   visualStyle?: VisualStyle;
   subtitles?: import("./subtitles.mjs").SubtitleStyle;
@@ -127,6 +129,7 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
   }
 
   return {
+    ...(plan.analysis ? { analysis: structuredClone(plan.analysis) } : {}),
     ...(plan.teaserPolicy ? { teaserPolicy: plan.teaserPolicy } : {}),
     visualStyle: resolvePlanVisualStyle(plan),
     originalTitle: plan.originalTitle,
