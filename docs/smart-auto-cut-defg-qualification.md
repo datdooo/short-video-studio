@@ -146,9 +146,10 @@ release/dev1,356,148KiB; existing+new QA2,453,400KiB; dist116,276KiB; .next4KiB;
 normal DEV cache6,244KiB; sources3,432,220KiB. Source-tree size changes are not
 attributed to cleanup; no user source/export/history deletion was requested or run.
 
-Removed only task-created previous-package staging269,564KiB and private QA
-HOME28,616KiB (combined298,180KiB apparent, ~291.2MiB), plus the small synthetic
-fixture. All four preexisting staging directories, latest usable app, historical
+Removed task-created previous-package staging269,564KiB, private QA
+HOME28,616KiB and compiler scratch136,724KiB (combined434,904KiB apparent,
+~424.7MiB), plus the small synthetic fixture. Compiler scratch ownership was
+verified against this build’s start time and expected icon/cache contents. All four preexisting staging directories, latest usable app, historical
 QA, user media/exports/plans/credentials and Git/recovery backups were retained.
 Evidence: `smart-auto-defg/build-cleanup.json` and packaged report under the QA root.
 No research clones or analysis media transcodes were retained.
