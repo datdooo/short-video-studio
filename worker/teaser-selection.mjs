@@ -114,7 +114,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
     if(plan.teaserPolicy===undefined&&!plan.parts.some(p=>p.teaser)&&plan.hookTransition===undefined)result.hookTransition="vr-light-leak-v2";
     result.teaserPolicy = TEASER_POLICY;
     // Sequential parts bound provider cost/concurrency and never share context.
-    for (const part of result.parts) if((targetPartId===undefined||targetPartId===part.id)&&(!part.customTeaser||customInstruction))part.teaser = await selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, Math.min(2,Math.max(1,maxAttempts)),customInstruction);
+    for (const part of result.parts) if((targetPartId===undefined||targetPartId===part.id)&&(!part.customTeaser||customInstruction)){part.teaserNeedsReselection=false;part.teaser = await selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, Math.min(2,Math.max(1,maxAttempts)),customInstruction);}
     return result;
   };
 }

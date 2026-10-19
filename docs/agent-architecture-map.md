@@ -8,6 +8,8 @@ VS row are under `lib/`; worker/desktop tests live beside their modules.
 
 | Subsystem | Main files | Responsibility | Key state/contracts | Tests |
 | --- | --- | --- | --- | --- |
+| Canonical Custom Time | `components/main-ranges-editor.tsx`, `lib/main-ranges.mjs`, `app/page.tsx`, worker plan-validation/workflow | Per-part main segment add/edit/delete, AI snapshot restore and locks | Numeric segments authoritative; raw invalid strings are UI-only; exact timestamps, no re-trim/snap; padding separate; explicit teaser review | No new QA per user; manual acceptance pending |
+| Gentle DEV collection | `scripts/install-gentle-music.mjs`, `lib/music/gentle-collection.mjs`, music-panel | Bounded composer-direct MP3 acquisition through existing importer; priority mood group | DEV-data only; SHA256 dedupe;300MiB download bound; no audition flag; no bundled audio | Normal import/probe/decode only; no listening/QA |
 | Editor UI | `app/page.tsx`, `app/globals.css`, `components/visual-customize-panel.tsx` | Plan/preview/forms; compact disclosures | Canonical plan; subtitle alias synchronized; controls stay mounted | `scripts/qa-template-ui.mjs`, `scripts/qa-editor-preview.mjs` |
 | VisualStyle | `VS/types.ts`, `normalize.mjs`, `defaults.mjs`, `presets.mjs` | Normalize/resolve/snapshot | v1 allowlist; fresh copies; legacy subtitle precedence | `visual-style.test.mjs`, `legacy-plan.test.mjs` |
 | Templates | `VS/templates.mjs`, `components/visual-template-panel.tsx` | Frozen ID recipes/application/matching | Effective style authoritative; mismatch→Custom; animation/transition independent | `templates.test.mjs`, `scripts/qa-visual-templates.mjs` |

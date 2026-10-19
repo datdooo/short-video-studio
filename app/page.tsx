@@ -18,10 +18,8 @@ import {
   Loader2,
   Pause,
   Play,
-  RotateCcw,
   Scissors,
   ServerCog,
-  Settings2,
   Sparkles,
   Square,
   Trash2,
@@ -74,7 +72,9 @@ import { EditorRenderList } from "@/components/editor-render-list";
 import { completedRenderJobs } from '@/lib/render-delete.mjs';
 import { CopyButton } from "@/components/copy-button";
 import { trimPartStart } from "@/worker/part-start.mjs";
-import { applyPartTimes, partTimes, type PartTime } from "@/lib/custom-time.mjs";
+import {MainRangesEditor} from '@/components/main-ranges-editor';
+import {applyMainRanges,captureAiMainRanges,restoreAiMainRanges} from '@/lib/main-ranges.mjs';
+import type {MainRangeRow} from '@/lib/main-ranges.mjs';
 import { partCaptions, subtitleY, sourceCaptionTrack, isCurrentCaptionRequest, type CaptionTrack, type SubtitleStyle } from "@/lib/subtitles.mjs";
 import { FOREGROUND_SCALE, PLAYBACK_RATE, FOREGROUND_HEIGHT, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH } from '@/lib/render-config.mjs';
 import {
@@ -301,7 +301,7 @@ export default function Home() {
   const [hasEditPlan, setHasEditPlan] = useState(false);
   const [instruction, setInstruction] = useState(DEFAULT_REQUEST.instruction || "");
   const [supplementalPrompt, setSupplementalPrompt] = useState("");
-  const [customTimes, setCustomTimes] = useState<PartTime[] | null>(null);
+  const [mainDraftErrors,setMainDraftErrors]=useState<Record<number,{sourceKey:string;key:string;invalid:boolean}>>({});
   const [plan, setPlan] = useState<EditPlan>(() => mockPlan(DEFAULT_REQUEST));
   const subtitleSettings = useMemo(() => resolvePlanVisualStyle(plan).subtitle, [plan]);
   const setSubtitleSettings = useCallback((update: SubtitleStyle | ((current: SubtitleStyle) => SubtitleStyle)) => {
@@ -312,7 +312,7 @@ export default function Home() {
     });
   }, []);
   const replacePlan = useCallback((next: EditPlan) => {
-    setPlan((current) => { const style = resolvePlanVisualStyle(current); return snapshotPlanVisualStyle({ ...next, music:current.music, musicSpeech:current.musicSpeech, visualStyle: style, subtitles: style.subtitle, hookTransition:current.hookTransition??next.hookTransition }); });
+    setPlan((current) => { const style = resolvePlanVisualStyle(current); return snapshotPlanVisualStyle({ ...captureAiMainRanges(next), music:current.music, musicSpeech:current.musicSpeech, visualStyle: style, subtitles: style.subtitle, hookTransition:current.hookTransition??next.hookTransition }); });
   }, []);
   const [sourceCaptions, setSourceCaptions] = useState<CaptionTrack | null>(null);
   const subtitleRequestSerial = useRef(0);
@@ -402,16 +402,20 @@ export default function Home() {
   }
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
 
+  const mainEditorSourceKey=preparedSource?.id||(sourceMode==='local'?localVideoUrl:sourceUrl);
   // Timing depends on cuts/provider, never on appearance-only edits.
   const timing = useMemo(() => {
     let base = { parts: plan.parts, providerUsed: plan.providerUsed, analysis:plan.analysis };
     try {
-      base = { ...base, parts: plan.parts.map(trimPartStart) };
-      const effective=customTimes?applyPartTimes(base,customTimes,preparedSource?.duration):base;
+      base = { ...base, parts: plan.parts.map(p=>{const effective=trimPartStart(p);return effective.smartCutApplied?effective:{...effective,smartCutApplied:true};}) };
+      // Legacy AI plans get an in-memory restore checkpoint from their actual
+      // effective main ranges, never an outer start/end window.
+      const effective=captureAiMainRanges({...plan,...base});
       return {parts:effective.parts,analysis:effective.analysis,error:""};
     } catch (caught) { return { parts: base.parts, analysis:base.analysis, error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ." }; }
-  }, [plan.parts, plan.providerUsed, plan.analysis, customTimes, preparedSource?.duration]);
-  const effectiveTiming = { plan: { ...plan, parts: timing.parts, analysis:timing.analysis }, error: timing.error };
+  }, [plan.parts, plan.providerUsed, plan.analysis, preparedSource?.duration]);
+  const draftError=hasEditPlan&&timing.parts.some(p=>mainDraftErrors[p.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[p.id]?.key===hookRangeKey(p)&&mainDraftErrors[p.id]?.invalid)?'Custom Time có dòng chưa hợp lệ; sửa hoặc xóa dòng trước khi xuất/lưu/phân tích.':'';
+  const effectiveTiming = { plan: { ...plan, parts: timing.parts, analysis:timing.analysis }, error: timing.error||draftError };
   const previewPlan: EditPlan = {...effectiveTiming.plan,musicSpeech:plan.musicSpeech?.sourceId===preparedSource?.id?plan.musicSpeech:undefined};
   const previewVisualStyle = useMemo(() => resolvePlanVisualStyle({ visualStyle: previewPlan.visualStyle, subtitles: subtitleSettings }), [previewPlan.visualStyle, subtitleSettings]);
   const videoColorFilter = browserFilterStyle(previewVisualStyle.filter, { contrast: workerHealth?.render?.contrast ?? DEFAULT_VISUAL_STYLE.filter.contrast, saturation: workerHealth?.render?.saturation ?? DEFAULT_VISUAL_STYLE.filter.saturation });
@@ -668,7 +672,7 @@ export default function Home() {
             throw new Error("All manual edit-plan fields must be strings.");
           }
           const nextPlan = manualPlan(values);
-          setCustomTimes(null);
+
           setSourceTitle(values.originalTitle);
           setManualPart1Title(values.part1Title);
           setManualPart1Ranges(values.part1Ranges);
@@ -906,7 +910,7 @@ export default function Home() {
   async function openBatchItem(group:BatchJob,item:BatchJob["items"][number]){
     if(!item.sourceId)return;invalidateAnalysis();const ticket=analysisRequests.current.begin();const epoch=++sourceSelectionEpoch.current;setBatchError("");
     try{const response=await fetch(`${WORKER_ORIGIN}/api/sources/${item.sourceId}`,{signal:ticket.controller.signal});const data=await response.json() as {source?:WorkerSource;error?:string};if(!response.ok||!data.source)throw new Error(data.error||"Không mở được source đã lưu.");if(!analysisRequests.current.isCurrent(ticket)||epoch!==sourceSelectionEpoch.current)return;
-      const source=data.source;setSourceMode("youtube");setSourceUrl(source.sourceUrl||item.url);setPreparedSource(source);setSourceTitle(source.title);setTranscript(source.transcript||"");setCustomTimes(null);setRenderJob(null);
+      const source=data.source;setSourceMode("youtube");setSourceUrl(source.sourceUrl||item.url);setPreparedSource(source);setSourceTitle(source.title);setTranscript(source.transcript||"");setRenderJob(null);
       setProvider(item.settings?.provider||"chatgpt");setInstruction(item.settings?.instruction||"");setSupplementalPrompt(item.settings?.supplementalPrompt||"");
       setSourceCaptions(source.captions?.length?sourceCaptionTrack({sourceId:source.id,cues:source.captions,origin:"youtube"},source):null);
       if(item.plan){setPlan(snapshotPlanVisualStyle(item.plan));setHasEditPlan(true);}else{setPlan(current=>snapshotPlanVisualStyle({...current,originalTitle:source.title,music:item.settings?.music,musicSpeech:undefined,hookTransition:item.settings?.hookTransition,visualStyle:item.settings?.visualStyle,subtitles:item.settings?.subtitles}));setHasEditPlan(false);}
@@ -1022,7 +1026,7 @@ export default function Home() {
       const data=await response.json() as {plan?:EditPlan;error?:string};
       if(!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
       if(!response.ok||!data.plan)throw new Error(data.error||"Không tạo được Smart Auto Cut.");
-      setCustomTimes(null);replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
+      replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
       setAnalysisNotice(data.plan.analysis?.method==='deterministic-fallback'?`Fallback xác định · ${data.plan.analysis.fallbackReason}. Chưa kiểm chứng độ hấp dẫn/ngữ nghĩa bằng AI.`:"Đã chọn main + hook; kiểm tra lý do/tín hiệu và chỉnh từng part bên dưới.");
     }catch(caught){if(analysisRequests.current.isCurrent(ticket))setError(caught instanceof Error?caught.message:"Không tạo được Smart Auto Cut.");}
     finally{if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);}}
@@ -1041,6 +1045,7 @@ export default function Home() {
   async function createWebAiPrompt(hookOnly = false) {
     const selectionEpoch = sourceSelectionEpoch.current;
     if (!isWebAi) return;
+    if(effectiveTiming.error){setWebAiError(effectiveTiming.error);return;}
     const ticket=analysisRequests.current.begin();
     setWebAiError(""); setWebAiNotice("");
     setIsAnalyzing(true);
@@ -1091,6 +1096,7 @@ export default function Home() {
   // A custom proposal is not installed until the per-part editor confirms it.
   // Reuse the canonical selector; timestamps never enter this request path.
   async function resolveCustomTeaser(partId:number,input:string,signal:AbortSignal) {
+    if(effectiveTiming.error)throw new Error(effectiveTiming.error);
     const source=preparedSource;
     if(!source)throw new Error("Chuẩn bị nguồn video trước khi chọn teaser.");
     const signature=latestMainSignature.current,sourceId=source.id;
@@ -1110,6 +1116,7 @@ export default function Home() {
   }
 
   async function reselectHooks(){
+    if(effectiveTiming.error){setError(effectiveTiming.error);return;}
     if(!preparedSource)return;if(isWebAi){await createWebAiPrompt(true);return;}
     const ticket=analysisRequests.current.begin(),signature=latestMainSignature.current;setIsAnalyzing(true);setError('');
     try{const next=await chooseTeasers(previewPlan,preparedSource,true,ticket.controller.signal,activePart.id);if(analysisRequests.current.isCurrent(ticket)&&latestMainSignature.current===signature)setPlan(current=>({...current,parts:next.parts,teaserPolicy:next.teaserPolicy,hookTransition:current.hookTransition??next.hookTransition}));}catch(e){if(analysisRequests.current.isCurrent(ticket))setError(e instanceof Error?e.message:String(e));}finally{if(analysisRequests.current.isCurrent(ticket))setIsAnalyzing(false);}
@@ -1198,7 +1205,10 @@ export default function Home() {
       const identity = hookIdentity;
       const imported = context.hookPlan ? null : parseMusePlan(webAiResult, preparedSource, webAiName, { requestId: context.requestId,analysisKey:context.analysisKey,lockedPlan:context.lockedPlan });
       const normalized=context.hookPlan||normalizePlan(imported!,provider);
-      const refined=context.hookPlan||{...normalized,parts:normalized.parts.map(p=>({...p,smartCutApplied:true}))};
+      const refined=context.hookPlan||{...normalized,parts:normalized.parts.map((p,i)=>{
+        const locked=context.lockedPlan&&lockedParts(context.lockedPlan)[i];
+        return locked?structuredClone(context.lockedPlan!.parts[i]):{...p,smartCutApplied:true};
+      })};
       const selections = context.hookPlan ? parseExternalHookOnly(webAiResult, preparedSource, context.requestId, context.hookPlan) : imported!.hookSelections || [];
       let nextPlan = await attachExternalHooks(refined, selections, preparedSource, context.transcript, context.provider, sourceCaptions?.cues);
       if(context.analysisKey&&!context.hookPlan){
@@ -1207,7 +1217,7 @@ export default function Home() {
       }
       if (latestHookIdentity.current !== identity) throw new Error("Nội dung/provider đã đổi trong lúc kiểm tra. Tạo prompt mới; kết quả cũ không được áp dụng.");
       if (!analysisRequests.current.isCurrent(ticket) || selectionEpoch !== sourceSelectionEpoch.current) return;
-      setCustomTimes(null);
+
       replacePlan(nextPlan);
       setHasEditPlan(true);
       setActivePartIndex(0);
@@ -1221,7 +1231,7 @@ export default function Home() {
   }
 
   function applyManualPlan() {
-    setCustomTimes(null);
+
     setError("");
     try {
       const nextPlan = manualPlan({
@@ -1357,7 +1367,7 @@ export default function Home() {
       signal?.throwIfAborted();
       if (selectionEpoch !== sourceSelectionEpoch.current) return null;
       setPreparedSource(data.source);
-      setCustomTimes(null);
+
       try {
         setSourceCaptions(data.source.captions?.length ? sourceCaptionTrack({ sourceId: data.source.id, cues: data.source.captions, origin: "youtube" }, data.source) : null);
       } catch (caught) {
@@ -1738,6 +1748,7 @@ export default function Home() {
             </TabsContent>
 
             <TabsContent value="manual" className="space-y-4 pt-4">
+              {hasEditPlan?<p className="text-xs text-zinc-400">Sửa từng đoạn main trong Custom Time ở bên phải.</p>:<>
               <div className="rounded-xl border border-[#ff4d2e]/15 bg-[#ff4d2e]/5 px-3 py-2 text-[11px] leading-5 text-[#ff9a88]">
                 Không gọi AI, không cần transcript. Mỗi dòng: <strong>start - end tên đoạn</strong>.
               </div>
@@ -1755,6 +1766,7 @@ export default function Home() {
                 <Scissors /> Apply manual timestamps
               </Button>
               <p className="text-center text-[10px] leading-5 text-zinc-600">Accepted: MM:SS, HH:MM:SS, seconds · ranges must be chronological.</p>
+              </>}
             </TabsContent>
           </Tabs>
 
@@ -1896,28 +1908,23 @@ export default function Home() {
               <p className="eyebrow">03 / KẾT QUẢ PART</p>
               <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">Part {activePart.id}</h2>
             </div>
-            <Badge variant="outline" className="border-emerald-400/20 bg-emerald-400/8 text-emerald-300"><Check /> Timeline valid</Badge>
+            <Badge variant="outline" className={effectiveTiming.error?"border-red-400/20 text-red-300":"border-emerald-400/20 bg-emerald-400/8 text-emerald-300"}><Check /> {effectiveTiming.error?"Sửa Custom Time":"Timeline valid"}</Badge>
           </div>
 
           {hasEditPlan && <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <p className="field-label">Custom Time · cả 2 Part</p>
-            <p className="mt-2 text-[11px] leading-5 text-zinc-500">Start AI đã cộng 1 giây, rồi Smart Cut tìm ngắt câu/khoảng lặng gần nhất. Mốc chỉnh tay được dùng nguyên cho preview và export, không cộng/căn lại. Các khoảng quảng cáo đã loại vẫn được giữ ngoài bản cắt.</p>
-            {(customTimes || partTimes(effectiveTiming.plan)).map((time, index) => <div key={index} className="mt-3">
-              <p className="mb-2 text-xs font-semibold">Part {index + 1}</p>
-              <div className="grid grid-cols-2 gap-2">
-                {(["start", "end"] as const).map((boundary) => <label key={boundary} className="min-w-0 text-[11px] text-zinc-400">
-                  {boundary === "start" ? "Bắt đầu" : "Kết thúc"}
-                  <Input aria-label={`Part ${index + 1} ${boundary}`} value={time[boundary]} onChange={(event) => {
-                    const value = event.target.value;
-                    invalidateAnalysis();
-                    setCustomTimes((current) => (current || partTimes(effectiveTiming.plan)).map((item, itemIndex) => itemIndex === index ? { ...item, [boundary]: value } : item));
-                    setRenderJob(null);
-                  }} className="studio-input mt-1 w-full font-mono text-xs" />
-                </label>)}
-              </div>
-              <Button size="sm" variant="ghost" className="mt-2 h-7 text-[11px]" onClick={()=>{invalidateAnalysis();const locked=lockedParts(previewPlan)[index];setCustomTimes(null);setPlan(current=>({...current,parts:previewPlan.parts.map((p,i)=>i===index?{...p,manualLocked:!locked}:p)}));}}>{lockedParts(previewPlan)[index]?"Mở khóa main để phân tích lại":"Khóa main khi phân tích lại"}</Button>
-            </div>)}
-            {effectiveTiming.error && <p role="alert" className="mt-3 text-xs leading-5 text-red-300">{effectiveTiming.error} Preview giữ mốc hợp lệ cũ; render bị chặn đến khi sửa đúng.</p>}
+            <p className="mt-2 text-[11px] leading-5 text-zinc-500">Mặc định theo bản cắt AI. Thêm, sửa hoặc xóa từng đoạn để tùy chỉnh; mốc chỉnh tay được dùng nguyên khi xuất.</p>
+            {previewPlan.parts.map((part,index)=><MainRangesEditor key={`${preparedSource?.id||previewVideoUrl}:${part.id}`} plan={previewPlan} part={part} duration={preparedSource?.duration||previewDuration||Infinity} locked={lockedParts(previewPlan)[index]}
+              onInvalidate={()=>{invalidateAnalysis();setRenderJob(null);}}
+              onDraft={(id,key,invalid)=>setMainDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.invalid===invalid?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,invalid}})}
+              onEdit={(id,rows:MainRangeRow[],expectedKey)=>{invalidateAnalysis();setRenderJob(null);setPlan(current=>{
+                const base={...current,parts:current.parts.map(trimPartStart)},target=base.parts.find(p=>p.id===id);
+                if(!target||hookRangeKey(target)!==expectedKey)return current;
+                try{return applyMainRanges(base,id,rows,preparedSource?.duration||previewDuration||Infinity);}catch{return current;}
+              });}}
+              onLock={(id,locked)=>{invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===id?{...p,...(!p.aiMainRanges&&part.aiMainRanges?{aiMainRanges:structuredClone(part.aiMainRanges)}:{}),manualLocked:locked}:p)}));}}
+              onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
+            />)}
           </div>}
 
 
@@ -1961,17 +1968,17 @@ export default function Home() {
             return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
           })} />,
           }} />
-          {hookNeedsReselection(activePart)&&<p role="status" className="mt-3 text-xs text-amber-300">Hook cũ lặp ngay phần mở đầu. Chọn lại hook rõ ràng để áp dụng khoảng cách 10 giây; snapshot đã queue được giữ nguyên.</p>}
+          {(activePart.teaserNeedsReselection||hookNeedsReselection(activePart))&&<p role="status" className="mt-3 text-xs text-amber-300">Main đã đổi hoặc hook nằm trong phần mở đầu bị loại. Chọn lại teaser cho part này; app không tự chọn đoạn thay thế. Snapshot đã queue được giữ nguyên.</p>}
           {hasEditPlan&&previewPlan.parts.map(part=><div key={`${preparedSource?.id}:${part.id}`} hidden={part.id!==activePart.id}>
             <TeaserEditor part={part} active={workspace==='editor'&&part.id===activePart.id} sourceUrl={previewVideoUrl} cues={previewPlan.captionCues?.cues||subtitleCues}
               onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
               onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();}}
               onChange={next=>{invalidateAnalysis();setPlan(current=>{
                 try{const base={...current,parts:current.parts.map(trimPartStart)};
-                  const effective=customTimes?applyPartTimes(base,customTimes,preparedSource?.duration):base;
+                  const effective=base;
                   const target=effective.parts.find(p=>p.id===next.id);
                   if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
-                  return {...current,teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser}:p)};
+                  return {...current,teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:p)};
                 }catch{return current;}
               });}}/>
           </div>)}
@@ -2034,45 +2041,7 @@ export default function Home() {
             {activePart.hashtags.length > 0 && activePart.hashtags.length < 10 && <p className="mt-2 text-[11px] leading-5 text-zinc-500">Plan cũ chưa đủ 10 hashtag. Generate lại bằng ChatGPT để cập nhật.</p>}
           </div>
 
-          <details key={`cut-details-${activePart.id}`} className="mt-5 rounded-xl border border-white/8 p-3">
-            <summary className="cursor-pointer text-xs font-semibold text-zinc-400">Chi tiết bản cắt · {activePart.segments.length} đoạn · {formatTime(finalDurationOf(activePart))}</summary>
-          <div className="mt-3 max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1">
-            {activePart.segments.map((segment, index) => (
-              <article key={`${index}-${segment.start}-${segment.end}`} className="rounded-lg bg-white/[.025] p-3">
-                {segment.isPadding && <p className="mb-2 text-[11px] font-semibold text-amber-200">Footage bổ sung / lặp ở cuối để đủ thời lượng</p>}
-                <div className="flex items-start gap-3">
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#ff4d2e]/10 text-xs font-bold text-[#ff6b50]">{String(index + 1).padStart(2, "0")}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-semibold leading-6 text-zinc-200 [overflow-wrap:anywhere]">{segment.label}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-                      <Clock3 className="size-3 shrink-0" />
-                      <span className="whitespace-nowrap tabular-nums">{formatTime(segment.start)} — {formatTime(segment.end)}</span>
-                    </div>
-                    {segment.reason && <p className="mt-1 break-words text-[11px] leading-5 text-zinc-500 [overflow-wrap:anywhere]">{segment.reason}</p>}
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
 
-          <div className="mt-3 rounded-lg bg-[#15161a] p-3">
-            <div className="flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-zinc-400"><Scissors className="size-3.5" /> Source-timestamp duration</span><strong>{formatTime(durationOf(activePart))}</strong></div>
-            <div className="my-3 h-px bg-white/8" />
-            <div className="flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-zinc-400"><Sparkles className="size-3.5 text-[#ff6b50]" /> Final duration at 1.25×</span><strong className="text-[#ff806a]">{formatTime(finalDurationOf(activePart))}</strong></div>
-          </div>
-
-          <div className="mt-3 border-t border-white/8 pt-3">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-xs font-semibold text-zinc-300"><Settings2 className="size-3.5" /> Pipeline</span>
-              <Badge variant="outline" className="border-white/10 text-zinc-500">{plan.providerUsed}</Badge>
-            </div>
-            <ol className="mt-3 space-y-2 text-[11px] text-zinc-500">
-              {["Cut source ranges", "Concatenate chronologically", "Build 1080×1920 layout", "Add titles + part number", "Apply video + audio 1.25×"].map((step, index) => (
-                <li key={step} className="flex items-center gap-2"><span className="grid size-4 place-items-center rounded-full bg-white/5 text-[9px] text-zinc-600">{index + 1}</span>{step}</li>
-              ))}
-            </ol>
-          </div>
-          </details>
 
           {renderJob && (
             <div className={`mt-5 rounded-2xl border p-4 ${renderJob.state === "error" ? "border-red-400/20 bg-red-400/5" : renderJob.state === "done" ? "border-emerald-400/20 bg-emerald-400/5" : "border-[#ff4d2e]/20 bg-[#ff4d2e]/5"}`}>
@@ -2105,9 +2074,9 @@ export default function Home() {
           </Button>
 
           {renderJob && ["queued", "rendering"].includes(renderJob.state) && <Button variant="outline" onClick={() => void stopRender(renderJob)} disabled={stoppingRenderIds.includes(renderJob.id)} className="mt-2 w-full rounded-xl border-red-400/30 text-red-300 hover:bg-red-400/10"><Square /> {stoppingRenderIds.includes(renderJob.id) ? "Đang dừng…" : "Dừng render"}</Button>}
-          <button onClick={() => replacePlan(mockPlan({ ...DEFAULT_REQUEST, originalTitle: sourceTitle, transcript, instruction }))} className="mt-3 flex w-full items-center justify-center gap-2 py-2 text-xs text-zinc-600 transition hover:text-zinc-300"><RotateCcw className="size-3.5" /> Reset demo plan</button>
+
           {!isChronological(activePart) && <p className="mt-3 text-xs text-red-300">Timeline is invalid. Regenerate this plan.</p>}
-          <p className="mt-3 text-center text-[10px] leading-5 text-zinc-600">Timestamps luôn giữ theo source gốc. Worker chỉ apply 1.25× sau layout + typography.</p>
+
         </aside>
       </div>
       {workspace === "editor" && <EditorRenderList jobs={editorRenderJobs} stopping={stoppingRenderIds} deleting={deletingRenderIds} deletingAll={deletingAllRenders} error={editorRenderError} notice={editorRenderNotice} origin={WORKER_ORIGIN} onStop={(job) => void stopRender(job)} onDelete={(job) => void deleteEditorRender(job)} onDeleteAll={() => void deleteAllEditorRenders()} />}

@@ -1,3 +1,4 @@
+import {validateMainRangeMetadata} from '../lib/main-ranges.mjs';
 import{validateCustomTeaser}from"../lib/custom-teaser.mjs";
 import {normalizeMusic,validateSpeechActivity} from '../lib/music/settings.mjs';
 import {validateMainAnalysis} from '../lib/auto-cut/analysis.mjs';
@@ -44,5 +45,7 @@ export function validatePlan(plan, source) {
     previousPartEnd = previousEnd;
     validateTeaser(part, source.duration);
     validateCustomTeaser(part);
+    validateMainRangeMetadata(part,source.duration);
+    if(part.mainEdited&&(part.startTrimApplied!==true||part.smartCutApplied!==true))throw Error("Manual main ranges must bypass start trimming and Smart Cut.");
   }
 }

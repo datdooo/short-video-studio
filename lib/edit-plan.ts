@@ -23,6 +23,9 @@ export type Segment = {
 };
 
 export type EditPart = {
+  aiMainRanges?: import('./main-ranges.mjs').AiMainRanges;
+  mainEdited?: boolean;
+  teaserNeedsReselection?: boolean;
   customTeaser?: import("./custom-teaser.mjs").CustomTeaser;
   manualLocked?: boolean;
   teaser?: import("./teaser-hooks.mjs").Teaser;

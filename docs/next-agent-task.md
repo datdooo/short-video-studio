@@ -1,3 +1,28 @@
+# Active checkpoint — canonical Custom Time and gentle music (2026-10-20)
+
+Branch `recovery/visual-dev-reconstructed`, clean starting HEAD
+`3708a4d4c830e010ba6e7ab527515a7e5c91b2a9`. Actual final HEAD: `git log -1`.
+Read `docs/custom-main-ranges.md` and `docs/gentle-music-expansion.md` for this scope.
+H/I/J source is implemented: canonical per-part main segment rows, exact manual
+range application, AI restore checkpoints, lock handling, explicit invalid-teaser
+review, removal of cut-details/Pipeline and Reset demo. F source/import is added;
+actual acquisition:32 new MP3 assets (86 total),28 gentle/general-use,
+212.76MiB library growth and212.71MiB downloaded,0 errors,0 auditions. No audio
+is versioned/bundled. Combined DEV build status is recorded in the scope docs. Earlier A–G/QA evidence is not new functional proof.
+
+User performs manual acceptance. NO tests, QA render/browser automation or live
+AI/YouTube campaigns. Only source/diff review, authorized real music acquisition
+and one final combined DEV package build. No push, new bundle, production,
+credentials, backups or prior source/media/export deletion. Existing app left running.
+Combined DEV build succeeded once (Node22 `npm run package:mac:dev`, exit0).
+App: `release/dev/ShortCut Studio Dev.app`; same final source below plus docs.
+Local log: `/tmp/shortcut-dev-main-ranges-gentle-music-build-20261020.log`.
+No app launch, listening or functional QA. Next action: user manual acceptance;
+do not restart implementation or automatic QA. Pending audit concerns in the
+historical handoff remain unresolved/out of scope.
+
+---
+
 # Latest UI follow-up — remove the entire music information card
 
 2026-10-20, base `124a635`, same DEV branch. Removed the complete selected-track

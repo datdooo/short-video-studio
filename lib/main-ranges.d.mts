@@ -1,0 +1,12 @@
+import type {EditPlan,EditPart,Segment} from './edit-plan';
+export type MainRangeRow={start:string;end:string};
+export type AiMainRanges={version:1;ranges:Pick<Segment,'start'|'end'|'label'|'reason'>[]};
+export const MAX_MAIN_RANGES:number;
+export function sourceTime(value:string):number;
+export function rangeTime(time:number):string;
+export function mainRangeRows(part:EditPart):MainRangeRow[];
+export function inspectMainRanges(plan:EditPlan,partId:number,rows:MainRangeRow[],duration?:number):{errors:string[];error:string;ranges:{start:number;end:number}[]};
+export function captureAiMainRanges<T extends EditPlan>(plan:T,previous?:EditPlan):T;
+export function validateMainRangeMetadata(part:EditPart,duration?:number):void;
+export function applyMainRanges<T extends EditPlan>(plan:T,partId:number,rows:MainRangeRow[],duration?:number,options?:{restore?:boolean}):T;
+export function restoreAiMainRanges<T extends EditPlan>(plan:T,partId:number,duration?:number):T;
