@@ -1,4 +1,23 @@
-# Current task — D/E/F/G delivered; user H acceptance next
+# Current checkpoint — music/ducking/rainbow and later-main hooks
+
+Implementation `186e01a`, preview repair `d9911f4`, on `recovery/visual-dev-reconstructed`, based cleanly on
+`179edf2`. Current user scope adds optional managed BGM, local speech-aware ducking,
+separate hook Rainbow Light Leak and anti-immediate-repetition policy. See
+`docs/background-music.md` and `docs/music-qualification.md` for verified behavior,
+package/bundle status and limitations. Resolve final HEAD with `git log -1`.
+
+No curated Mixkit audio has been auditioned/imported into normal DEV; eight official
+metadata/source links await individual download/local import. Do not label them
+verified instrumental. Historical GPT/Gemini/Muse/hook/visual QA is preserved; no
+fresh provider claim follows from the new policy's fixture tests. User acceptance
+of music taste, speech detection on their footage and light-leak aesthetics remains.
+
+Do not automatically start another feature, rebuild/research from scratch, repeat
+Git recovery, push/merge or touch production. Earlier task sections below are history.
+
+---
+
+# Historical task — D/E/F/G delivered; user H acceptance next
 
 Repository `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
 Branch `recovery/visual-dev-reconstructed`; began clean at `801a544`.

@@ -7,7 +7,7 @@ implementation_head_before_resume: d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6
 initial_worktree: six_inherited_modified_files_at_558ad67
 rc_status: historical_qualified_visual_editor_baseline
 smart_auto_cut_status: A_to_G_implemented_H_user_live_acceptance_pending
-next_task: user_H_live_editorial_acceptance
+next_task: user_music_hook_acceptance_and_SAC_H
 abc_task_base: 74d138d6406eeefc43c6735600f253742632941a
 abc_wiring_commit: 316ea60
 abc_checks: focused_94_pass_full_unit_287_pass_typecheck_lint_pass
@@ -16,7 +16,18 @@ teaser_status: mac_dev_verified_with_external_provenance_and_editorial_limits
 
 # Gemini / Antigravity handoff
 
-## Current D/E/F/G delivery — 2026-10-19
+## Current music / hook checkpoint — 2026-10-19
+
+Implementation `186e01a` + preview repair `d9911f4`, parent `179edf2`, same DEV branch. Read the leading
+`docs/next-agent-task.md`, `docs/background-music.md` and `docs/music-qualification.md`.
+Music is OFF by default, managed outside Git/app; WebRTC VAD is local53KB WASM,
+not a cloud/Whisper download. Rendered-audio preview shares export mix. New hook
+selection excludes the first10 rendered main seconds; old hooks load/flag without
+rewriting queued jobs. New hook policies default rainbow, legacy policies inherit.
+No fresh AI/YouTube campaign or verified instrumental catalog claim; taste/editorial
+and broader VAD acceptance remain with the user. Old phase/SAC scope below is history.
+
+## Historical D/E/F/G delivery — 2026-10-19
 
 Started clean at `801a544`. D `5ff7b83`, E `8e6731c`, F `407ca90`, G `db47b11`,
 final provenance/validation and bounded smoke `feac0c7`. Current technical evidence,

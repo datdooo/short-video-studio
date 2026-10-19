@@ -159,7 +159,7 @@ clones, Python/GPU service or heavyweight framework added.
 
 ## Focused qualification (2026-10-19)
 
-- Final full suite:326/326, TypeScript and lint passed (see music qualification
+- Final full suite:327/327, TypeScript and lint passed (see music qualification
   report for final package results).13 focused music/distance/asset/cache contracts.
 - Actual small local TTS speech→3s pause→speech, silence, loud1kHz tone and loud
   white noise: final speech intervals present, all three non-speech fixtures0s

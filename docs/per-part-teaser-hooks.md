@@ -1,3 +1,17 @@
+# Current hook additions — 2026-10-19
+
+New `selectionPolicy:later-main-v1` excludes the first10 rendered seconds of main
+content (retained non-padding presentation time /1.25, not source gap distance).
+AI/fallback/web input/import use the same permitted intervals; no coherent later
+cue means unavailable and main stays unchanged. Old opening hooks remain loadable,
+are flagged for explicit reselection, and queued snapshots are never rewritten.
+New teaser creation defaults to Rainbow Light Leak; legacy policies retain inherited
+Dip/Flash until explicitly changed. See `background-music.md` and
+`music-qualification.md`. Historical qualifications below are retained, not a fresh
+live-provider verification of these changes.
+
+---
+
 # Per-part teaser hooks
 
 Current DEV: `recovery/visual-dev-reconstructed`, reconstruction base `d1e2cd6`.

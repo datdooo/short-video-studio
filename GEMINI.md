@@ -11,3 +11,5 @@
 - Reuse the existing renderer, VisualStyle normalization and YouTube/yt-dlp stack. No parallel implementations or duplicate persisted style truth.
 - Follow the latest user scope and `docs/next-agent-task.md`; historical RC/hook evidence is preserved. Use `.agents/skills/smart-auto-cut/SKILL.md` for that design; work one coherent checkpoint at a time.
 - Focused tests first; report only checks actually run and distinguish synthetic evidence from real workflows. No unrelated features.
+
+- Music/hook contracts: `docs/background-music.md` and `docs/music-qualification.md`. Music is local/OFF by default; do not reclassify un-auditioned catalog links or silently rewrite legacy/queued hooks.
