@@ -25,12 +25,12 @@ interpreted. There is no import, download or community-template API.
 | Template ID | Text preset | Font ID | Filter | Background | Overlay |
 | --- | --- | --- | --- | --- | --- |
 | `current` | `current` | `auto` | `current` | `current` | `none` |
-| `viral-shorts` | `shorts-bold` | `Roboto Condensed` | `vivid` | `dark-blur` | `grain` |
-| `clean-tutorial` | `clean` | `Inter` | `clean` | `light-blur` | `none` |
-| `farming-jp` | `jp-clean` | `Noto Sans JP` | `nature` | `dark-blur` | `vignette` |
-| `korean-tutorial` | `kr-clean` | `Noto Sans KR` | `clean` | `dark-blur` | `none` |
-| `news` | `news` | `Montserrat` | `contrast` | `dark-gradient` | `rec-hud` |
-| `cinematic-dark` | `minimal` | `Inter` | `muted` | `dark-gradient` | `film-frame` |
+| `viral-shorts` | `shorts-bold` | `Roboto Condensed` | `vivid` | `current` | `grain` |
+| `clean-tutorial` | `clean` | `Inter` | `clean` | `current` | `none` |
+| `farming-jp` | `jp-clean` | `Noto Sans JP` | `nature` | `current` | `vignette` |
+| `korean-tutorial` | `kr-clean` | `Noto Sans KR` | `clean` | `current` | `none` |
+| `news` | `news` | `Montserrat` | `contrast` | `current` | `rec-hud` |
+| `cinematic-dark` | `minimal` | `Inter` | `muted` | `current` | `film-frame` |
 | `bright-social` | `yellow-hook` | `Oswald` | `bright` | `current` | `soft-glow` |
 
 Font IDs deliberately use the existing registry names. General-purpose fonts retain
@@ -114,3 +114,13 @@ snapshot and compatibility evidence and remaining platform limits.
 Background Current preset. Other recipe fields are unchanged. Effective styles
 already saved in plans/history/queued jobs are not migrated; an older Bright
 Social recipe using Soft Gradient may now derive Custom until reselected.
+
+2026-10-20 follow-up: ALL eight templates now reference Background `current`.
+This changes only each recipe's `backgroundPresetId`; no font/text/filter/overlay,
+independent motion setting, or application handler changes. Selecting any template
+applies the existing Current background helper. Manual background customization
+remains available; selecting another template restores Current. Existing effective
+styles in plans/history/jobs are not migrated. Older non-Current-background recipes
+may derive Custom, without changing their stored appearance. Historical phase QA
+above predates this change. No additional tests/QA were run at the user's request.
+DEV build result is recorded in the active handoff.

@@ -1,3 +1,17 @@
+# Active follow-up — all templates use Background Current on selection
+
+2026-10-20, base `d0eae09bc97d6fdc7a399ee64e63ad1abf147cac`, branch
+`recovery/visual-dev-reconstructed`. Every canonical template now references the
+existing Background Current preset. Only recipe background IDs changed; no saved
+plan/history/job migration or change to manual background controls. See
+`docs/visual-templates.md`. User requested no additional tests/QA; manual acceptance
+is pending. DEV package build passed (one Node22 `npm run package:mac:dev`
+invocation, exit 0). App: `release/dev/ShortCut Studio Dev.app`; local build log:
+`/tmp/shortcut-dev-all-templates-current-build-20261020.log`. No app launch, tests,
+render or provider verification performed. No push for this follow-up.
+
+---
+
 # Active follow-up — MP4 metadata output policy + source publication
 
 2026-10-20, base `9ae42dd`, current branch `recovery/visual-dev-reconstructed`.
