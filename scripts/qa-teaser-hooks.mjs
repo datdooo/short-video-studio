@@ -5,7 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { presentationSegments } from "../lib/teaser-hooks.mjs";
+import { presentationSegments, fallbackTeaser } from "../lib/teaser-hooks.mjs";
 import { locateTimelineTime } from "../lib/preview-timeline.mjs";
 import { partCaptions } from "../lib/subtitles.mjs";
 import { resolveRuntime, runtimeEnvironment, prepareRuntimeDirectories, assertRuntimePortsAvailable } from "../desktop/runtime-config.mjs";
@@ -68,15 +68,24 @@ try {
   if(live) assert.ok(outcome.aiVerified,"LIVE AI VERIFICATION BLOCKED: see sanitized provider-outcome.json; fallbacks do not qualify AI.");
   else assert.ok(selected.parts.every(p=>p.teaser.selection==="fallback"));
   assert.deepEqual(selected.parts.map(p=>p.segments),before.map(p=>p.segments));
+  const fractional = structuredClone(selected);
+  for (const part of fractional.parts) {
+    part.segments[1].start += 0.04;
+    part.teaser = fallbackTeaser(part, "Explicit fractional-timestamp regression, not AI selection.", cues);
+  }
+  // Resolve the changed inputs before snapshot assertions; an all-zero placeholder
+  // intentionally causes the renderer to select again, rather than being final.
+  const fractionalSelected = (await call(`/api/sources/${source.id}/teaser-hooks`, { plan: fractional })).plan;
+  const cases = [["legacy",plan],["hooks-none",selected],["hooks-flash",{...selected,visualStyle:{...selected.visualStyle,cutTransition:"flash-white"}}],["hooks-fractional",fractionalSelected]];
   const results=[];
-  for(const [name,input] of [["legacy",plan],["hooks-none",selected],["hooks-flash",{...selected,visualStyle:{...selected.visualStyle,cutTransition:"flash-white"}}]]) {
+  for(const [name,input] of process.argv.includes("--fractional-only") ? cases.slice(-1) : cases) {
     const expected=structuredClone(input.parts);
     const {job}=await call("/api/render",{sourceId:source.id,plan:input});
     input.parts=structuredClone(input.parts); input.parts[0].title="Caller mutated after queueing";
     const result=await done(job.id);
     assert.deepEqual(result.plan.parts,expected,"Queued snapshots include independent hooks and main content");
     for(const output of result.outputs) {
-      const part=result.plan.parts[output.part-1],segments=presentationSegments(part),hasHook=Boolean(part.teaser),duration=hasHook?(part.teaser.end-part.teaser.start+10)/1.25:8;
+      const part=result.plan.parts[output.part-1],segments=presentationSegments(part),hasHook=Boolean(part.teaser),duration=segments.reduce((sum,segment)=>sum+segment.end-segment.start,0)/1.25;
       const media=path.join(dataRoot,"sources",output.url.slice("/files/".length));
       const probe=JSON.parse(run("ffprobe",["-v","error","-show_streams","-show_format","-of","json",media]));
       const v=probe.streams.find(s=>s.codec_type==="video");assert.deepEqual([v.width,v.height],[1080,1920]);

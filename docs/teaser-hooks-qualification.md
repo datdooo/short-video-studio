@@ -1,5 +1,145 @@
 # Per-part teaser follow-up qualification
 
+## Resumed verification — 2026-10-19
+
+Active branch: `recovery/visual-dev-reconstructed`; base `d1e2cd6`.
+Git reconstruction preserved the implementation, not the old local commit
+history or a new feature qualification verdict. Historical results below remain
+valid only for their stated inputs. Current artifacts:
+`.isolation-verification/teaser-resume-20261019/` (local/ignored).
+
+- Current packaged DEV session reload: connected, sharing enabled, no sign-in
+  required. This is auth evidence, not by itself inference evidence.
+- Preserved real GPT inference: `teaser-render-8h2GE3/provider-outcome.json`, both
+  parts AI, model `gpt-6.1-sol`. Preserved ordinary real-video UI snapshot
+  `teaser-finish/real-render-recovery-snapshot.json`: main `[6,95]`/`[101,200]`,
+  hooks `[46,53]`/`[172,179]` (5.6s each at 1.25x); queued before interruption.
+- Preserved Muse roundtrip: user returned original numeric-ID JSON and explicitly
+  confirmed video plus prompt attached at `https://muse.ai/`. Hooks `[8,14.25]`
+  and `[160,166.25]`; self-reported model `Muse Spark`. Ordinary UI accepted both
+  as `external-import`, previewed and queued job `998e3e9a-8496-4538-a0db-55994fa58c74`.
+  That export was interrupted. No authenticated Muse analysis API or independent
+  proof of audiovisual comprehension is claimed.
+- Fresh Gemini and Muse prompts had distinct source/request IDs. User returned
+  both original JSONs and explicitly confirmed video plus prompt attached. Both
+  passed canonical source/nonce/schema/range import and completed two-part exports.
+  The one-hour headless UI waits expired before the responses arrived; acceptance
+  was replayed through the app's same parser/normalizer/Smart Cut/attach functions
+  with saved contexts, not claimed as a live UI paste. Responses were not edited.
+  Exact original-cue review flags clipping in all four external excerpts; one
+  bounded hook-only repair request per provider is pending. This remains a
+  qualification blocker, not a reason to relabel output or silently fix timestamps.
+
+### Native interruption findings and fix
+
+Scoped macOS logs show both Oct18 interruptions (22:11, PID13633; 22:26,
+PID19249) followed `terminate:` → delegate `NSTerminateLater` →
+`replyToApplicationShouldTerminate:YES` → approved normal exit, launchd status0.
+The initiator is unknown. No evidence establishes a renderer crash, OOM, or
+worker failure as the initiator. See `native-termination-evidence.txt`.
+
+Separately, the unmodified worker `run()` was reproduced leaving its detached
+child alive after SIGTERM (`orphan-repro.json`); the QA child was then removed.
+Worker shutdown now aborts active controllers, closes connections, terminates
+only tracked owned children/groups, escalates after2s, and bounds history flush.
+It never searches for or kills unrelated processes. This fixes escaped work
+on shutdown; it does not explain who requested the app quit. A real subprocess
+regression confirms the detached child is reaped. Windows runtime remains untested.
+
+### Current checks
+
+- Final unit suite260/260, no failures/skips (`unit-timing.tap`). Earlier259/259
+  (`unit-permitted.tap`) also passed. Initial sandbox
+  run258/259 failed only because the port-collision test could not bind; permitted
+  rerun passed. Focused lifecycle/import-closure4/4 also passed.
+- Lint and `npx tsc --noEmit`: passed. Lint's initial new-test variable naming
+  error was fixed before the final successful run.
+- `npm run package:mac:dev`: passed, native audit/codesign included; package's new
+  lifecycle module is byte-identical to source. Initial sandbox build hit yt-dlp
+  semaphore permission denial; permitted rebuild passed without a product fix.
+- Updated DEV app launched normally, ports5273/8887, DEV media root retained.
+  Old interrupted jobs restored cancelled; no production operations were done.
+- Fresh GPT UI selected both parts with real `gpt-6.1-sol` requests, previewed,
+  changed visual style without another hook call/video source reset, and queued
+  job `7459b3f2-6bf8-4723-82e5-e0daf285cf4a`. Exact-cue review found a real boundary
+  bug: typed rounded transcript cues replaced precise source cues during guarding
+  (68–75 vs original cue end75.56; 172–179 vs end179.519). That run is **not** a
+  coherent-boundary pass. It was intentionally interrupted for a packaged shutdown
+  test: its detached FFmpeg8549 was reaped, worker logged SIGTERM, snapshot kept.
+  See `packaged-shutdown.json` and `gpt-before-timing-fix/`.
+- Fix: edited transcript text still drives semantic input; available original
+  caption timing separately drives clipping validation/fallback and is provided
+  as bounded `speechBoundaryCues`. Timing is part of cache identity; cached AI is
+  revalidated against it. Typed-only sources retain their approximate timing.
+  New focused regression preserves edits while rejecting rounded-edge clipping
+  and tests timing cache invalidation. Corrected real GPT UI rerun passed.
+- That rerun revealed GPT Part2 video2481 vs expected2483 frames at fractional
+  cuts, while complete audio was retained. Hook-only final video now pads at most
+  three EOF frames and clamps to intended rounded frame count, after fps conversion.
+  Audio and non-hook legacy graphs are unchanged. Rerendering the exact immutable
+  GPT snapshot without new inference produced2483 frames and passed all checks.
+  Before-fix failure remains in `gpt-before-eof-fix/`; no failed check was hidden.
+  Caption setup reuses77 actual automatic cues from the same first200s fixture,
+  after verifying uploaded media bytes equal the preserved fixture. No fresh
+  ASR or independent word-level timing accuracy is claimed.
+
+### Real-video results at this checkpoint
+
+All files are1080×1920 H.264/AAC at30fps. Mux durations include AAC tail padding.
+Black is an existing background preset used to bound render cost. Caption fixtures
+reuse genuine automatic captions from byte-identical uploaded first200s media;
+no caption service was mocked and no new ASR accuracy is claimed.
+
+| Provider / evidence | Main source ranges P1 / P2 | Hook source P1 / P2 | Mux seconds P1 / P2 | Video frames P1 / P2 |
+| --- | --- | --- | --- | --- |
+| GPT authenticated API, `gpt-6.1-sol` |6–95 /102.32–200 |12.60–20.10 /186.28–192.04 |77.216458 /82.769188 |2316 /2483 |
+| Gemini web, self-reported `gemini-2.5-pro` |5–95 /101–200 |11–18 /158–164 |77.600500 /84.013958 |2328 /2520 |
+| Muse web, self-reported `Muse Spark` |1–95 /101–200 |59–66 /160–167 |80.800500 /84.813792 |2424 /2544 |
+
+- Final GPT job `27227b21-1ffc-4f9b-b085-d41c1da1c3ed` is the unchanged snapshot
+  from actual UI Auto job `0720f990-078d-401b-94ff-d1e3febc3e8b`, reexported with
+  the EOF fix and no new inference. Ordinary UI uploaded the real video, loaded
+  preserved captions, selected both AI hooks, previewed, customized style without
+  another selection/source reset, and submitted export; browser errors=[] .
+- Gemini job `aaf98fde-14b0-436e-ad06-8f4607e4dda8`, Muse job
+  `288fb7d0-1df1-496d-9571-da9e66a4e113`: canonical import replay, no GPT fallback.
+  Both are `external-import`; video upload is user-attested, not independent proof
+  of provider AV understanding. No Muse analysis API was invented or called.
+- Each hook remains in its part's main occurrence. Decoded scene comparisons
+  have mean absolute gray-pixel errors0–5.23/255; repeated caption PNG hashes match.
+  Hook boundary reaches Dip Black; exact video frame count and mux duration pass.
+  Decoded audio sample count differs by at most one AAC frame (1024 samples),
+  with nonzero final audio. No independent listening/word alignment is claimed.
+- `playback.json`: six actual editor-history downloads and Chrome playback to EOF
+  passed, no browser/media errors; exported dimensions1080×1920. Contact sheet
+  `real-hooks-contact.png` shows hook vs retained occurrence (cropped comparison).
+- Final source-mode synthetic regression: legacy/None/Flash six MP4 passed at
+  `teaser-render-UvOcj8`. New fractional-only two MP4 passed at
+  `teaser-render-ilygo2`; assertions include exact frames, audio, cues and snapshots.
+  Initial fractional QA setup used a placeholder inputKey and correctly triggered
+  reselection; setup was fixed to resolve before snapshot assertion, not weaken it.
+- Final DEV package native audit/codesign passed (`package-tail.log`), packaged
+  worker byte-matches source. Only DEV was restarted; latest app stays usable.
+
+### Remaining gate (do not declare whole feature qualified)
+
+Original Gemini/Muse outputs are genuine structured selections with same-part
+relevance: material/site preparation, measurement/height reveal. They nevertheless
+clip known source cues when reviewed against precise timings that were not loaded
+in those original UI contexts (e.g. Gemini11s inside10.559–12.599;158s inside
+157.68–160.36). A hook-only repair prompt per provider was prepared with original precise cue
+times and locked main plans; the user was asked to send them. Await original responses; validate with
+`parseExternalHookOnly` then `attachExternalHooks(..., preciseCues)` and rerender
+only changed hook snapshots. Do not repair AI JSON or auto-switch providers.
+New local files `*-hook-repair-context.json` / `*-hook-repair-prompt.txt` preserve
+that context. No second full-plan prompt/video upload is needed in those chats.
+
+Native quit initiator and independent audio/word-boundary review remain unproven.
+Windows execution and a fresh live multi-link batch were not tested in this resume.
+No C–H, Sports Voiceover, production app/data, push, merge or installation work.
+
+## Historical qualification (before reconstruction)
+
 Base: `ea86de7`, isolated `feature/visual-preset-engine` worktree. In-progress
 follow-up; this document supersedes the earlier blanket OAuth blocker. Do not
 infer all-provider completion from the ChatGPT evidence.

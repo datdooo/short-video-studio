@@ -93,3 +93,18 @@ test('known timed speech clipping is retried then explicit fallback; no invented
  const ctx=await setup(t,valid);const result=await ctx.select(plan(),source,{cues:[{start:0,end:4,text:'A complete sentence.'}]});
  assert.equal(result.parts[0].teaser.selection,'fallback');assert.equal(result.parts[1].teaser.selection,'ai');assert.equal(ctx.calls(),3);
 });
+test('rounded edited text does not replace precise source timing; changed timing invalidates cache', async t => {
+ const ctx=await setup(t,args=>{
+   if(args.input.partId===1) assert.equal(args.input.transcript[0].text,'Edited words');
+   return valid(args);
+ });
+ const cues=[{start:1,end:7.25,text:'Edited words'}];
+ const boundaryCues=[{start:0.5,end:4,text:'Original timing'}];
+ const rejected=await ctx.select(plan(),source,{cues,boundaryCues});
+ assert.equal(rejected.parts[0].teaser.selection,'fallback');assert.equal(ctx.calls(),3);
+ const accepted=await ctx.select(plan(),source,{cues,boundaryCues:[{start:1,end:7.25,text:'Original timing'}]});
+ assert.equal(accepted.parts[0].teaser.selection,'ai');assert.equal(ctx.calls(),4);
+ assert.notEqual(rejected.parts[0].teaser.inputKey,accepted.parts[0].teaser.inputKey);
+ await ctx.select(plan(),source,{cues,boundaryCues:[{start:1,end:7.25,text:'Original timing'}]});
+ assert.equal(ctx.calls(),4,'Unchanged timing uses cache');
+});

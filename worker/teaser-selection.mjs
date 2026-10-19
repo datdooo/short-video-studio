@@ -33,13 +33,20 @@ export function hookFailure(error) {
 
 export function createTeaserSelector({ cacheRoot, resolveProvider, frames = async () => [], fingerprint, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const pending = new Map();
-  async function selectPart(part, source, cues, supporting, provider, sourceHash, signal, providerFailure) {
+  async function selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure) {
     const input = hookInput(part, source, cues, supporting);
+    // Edited/rounded transcript text remains authoritative for meaning, while
+    // source caption timing still protects known speech from being split.
+    input.speechBoundaryCues = boundaryCues.slice(0, 20_000).filter(c =>
+      Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start && c.end-c.start <= 10 && String(c.text || '').trim() &&
+      input.allowedRanges.some(r => c.start < r.end && c.end > r.start)
+    ).slice(0, 240).map(({start,end}) => ({start,end}));
     const key = hash({ version: HOOK_PROMPT_VERSION, sourceHash, sourceId: source.id, transcriptHash: hash(source.transcript || ""), ranges: hookRangeKey(part), input, provider: provider?.id || "none", model: provider?.model || "none", frames: "6x512-jpeg-v1" });
     const file = path.join(cacheRoot, `${key}.json`);
     try {
       const cached = JSON.parse(await readFile(file, "utf8"));
       validateTeaser({ ...part, teaser: cached.teaser }, source.duration);
+      checkHookSpeechBoundaries(cached.teaser, boundaryCues);
       if (cached.teaser.inputKey === key && (cached.teaser.selection === "ai" || Date.now() - cached.at < 60_000)) return cached.teaser;
     } catch { /* Missing/invalid cache is not selection evidence. */ }
     if (pending.has(key)) return structuredClone(await pending.get(key));
@@ -52,7 +59,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
           signal?.throwIfAborted();
           try {
             const response = await provider.analyze({ input: { ...input, ...(attempt ? { retry: "Previous selection was invalid or split known speech; recheck all bounds and choose complete timed cues." } : {}) }, images, instructions: HOOK_INSTRUCTIONS, schema: HOOK_SCHEMA, signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(90_000)]) });
-            const value = checkHookSpeechBoundaries(response.value || {}, cues);
+            const value = checkHookSpeechBoundaries(response.value || {}, boundaryCues);
             if (!value || Object.keys(value).some((k) => !HOOK_SCHEMA.required.includes(k))) throw new Error("INVALID_RESPONSE");
             result = { ...value, limitations: [...(Array.isArray(value.limitations) ? value.limitations : []), ...input.missing, ...(!images.length ? ["Text only: visual/action evidence was not analyzed."] : ["Sparse still frames only; audio/video input not verified."])].slice(0, 12),
               version: 1, status: "selected", selection: "ai", provider: provider.id, model: provider.model, promptVersion: HOOK_PROMPT_VERSION, inputKey: key, rangeKey: hookRangeKey(part), transition: "inherit-or-dip-black" };
@@ -72,7 +79,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
           }
         }
       }
-      result ||= fallbackTeaser(part, failure, cues, key);
+      result ||= fallbackTeaser(part, failure, boundaryCues, key);
       try {
         await mkdir(cacheRoot, { recursive: true, mode: 0o700 });
         await writeFile(file, JSON.stringify({ at: Date.now(), teaser: result }), { mode: 0o600 });
@@ -84,7 +91,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
     pending.set(key, task);
     try { return structuredClone(await task); } finally { pending.delete(key); }
   }
-  return async function select(plan, source, { cues = [], supporting = {}, signal } = {}) {
+  return async function select(plan, source, { cues = [], boundaryCues = cues, supporting = {}, signal } = {}) {
     signal?.throwIfAborted();
     let provider, providerFailure;
     try { provider = await resolveProvider(signal); } catch (e) { providerFailure = hookFailure(e); }
@@ -92,7 +99,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
     const result = structuredClone(plan);
     result.teaserPolicy = TEASER_POLICY;
     // Sequential parts bound provider cost/concurrency and never share context.
-    for (const part of result.parts) part.teaser = await selectPart(part, source, cues, supporting, provider, sourceHash, signal, providerFailure);
+    for (const part of result.parts) part.teaser = await selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure);
     return result;
   };
 }

@@ -1,4 +1,46 @@
-# User pause — DEV cleanup, 2026-10-18
+# Active task — per-part hook qualification, 2026-10-19
+
+User resumed hook work after Git reconstruction. DEV is a standalone checkout on
+`recovery/visual-dev-reconstructed`, reconstruction base
+`d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6`. All 369 surviving files were preserved;
+the 21 old local checkpoints were not recovered. Recovery/cleanup is finished.
+The sibling recovery directory's `RECONSTRUCTION.md` records that operation.
+
+Finish only unresolved per-part hooks: fresh valid Gemini web import, Muse's
+actual external workflow, ordinary real-video UI/preview/export/playback and
+native interruption investigation. Reuse preserved real ChatGPT inference
+evidence and fixtures; distinguish current auth from successful inference.
+`docs/teaser-hooks-qualification.md` records provider-specific results. Do not
+repeat research, completed implementation or the historical RC matrix. No C–H,
+Sports Voiceover, production operations, push or merge.
+
+## Resume exactly here
+
+Code fixes and DEV package are coherent: preserve original cue timing separately
+from edited transcript; stop owned detached commands on shutdown; clamp hook-only
+EOF frame count. Unit260/260, lint/typecheck, focused lifecycle, synthetic8MP4,
+and six real-video download/playback checks passed. See current qualification
+section; keep all older failure evidence. Do not repeat those matrices.
+
+GPT real two-part API/UI selection and final snapshot export passed. Gemini/Muse
+fresh original full-plan JSONs imported through the canonical pipeline and rendered,
+but precise-cue review flags their hook boundaries. Their original one-hour UI
+waits timed out; do not call the canonical replay a live UI paste.
+
+Await the user's one bounded hook-only repair response for each provider:
+`.isolation-verification/teaser-resume-20261019/{gemini,muse}-hook-repair-context.json`
+and corresponding prompt files. Preserve original response text. Validate exact
+source/request IDs using `parseExternalHookOnly`, then `attachExternalHooks` with
+that context's precise cues; main/content locks must remain identical. If valid,
+render only those changed snapshots on the current DEV worker; no GPT call/fallback
+for external imports. Record checks and model as self-reported. If still invalid,
+report the precise failure; do not silently change timestamps or repeat indefinitely.
+
+The old native interruptions were approved normal quits; initiator is unknown.
+Owned-child orphaning was separately reproduced and fixed, including packaged
+shutdown evidence. Do not claim that explains who requested the quit.
+
+## Historical cleanup pause — 2026-10-18 (resolved)
 
 Feature development is paused. Read `docs/dev-workspace-cleanup.md` first.
 The DEV files remain, but their `.git` pointer targets metadata in the manually
@@ -7,7 +49,7 @@ initialize Git, prune, discard files or resume feature work automatically.
 Available source and older package code were preserved before disposable cleanup;
 recover/verify the missing Git store separately before ordinary Git work.
 
-# Previous feature task (paused)
+# Previous feature handoff (historical context)
 
 Per-part teaser follow-up is in progress after `ea86de7`. Read
 `docs/teaser-hooks-qualification.md` for current evidence and pending items.
@@ -33,7 +75,8 @@ Smart Auto Cut Checkpoint B (comments + timestamp clustering) is **COMPLETED** (
 These are foundation modules, not integrated multi-signal planning. Inherited B
 fixes were preserved in `37ac963`; C–H remain unimplemented. No Sports Voiceover.
 
-Branch: `feature/visual-preset-engine`.
+Historical branch: `feature/visual-preset-engine`; current branch is
+`recovery/visual-dev-reconstructed`.
 
 # Smart Auto Cut Roadmap
 

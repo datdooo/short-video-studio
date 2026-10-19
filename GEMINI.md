@@ -1,6 +1,7 @@
 # Durable project rules
 
-- Work only in `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`, branch `feature/visual-preset-engine`.
+- Work only in `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`, branch `recovery/visual-dev-reconstructed`.
+- Git was reconstructed at `d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6`; old local checkpoint SHAs are historical and unavailable. Do not repeat recovery. The active task is per-part hook qualification only; see `docs/next-agent-task.md`.
 - Read `docs/agent-handoff.md`, then `docs/next-agent-task.md`; use `docs/agent-architecture-map.md` to locate code. Respect `AGENTS.md` before code changes.
 - Use Node 22: `PATH="/opt/homebrew/opt/node@22/bin:$PATH"`.
 - DEV only: ShortCut Studio Dev, ports 5273/8887, separate DEV Application Support. Follow `docs/dev-isolation.md`.

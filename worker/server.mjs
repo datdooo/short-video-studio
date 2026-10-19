@@ -34,6 +34,7 @@ import { normalizeTitleAnimation } from "../lib/visual-style/animations.mjs";
 import { renderSceneOverlay } from "./scene-overlays.mjs";
 import { removeBatchItem } from "./batch-cleanup.mjs";
 import { createBatchSubmissionQueue } from "./batch-queue.mjs";
+import { createCommandLifecycle } from "./command-lifecycle.mjs";
 import { createMediaLibrary } from "./media-library.mjs";
 import { validatePlan } from "./plan-validation.mjs";
 import { trimPartStart } from "./part-start.mjs";
@@ -66,6 +67,7 @@ const exportNameAllocator = createExportNameAllocator();
 const batches = new Map();
 const batchControllers = new Map();
 const renderControllers = new Map();
+const commandLifecycle = createCommandLifecycle();
 const batchHistoryPath = path.join(dataRoot, "batch-history.json");
 let historyWriteQueue = Promise.resolve();
 function persistBatchHistory() {
@@ -729,13 +731,14 @@ async function planTeasers(plan, source, signal, transcript) {
   else {
     try { const cached = JSON.parse(await readFile(path.join(source.directory, "speech-captions.json"), "utf8")); cues = sourceCaptionTrack(cached, source).cues; } catch { /* No ASR download/recognition is triggered for selection. */ }
   }
+  const sourceBoundaryCues = cues;
   const sourceInput = typeof transcript === "string" ? { ...source, transcript: transcript.slice(0, 100_000) } : source;
   if ((typeof transcript === "string" || !cues.length) && sourceInput.transcript) {
     const lines = transcriptCues(sourceInput.transcript).filter((c) => c.at < source.duration).sort((a,b) => a.at-b.at);
     if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter((c) => c.end > c.start);
   }
   const context = source.sourceContext;
-  return selectTeasers(plan, sourceInput, { cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters } : source, signal });
+  return selectTeasers(plan, sourceInput, { cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters } : source, signal });
 }
 
 function safeName(value) {
@@ -752,6 +755,7 @@ function assertId(value) {
 }
 
 async function run(binary, args, options = {}) {
+  commandLifecycle.assertRunning();
   options.signal?.throwIfAborted();
   if (!binary) throw new Error(options.missingMessage || "Thiếu binary cần thiết.");
   return new Promise((resolve, reject) => {
@@ -762,6 +766,7 @@ async function run(binary, args, options = {}) {
       detached: Boolean(options.signal) && process.platform !== "win32",
       windowsHide: true,
     });
+    commandLifecycle.track(child, Boolean(options.signal) && process.platform !== "win32");
     let killTimer;
     const kill = (signal) => {
       try {
@@ -1164,6 +1169,10 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   // None reuses the exact original path/graph; static scenes need no extra decoder.
   const animated = normalizeTitleAnimation(plan.visualStyle?.titleAnimation) !== "none";
   const segments = presentationSegments(part), finitePresentation = animated || segments !== part.segments;
+  // Fractional hook/cut times cross two fps conversions and image overlays.
+  // Bound only hook presentations to their intended output frame count, filling
+  // at most three EOF frames without shortening the independently finite audio.
+  const hookTail = segments !== part.segments ? `,tpad=stop_mode=clone:stop_duration=0.1,trim=end_frame=${Math.round(presentationDuration(part) / PLAYBACK_RATE * 30)}` : "";
   const transitionFilters = cutTransitionFilters(plan.visualStyle?.cutTransition, segments, partTransitionWindows(part, plan.visualStyle?.cutTransition));
   let titleInputPath = titleOverlayPath;
   if (sceneAsset && !animated && !transitionFilters) {
@@ -1213,7 +1222,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1${overlayFormat}[titled]`,
     ]),
     ...(subtitlesPath ? [`[${overlayInput + 2}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`] : []),
-    `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,${finitePresentation ? "settb=AVTB," : ""}setpts=PTS/${PLAYBACK_RATE}${finitePresentation ? ",fps=30:start_time=0:eof_action=pass" : ""}[vout]`,
+    `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,${finitePresentation ? "settb=AVTB," : ""}setpts=PTS/${PLAYBACK_RATE}${finitePresentation ? ",fps=30:start_time=0:eof_action=pass" : ""}${hookTail}[vout]`,
     `[cuta]atempo=${PLAYBACK_RATE}[aout]`,
   ];
 
@@ -1862,6 +1871,20 @@ const server = createServer(async (request, response) => {
   }
 });
 
+for (const name of ["SIGTERM", "SIGINT"]) {
+  process.once(name, () => {
+    console.log(`Media worker shutdown requested (${name}); stopping owned commands.`);
+    void commandLifecycle.stop({
+      onStart() {
+        for (const controller of [...batchControllers.values(), ...renderControllers.values()]) controller.abort();
+        pendingChatGPTAuth.cancelAll();
+        server.close();
+        server.closeAllConnections();
+      },
+      onStopped: persistBatchHistory,
+    }).finally(() => process.exit(0));
+  });
+}
 await restoreBatchHistory();
 server.listen(port, host, () => {
   process.stdout.write(`\nShortCut media worker listening at http://${host}:${port}\n`);

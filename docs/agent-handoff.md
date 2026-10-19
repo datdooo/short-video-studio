@@ -1,9 +1,9 @@
 ---
 handoff_version: 1
-verified_date: 2026-10-18
+verified_date: 2026-10-19
 repository: /Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev
-branch: feature/visual-preset-engine
-implementation_head: 37ac963
+branch: recovery/visual-dev-reconstructed
+implementation_head_before_resume: d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6
 initial_worktree: six_inherited_modified_files_at_558ad67
 rc_status: qualified_baseline_6ffd2d4_new_teaser_AI_verification_pending
 smart_auto_cut_status: foundation_A_B_and_teaser_extension_present_C_to_H_incomplete
@@ -11,6 +11,24 @@ next_task: finish_teaser_web_and_real_video_qualification
 ---
 
 # Gemini / Antigravity handoff
+
+## Active resume after reconstruction
+
+Git is now standalone in DEV, on the branch/base above. Recovery and cleanup are
+complete; source was preserved, not newly qualified. The old local 21 checkpoints
+remain unavailable; all older SHAs/results below are historical evidence. User
+resumed per-part hooks only on 2026-10-19. Complete Gemini/Muse web import and real
+UI/render/playback qualification; investigate interruptions from actual logs.
+Do not redo recovery/research or expand C–H. Follow `docs/next-agent-task.md`.
+
+Current checkpoint evidence: GPT authenticated two-part UI/API selection and
+packaged export/playback passed; fresh Gemini/Muse original JSONs passed canonical
+import and technical export, but precise-cue clipping remains a qualification gate.
+One hook-only repair request per web provider is pending in the20261019 QA folder.
+Unit260/260, lint/typecheck, synthetic8MP4, real6MP4 playback passed. Three fixes:
+preserve source cue timing, reap owned detached commands, clamp hook EOF frame
+count. Read the current qualification section and exact resume instructions before
+new calls; do not repeat successful matrices or overwrite historical failures.
 
 Latest approved task: finish per-part teaser hooks end to end. Follow
 `docs/teaser-hooks-qualification.md` (supersedes the original blocked status in
@@ -20,7 +38,7 @@ validated external imports, with separate verification status. No inference
 about their functionality follows from GPT success. No unrelated C–H or Sports
 Voiceover. Preserve qualified visual behavior and current work.
 
-## Current return state — supersedes the original snapshot below
+## Earlier return state (historical, before reconstruction)
 
 Codex resumed on 2026-10-18 at `558ad67` with six modified files. Gemini history
 after `14cfb87`: `88908de` RC report/READY verdict, `81d2b09` SourceContext A,

@@ -1,6 +1,7 @@
 # Per-part teaser hooks
 
-Implementation starts at `6ffd2d4`, on the isolated DEV branch/worktree.
+Current DEV: `recovery/visual-dev-reconstructed`, reconstruction base `d1e2cd6`.
+Historical implementation began at `6ffd2d4`; that local Git history is unavailable.
 Current follow-up implementation and evidence: `docs/teaser-hooks-qualification.md`.
 The original blocked qualification below is historical. DEV Keychain saving is
 fixed and ChatGPT live two-part requests now pass; Gemini/Muse require separate
@@ -39,7 +40,7 @@ Documented API capabilities do not establish access/capabilities of this user's
 configured account/model. [Muse docs](https://muse.ai/docs) returned401 during
 inspection; no analysis endpoint or generation-only classification was invented.
 
-## Provider status and selection
+## Original provider status (historical; superseded by follow-up qualification)
 
 | Provider | Actual project integration | Verification |
 | --- | --- | --- |
@@ -47,9 +48,11 @@ inspection; no analysis endpoint or generation-only classification was invented.
 | Gemini | Current `/api/gemini/*` intentionally rejects API use; UI opens Gemini web and imports JSON. Old Antigravity bridge remains disabled in the server. | No working analysis adapter claimed. Official native audio/video capabilities were researched, not tested on a configured model. |
 | Muse | Existing `https://muse.ai/` web/copy-paste workflow and strict plan JSON parser; no configured authenticated analysis API. | No successful request and no analysis API claimed. Not assumed equivalent to GPT/Gemini. |
 
-New real automatic plans pass through the source-specific teaser endpoint after
-existing normalization/smart-boundary cleanup. Semi-Auto imported plans use the
-same endpoint; hook provider may differ from the external main-plan provider.
+New GPT automatic plans pass through the source-specific teaser endpoint after
+existing normalization/smart-boundary cleanup. Gemini/Muse combined imports now
+attach their validated external selections without calling GPT; hook-only refresh
+preserves locked main content. Export rejects stale external inputs and never
+silently substitutes another provider or heuristic for an external import.
 New batch-generated plans request the same selector before queue snapshotting.
 Legacy saved plans, Manual cut and the offline Mock planner do not silently gain
 hooks. Explicit opt-in API selection is supported for deterministic QA fixtures.
@@ -131,10 +134,16 @@ part context, main ranges, bounded analysis text/signals, provider/model, frame
 sampling policy and prompt version. VisualStyle is excluded. Cache hits bypass
 frames/inference; AI results persist, fallbacks have60s TTL. At most256 disk entries;
 private mode0600; read/write failure cannot fabricate AI or discard valid output.
+Known original caption timing is preserved separately from edited/rounded typed
+transcript input: edits drive semantic analysis, original cues guard clipping.
+Bounded `speechBoundaryCues` reach the selector; their timing participates in cache
+identity and cached AI is revalidated. This does not establish word-level timing
+or action coherence. Without original cues, typed timing remains approximate.
+
 Changing analysis inputs invalidates the corresponding part only. Style handlers
 do not call selection. Regenerating with unchanged inputs reuses cache.
 
-## Verification and exact remaining blocker
+## Original qualification (historical; keep results, do not repeat automatically)
 
 Recorded local artifacts (ignored): `.isolation-verification/teaser-hooks/`.
 Full unit suite:243/243, no skips/failures (`final-tests.tap`). Isolation:15/15.
