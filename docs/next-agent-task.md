@@ -1,3 +1,22 @@
+# GitHub source publication checkpoint — 2026-10-20
+
+Source through757320b is preserved. Current user task is to publish the complete
+available reconstructed branch normally to `https://github.com/datdooo/short-video-studio.git`;
+no merge/force-push or history recovery. Two reviewed portable project skills are
+now tracked; runtime/user data, QA payloads, music, builds and bundles stay local.
+
+Outstanding verification was interrupted for this publication. Since757320b, the
+user confirmed a normal native DEV restart; redacted status showed persisted
+connected/sharing state and refreshed expiry, and one real Generate flow reached
+AI teaser output in the packaged UI. The full two-part result, audible music/
+ducking workflow and instrumental audition count were not yet finalized in a
+qualification report. Do not repeat the old assertion that current native auth is
+proven broken, or claim this completes the remaining verification. Read preserved
+local `.isolation-verification/checkpoint-757320b/` evidence if resuming that task.
+No new feature implementation was made during verification/publication.
+
+---
+
 # Current checkpoint — user acceptance and explicit blockers
 
 Branch `recovery/visual-dev-reconstructed`; integration base9c315ec; actual final
