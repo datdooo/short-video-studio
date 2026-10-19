@@ -6,8 +6,8 @@ branch: recovery/visual-dev-reconstructed
 implementation_head_before_resume: d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6
 initial_worktree: six_inherited_modified_files_at_558ad67
 rc_status: historical_qualified_visual_editor_baseline
-smart_auto_cut_status: A_B_wired_C_fixture_verified_D_to_H_unimplemented
-next_task: finish_authorized_D_E_F_G_then_user_H
+smart_auto_cut_status: A_to_G_implemented_H_user_live_acceptance_pending
+next_task: user_H_live_editorial_acceptance
 abc_task_base: 74d138d6406eeefc43c6735600f253742632941a
 abc_wiring_commit: 316ea60
 abc_checks: focused_94_pass_full_unit_287_pass_typecheck_lint_pass
@@ -16,15 +16,16 @@ teaser_status: mac_dev_verified_with_external_provenance_and_editorial_limits
 
 # Gemini / Antigravity handoff
 
-## Active D/E/F/G implementation — 2026-10-19
+## Current D/E/F/G delivery — 2026-10-19
 
-User authorized all remaining implementation checkpoints after A–C, with targeted
-GitHub reuse research and disk efficiency. D `5ff7b83`, E `8e6731c`, F current
-checkpoint wire the shared main/local/hook/external flows; G and final delivery are
-still in progress. Read the leading `docs/next-agent-task.md`; historical scope
-restrictions below are superseded. Do not claim H or live editorial quality passed.
+Started clean at `801a544`. D `5ff7b83`, E `8e6731c`, F `407ca90`, G `db47b11`,
+final provenance/validation and bounded smoke `feac0c7`. Current technical evidence,
+package status, disk accounting and limitations are in
+`docs/smart-auto-cut-defg-qualification.md`. H live/editorial acceptance belongs to
+the user; no new main-selection live GPT quality or Gemini/Muse API is claimed.
+Read the leading `docs/next-agent-task.md`; everything below is historical.
 
-## Current scope — Smart Auto Cut A/B/C only, 2026-10-19
+## Historical scope — Smart Auto Cut A/B/C only, 2026-10-19
 
 Started clean at `74d138d6406eeefc43c6735600f253742632941a`, same standalone recovery
 branch. A/B wiring commit `316ea60`; C is the following checkpoint (`git log -2`).

@@ -12,9 +12,9 @@ ranges. Selection/provenance and presentation order are separate; existing
 renderer, subtitle/seek mapping and snapshot storage are reused. This is not the
 full candidate-generation/fusion engine. The original login blocker is resolved;
 GPT two-part inference and externally imported Gemini/Muse hook repairs have their
-own historical evidence in `docs/teaser-hooks-qualification.md`. This A–C task made
-no live provider requests and does not requalify editorial quality. D–H remain
-incomplete; no Sports Voiceover was added.
+own historical evidence in `docs/teaser-hooks-qualification.md`. D–G are now implemented
+with bounded fixture/source/package checks; H live/editorial acceptance remains the
+user’s next step. See `smart-auto-cut-defg-qualification.md`; no Sports Voiceover was added.
 
 ## Implementation Progress
 
@@ -23,11 +23,11 @@ incomplete; no Sports Voiceover was added.
 | **A** | **SourceContext + metadata/description/chapters foundation** | **COMPLETED** | Normalized schema, yt-dlp metadata extraction, deterministic description timestamp markers, chapter normalization/bounding, source identity cache keys, local-file representation |
 | **B** | **Comments + timestamp clustering** | **COMPLETED** | Bounded best-effort yt-dlp comment retrieval (no media redownload), deterministic M:SS/MM:SS/H:MM:SS mention parsing, conservative dedupe, bounded engagement weighting, fixed-window non-drifting clusters |
 | **C** | Most Replayed acquisition/normalization | **IMPLEMENTED; fixture verified** | Existing yt-dlp info JSON → typed source-time intervals; optional unavailable/error states; source cache enrichment; user live acceptance pending |
-| **D** | Candidate generation + multi-signal score fusion | **UNIMPLEMENTED** | Semantic/visual/audio/heatmap/comment candidate ranking and selection |
-| **E** | Vision + audio integration | **UNIMPLEMENTED** | Sparse candidate frame inspection & silence/energy detection |
-| **F** | Single-video Auto/Semi-Auto integration | **UNIMPLEMENTED** | UI candidate review and Auto pipeline integration |
-| **G** | Multi-link batch integration | **UNIMPLEMENTED** | Per-link isolated state, retry, resume, and bounded concurrency |
-| **H** | Qualification | **UNIMPLEMENTED** | Comprehensive real-world validation and signal ablation |
+| **D** | Candidate generation + multi-signal score fusion | **IMPLEMENTED** | Bounded source recipes, capped heuristic contributions, structured GPT choice, explicit deterministic fallback |
+| **E** | Vision + audio integration | **IMPLEMENTED; sampled** | Existing FFmpeg scene/change, RMS/silence and sparse provider frames; no full-video semantic recognition |
+| **F** | Single-video Auto/Semi-Auto integration | **IMPLEMENTED** | Shared worker orchestration, external context/import, explanation, manual locks and request cancellation |
+| **G** | Multi-link batch integration | **IMPLEMENTED** | Existing queue/history extended with durable per-link stages, source reuse, explicit retry/resume and immutable snapshots |
+| **H** | Live/editorial qualification | **USER ACCEPTANCE PENDING** | D–G technical checks are recorded separately; no new live-provider quality campaign or full ablation |
 
 ---
 
@@ -45,11 +45,11 @@ Checkpoint A implements the canonical normalized source-intelligence foundation 
     metadata: SourceMetadata;
     chapters: Chapter[];
     descriptionMarkers: DescriptionMarker[];
-    transcript?: unknown;      // Unpopulated (future checkpoint)
+    transcript?: unknown;      // Legacy slot; current worker passes timed source cues separately
     comments?: CommentSignals; // Checkpoint B — see below
     heatmap?: HeatmapSignals;  // Checkpoint C — source-time ms / relative replay interest
-    visualSignals?: unknown;   // Unpopulated (Checkpoint E)
-    audioSignals?: unknown;    // Unpopulated (Checkpoint E)
+    visualSignals?: unknown;   // E LocalSignals envelope, revalidated by analyzer/consumer
+    audioSignals?: unknown;    // E LocalSignals envelope, revalidated by analyzer/consumer
     provenance: SourceProvenance;
   }
   ```

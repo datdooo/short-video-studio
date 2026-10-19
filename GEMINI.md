@@ -1,7 +1,7 @@
 # Durable project rules
 
 - Work only in `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`, branch `recovery/visual-dev-reconstructed`.
-- Git was reconstructed at `d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6`; old local checkpoint SHAs are historical and unavailable. Do not repeat recovery. Current scope/status is in `docs/next-agent-task.md`; A/B wiring and C heatmap are implemented with fixture verification, D–H are not.
+- Git was reconstructed at `d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6`; old local checkpoint SHAs are historical and unavailable. Do not repeat recovery. Current scope/status is in `docs/next-agent-task.md`; A–G are implemented; D–G technical checks and user H live/editorial acceptance are separated in `docs/smart-auto-cut-defg-qualification.md`.
 - Read `docs/agent-handoff.md`, then `docs/next-agent-task.md`; use `docs/agent-architecture-map.md` to locate code. Respect `AGENTS.md` before code changes.
 - Use Node 22: `PATH="/opt/homebrew/opt/node@22/bin:$PATH"`.
 - DEV only: ShortCut Studio Dev, ports 5273/8887, separate DEV Application Support. Follow `docs/dev-isolation.md`.

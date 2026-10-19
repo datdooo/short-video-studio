@@ -1,17 +1,24 @@
-# Active task — finish Smart Auto Cut D/E/F/G, 2026-10-19
+# Current task — D/E/F/G delivered; user H acceptance next
 
-User supersedes the earlier A–C-only scope. Started clean at `801a544` on the same
-`recovery/visual-dev-reconstructed` branch. D core/backend `5ff7b83`; E local evidence
-`8e6731c`; F UI/orchestration is this checkpoint. G persistent batch integration and
-final tests/small smoke/one DEV build remain in progress. Do not stop after helpers.
-Reuse record: `docs/smart-auto-cut-reuse.md`. Preserve historical hook/visual QA.
-User performs H editorial/live acceptance. No production, push/merge or unrelated features.
-Disk baseline: df available83,200,000KiB; app1,347,576KiB; QA2,450,268KiB;
-DEV media/cache6,244KiB, sources3,480,604KiB. Preserve existing data/app until new smoke.
+Repository `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Branch `recovery/visual-dev-reconstructed`; began clean at `801a544`.
+D `5ff7b83`, E `8e6731c`, F `407ca90`, G `db47b11`, boundary/provenance and
+smoke hardening `feac0c7`. Resolve final documentation HEAD with `git log -1`.
+Read `docs/smart-auto-cut-defg-qualification.md` for actual checks, limitations,
+app path and the short user acceptance workflow. No further feature is authorized.
+
+Auto, external Semi-Auto and batch share the same source-context/main/hook engine.
+GPT uses the existing adapter; Gemini/Muse remain manual web prompt/import, including
+batch review. Deterministic fallback is labeled and needs approval before batch export.
+New main-selection AI quality is not established by synthetic or historical hook QA.
+
+Preserve historical visual/hook/A–C evidence and recovery backups. Do not repeat
+Git recovery, broad research, full RC matrices or live-provider campaigns. No production,
+Sports Voiceover, push/merge or unrelated work. The earlier sections below are history.
 
 ---
 
-# Current checkpoint — Smart Auto Cut A/B/C, 2026-10-19
+# Historical checkpoint — Smart Auto Cut A/B/C, 2026-10-19
 
 Repository `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
 Branch `recovery/visual-dev-reconstructed`; task started clean at `74d138d6406eeefc43c6735600f253742632941a`.
