@@ -286,3 +286,30 @@ existing speech service (no model download or duplicate recognizer).
 Focused D/E/package-closure checks include an actual4s/64px scene+silence FFmpeg
 fixture (<100KB, removed after test), optional timeout, cancellation and cache reuse.
 Ordinary UI wiring and final delivery are F/G, not established by helpers alone.
+
+## F checkpoint — single-source consumers wired
+
+`worker/auto-cut-workflow.mjs` is the shared orchestration for Auto, external
+context/import and later batch. The editor Generate action calls its source-bound
+endpoint, followed by the existing per-part hook selection. Missing transcript is
+allowed: installed existing Whisper may be reused (<=30min source,60s budget,
+preflight PCM disk estimate); no model is installed automatically. Missing auth or
+malformed main selection produces clearly labeled deterministic main/hooks.
+
+Input mutations/cancel abort a request guard; stale completions cannot replace the
+current plan. Style changes neither invalidate that guard nor enter analysis keys.
+The current plan stays visible during analysis. Custom Time edits lock only changed
+parts; existing rows expose lock/unlock. Backend validation preserves locked ranges.
+Provider input is bounded/sampled and includes timestamped transcript observations;
+repeated static contribution prose is omitted from the model payload.
+
+Gemini/Muse remain manual web providers. Prompt preparation uses the same source
+context/candidate engine and binds analysisKey/sourceId/requestId plus lock snapshot.
+Import validates those and the existing strict JSON/hook schemas; intentional main
+ranges are not automatically reranked or Smart Cut snapped. The documented
+one-second trim applies once to new ranges, not to preserved already-trimmed locks.
+Missing/invalid external hooks require a provider refresh, never silent ChatGPT
+replacement. Provider/model assertions remain self-reported external provenance.
+
+Focused orchestration/import/stale-request/legacy-hook tests use mock inference,
+not a new real-provider qualification. End-to-end UI/package smoke follows G.

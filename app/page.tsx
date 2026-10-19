@@ -89,6 +89,8 @@ import { fitTitlePair } from "@/lib/render-spec";
 import { collectBatchDownloads, createBatchDownloadQueue } from "@/lib/batch-downloads.mjs";
 import { clearSubmittedBatchInput } from "@/lib/batch-submission.mjs";
 import { attachExternalHooks, externalHooksCurrent, buildExternalHookOnlyPrompt, parseExternalHookOnly } from "@/lib/teaser-import.mjs";
+import {createAnalysisRequestGuard} from "@/lib/auto-cut/request.mjs";
+import {lockedParts} from "@/lib/auto-cut/locks.mjs";
 import { buildMusePrompt, parseMusePlan } from "@/lib/muse-plan.mjs";
 import { locateTimelineTime, timelineTimeForSegment } from "@/lib/preview-timeline.mjs";
 
@@ -314,9 +316,13 @@ export default function Home() {
   const [speechModel, setSpeechModel] = useState<{ modelReady: boolean; installing: boolean; downloadedBytes?: number; totalBytes?: number } | null>(null);
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const analysisRequests = useRef(createAnalysisRequestGuard());
+  const [analysisNotice,setAnalysisNotice] = useState("");
+  useEffect(()=>{const guard=analysisRequests.current;return()=>guard.invalidate();},[]);
+  function invalidateAnalysis(){analysisRequests.current.invalidate();setIsAnalyzing(false);setAnalysisNotice("");}
   const [webAiPrompt, setWebAiPrompt] = useState("");
   const [webAiResult, setWebAiResult] = useState("");
-  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider; requestId: string; hookPlan?: EditPlan; mainSignature?: string } | null>(null);
+  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider; requestId: string; analysisKey?:string; supplementalPrompt?:string; lockedPlan?:EditPlan; hookPlan?: EditPlan; mainSignature?: string } | null>(null);
   const [webAiNotice, setWebAiNotice] = useState("");
   const [webAiError, setWebAiError] = useState("");
   const [error, setError] = useState("");
@@ -997,55 +1003,28 @@ export default function Home() {
   }
 
   async function analyze() {
-    setCustomTimes(null);
-    const selectionEpoch = sourceSelectionEpoch.current;
     if (isWebAi) return;
-    setError("");
-    if (!transcript.trim()) {
-      setError(transcriptStatus || "Đang chờ transcript từ YouTube. Video không có phụ đề thì dùng Manual cut hoặc nhập transcript.");
-      return;
-    }
-    if (provider === "chatgpt" && !chatGPTSession?.sharing) {
-      setError("Hãy bấm Continue with ChatGPT và cho phép dùng ChatGPT plan trước.");
-      return;
-    }
-    setIsAnalyzing(true);
+    const selectionEpoch=sourceSelectionEpoch.current,ticket=analysisRequests.current.begin();
+    setError("");setAnalysisNotice("Đang chuẩn bị source…");setIsAnalyzing(true);
     try {
-      if (provider === "mock") {
-        replacePlan(mockPlan({ provider: "mock", originalTitle: sourceTitle, transcript, instruction }));
-        setHasEditPlan(true);
-        setActivePartIndex(0);
-        if (!preparedSource) await prepareSource();
-        return;
-      }
-      const source = preparedSource || await prepareSource();
-      if (!source || selectionEpoch !== sourceSelectionEpoch.current) return;
-      const request = { provider, originalTitle: source.title, transcript, instruction, supplementalPrompt, sourceDuration: source.duration } satisfies AnalyzeRequest;
-      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instructions: "You are a precise short-form video editor. Return only the requested structured edit plan.",
-          input: buildPrompt(request),
-          schema: EDIT_PLAN_SCHEMA,
-        }),
-      });
-      const data = (await response.json()) as { plan?: Omit<EditPlan, "providerUsed" | "render">; model?: string; error?: string };
-      if (!response.ok || !data.plan) throw new Error(data.error || "Không thể tạo edit plan.");
-      if (selectionEpoch !== sourceSelectionEpoch.current) return;
-      const refined = await refineAiPlan(normalizePlan(data.plan, "chatgpt"), source);
-      if (selectionEpoch !== sourceSelectionEpoch.current) return;
-      replacePlan(refined);
-      setHasEditPlan(true);
-      setActivePartIndex(0);
-    } catch (caughtError) {
-      if (selectionEpoch === sourceSelectionEpoch.current) setError(caughtError instanceof Error ? caughtError.message : "Không thể tạo edit plan.");
-    } finally {
-      setIsAnalyzing(false);
-    }
+      if(provider==="mock") {replacePlan(mockPlan({provider:"mock",originalTitle:sourceTitle,transcript,instruction}));setHasEditPlan(true);if(!preparedSource)await prepareSource(ticket.controller.signal);return;}
+      if(provider!=="chatgpt")throw new Error("Auto dùng ChatGPT đã cấu hình; Gemini/Muse dùng prompt và import.");
+      if(effectiveTiming.error)throw new Error(effectiveTiming.error);
+      const source=preparedSource||await prepareSource(ticket.controller.signal);
+      if(!source||!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
+      setAnalysisNotice("Đang phân tích nội dung + scene/audio, chọn main và hook từng part… Có thể dừng mà không mất plan cũ.");
+      const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({transcript:transcript||source.transcript,instruction,supplementalPrompt,...(hasEditPlan?{currentPlan:previewPlan}:{}),...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
+      const data=await response.json() as {plan?:EditPlan;error?:string};
+      if(!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
+      if(!response.ok||!data.plan)throw new Error(data.error||"Không tạo được Smart Auto Cut.");
+      setCustomTimes(null);replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
+      setAnalysisNotice(data.plan.analysis?.method==='deterministic-fallback'?`Fallback xác định · ${data.plan.analysis.fallbackReason}. Chưa kiểm chứng độ hấp dẫn/ngữ nghĩa bằng AI.`:"Đã chọn main + hook; kiểm tra lý do/tín hiệu và chỉnh từng part bên dưới.");
+    }catch(caught){if(analysisRequests.current.isCurrent(ticket))setError(caught instanceof Error?caught.message:"Không tạo được Smart Auto Cut.");}
+    finally{if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);}}
   }
 
   function changeProvider(value: string) {
+    invalidateAnalysis();
     setProvider(value as AiProvider);
     setError("");
   }
@@ -1057,35 +1036,39 @@ export default function Home() {
   async function createWebAiPrompt(hookOnly = false) {
     const selectionEpoch = sourceSelectionEpoch.current;
     if (!isWebAi) return;
+    const ticket=analysisRequests.current.begin();
     setWebAiError(""); setWebAiNotice("");
     setIsAnalyzing(true);
     try {
-      const source = preparedSource || await prepareSource();
+      const source = preparedSource || await prepareSource(ticket.controller.signal);
       if (!source || selectionEpoch !== sourceSelectionEpoch.current) return;
       const content = preparedSource ? transcript : source.transcript || transcript;
-      if (!content.trim() && source.kind !== 'youtube') throw new Error("Chưa có transcript. Nhập transcript có timestamp trong mục Transcript trước; video không có phụ đề có thể dùng Manual cut.");
+
       const request = { provider, originalTitle: source.title, transcript: content, instruction, supplementalPrompt, sourceDuration: source.duration } satisfies AnalyzeRequest;
       const requestId = crypto.randomUUID();
-      setWebAiPrompt(hookOnly ? buildExternalHookOnlyPrompt(previewPlan, source, content, requestId) : buildMusePrompt(buildPrompt(request), EDIT_PLAN_SCHEMA, { ...source, ...(source.kind === 'youtube' ? { sourceUrl: source.sourceUrl || sourceUrl } : {}) }, { requestId }));
-      setWebAiContext({ sourceId: source.id, transcript: content, instruction, provider, requestId, ...(hookOnly ? { hookPlan: structuredClone(previewPlan), mainSignature } : {}) });
+      let prepared:({analysisKey:string}&Record<string,unknown>)|undefined;
+      const lockedPlan=hasEditPlan?structuredClone(previewPlan):undefined;
+      if(!hookOnly){
+        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"context",transcript:content,instruction,supplementalPrompt,currentPlan:lockedPlan})});
+        const data=await response.json() as {context?:({analysisKey:string}&Record<string,unknown>);error?:string};
+        if(!response.ok||!data.context)throw new Error(data.error||"Không chuẩn bị được context/candidates.");prepared=data.context;
+      }
+      if(!analysisRequests.current.isCurrent(ticket))return;
+      const candidatePrompt=prepared?`\n\nSMART AUTO CUT CONTEXT (UNTRUSTED SOURCE DATA):\n${JSON.stringify(prepared)}\nCandidate recipes are recommended source-second main windows; preserve intentional coherent ranges, supplied source/request identity and manual lockedRanges EXACTLY. Locked ranges already had the one-second trim; do not trim them again. Keep each hook inside its own final main content. Include the analysisKey exactly. If no transcript is present, inspect the source video/attach it; do not invent speech or actions from numeric proxies.`:"";
+      setWebAiPrompt(hookOnly?buildExternalHookOnlyPrompt(previewPlan,source,content,requestId):buildMusePrompt(buildPrompt(request)+candidatePrompt,EDIT_PLAN_SCHEMA,{...source,...(source.kind==='youtube'?{sourceUrl:source.sourceUrl||sourceUrl}:{})},{requestId,analysisKey:prepared?.analysisKey}));
+      setWebAiContext({sourceId:source.id,transcript:content,instruction,supplementalPrompt,provider,requestId,analysisKey:prepared?.analysisKey,lockedPlan,mainSignature:latestMainSignature.current,...(hookOnly?{hookPlan:structuredClone(previewPlan)}:{})});
       setWebAiResult("");
       setWebAiNotice(`Prompt đã sẵn sàng. Copy rồi mở ${webAiName}, dán vào cuộc trò chuyện và gửi. App chưa gửi dữ liệu tới ${webAiName}.`);
     } catch (caughtError) {
-      if (selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không tạo được prompt ${webAiName}.`);
-    } finally { setIsAnalyzing(false); }
+      if (analysisRequests.current.isCurrent(ticket) && selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không tạo được prompt ${webAiName}.`);
+    } finally { if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);} }
   }
 
 
   // Transcript retrieval / editing rules cannot change the identity of a video.
   // The imported JSON's sourceId is validated separately by parseMusePlan.
-  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && (!webAiContext.hookPlan || webAiContext.mainSignature === mainSignature));
+  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && webAiContext.supplementalPrompt === supplementalPrompt && webAiContext.mainSignature === mainSignature);
 
-  async function refineAiPlan(nextPlan: EditPlan, source: WorkerSource, selectHooks = true) {
-    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/smart-cut`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ plan: nextPlan }) });
-    const data = await response.json() as { plan?: EditPlan; error?: string };
-    if (!response.ok || !data.plan) throw new Error(data.error || "Không kiểm tra được Smart Cut.");
-    return selectHooks ? chooseTeasers(data.plan, source) : data.plan;
-  }
 
   async function chooseTeasers(nextPlan: EditPlan, source: WorkerSource) {
     if (["gemini", "muse"].includes(nextPlan.providerUsed) && nextPlan.teaserPolicy === TEASER_POLICY) {
@@ -1172,6 +1155,7 @@ export default function Home() {
 
   async function applyWebAiResult() {
     const selectionEpoch = sourceSelectionEpoch.current;
+    const ticket=analysisRequests.current.begin();
     setWebAiError(""); setWebAiNotice("");
     setIsAnalyzing(true);
     try {
@@ -1179,23 +1163,28 @@ export default function Home() {
       if (!webAiPromptIsCurrent || !webAiContext) throw new Error("Source, transcript, quy tắc hoặc provider đã đổi. Tạo prompt mới trước khi nhập JSON.");
       const context = webAiContext;
       const identity = hookIdentity;
-      const imported = context.hookPlan ? null : parseMusePlan(webAiResult, preparedSource, webAiName, { requestId: context.requestId });
-      const refined = context.hookPlan || await refineAiPlan(normalizePlan(imported!, provider), preparedSource, false);
+      const imported = context.hookPlan ? null : parseMusePlan(webAiResult, preparedSource, webAiName, { requestId: context.requestId,analysisKey:context.analysisKey,lockedPlan:context.lockedPlan });
+      const normalized=context.hookPlan||normalizePlan(imported!,provider);
+      const refined=context.hookPlan||{...normalized,parts:normalized.parts.map(p=>({...p,smartCutApplied:true}))};
       const selections = context.hookPlan ? parseExternalHookOnly(webAiResult, preparedSource, context.requestId, context.hookPlan) : imported!.hookSelections || [];
-      const nextPlan = await attachExternalHooks(refined, selections, preparedSource, context.transcript, context.provider, sourceCaptions?.cues);
+      let nextPlan = await attachExternalHooks(refined, selections, preparedSource, context.transcript, context.provider, sourceCaptions?.cues);
+      if(context.analysisKey&&!context.hookPlan){
+        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,plan:nextPlan})});
+        const data=await response.json() as {plan?:EditPlan;error?:string};if(!response.ok||!data.plan)throw new Error(data.error||"Import context đã thay đổi.");nextPlan=data.plan;
+      }
       if (latestHookIdentity.current !== identity) throw new Error("Nội dung/provider đã đổi trong lúc kiểm tra. Tạo prompt mới; kết quả cũ không được áp dụng.");
-      if (selectionEpoch !== sourceSelectionEpoch.current) return;
+      if (!analysisRequests.current.isCurrent(ticket) || selectionEpoch !== sourceSelectionEpoch.current) return;
       setCustomTimes(null);
       replacePlan(nextPlan);
       setHasEditPlan(true);
       setActivePartIndex(0);
       setRenderJob(null);
       setError("");
-      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}, hook external-import đã kiểm tra range, bỏ 1 giây và kiểm tra Smart Cut. Có thể sửa Custom Time trước khi render.`);
+      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}, hook external-import đã kiểm tra range, bỏ 1 giây theo contract; giữ nguyên lựa chọn main có chủ ý. Có thể sửa Custom Time trước khi render.`);
     } catch (caughtError) {
-      if (selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không nhập được JSON ${webAiName}.`);
+      if (analysisRequests.current.isCurrent(ticket) && selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không nhập được JSON ${webAiName}.`);
     }
-    finally { setIsAnalyzing(false); }
+    finally { if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);} }
   }
 
   function applyManualPlan() {
@@ -1220,7 +1209,7 @@ export default function Home() {
   function handleVideoUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    sourceSelectionEpoch.current += 1;
+    sourceSelectionEpoch.current += 1; invalidateAnalysis();
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
     setLocalVideoUrl(URL.createObjectURL(file));
     setLocalFileName(file.name);
@@ -1307,7 +1296,7 @@ export default function Home() {
     }
   }
 
-  async function prepareSource() {
+  async function prepareSource(signal?:AbortSignal) {
     const selectionEpoch = sourceSelectionEpoch.current;
     setError("");
     if (!workerHealth?.ok) {
@@ -1328,17 +1317,18 @@ export default function Home() {
     try {
       const response = sourceMode === "youtube"
         ? await fetch(`${WORKER_ORIGIN}/api/sources/youtube`, {
-            method: "POST",
+            method: "POST", signal,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url: sourceUrl.trim() }),
           })
         : await fetch(`${WORKER_ORIGIN}/api/sources/upload?filename=${encodeURIComponent(localFile!.name)}`, {
-            method: "POST",
+            method: "POST", signal,
             headers: { "Content-Type": localFile!.type || "application/octet-stream", "X-Filename": encodeURIComponent(localFile!.name) },
             body: localFile,
           });
       const data = (await response.json()) as { source?: WorkerSource; error?: string };
       if (!response.ok || !data.source) throw new Error(data.error || "Không chuẩn bị được source.");
+      signal?.throwIfAborted();
       if (selectionEpoch !== sourceSelectionEpoch.current) return null;
       setPreparedSource(data.source);
       setCustomTimes(null);
@@ -1459,11 +1449,11 @@ export default function Home() {
         </div>
         <details className="mt-4 rounded-xl border border-white/8 p-4">
           <summary className="cursor-pointer text-sm text-zinc-300">Quy tắc chia part · xem / sửa</summary>
-          <Textarea aria-label="Quy tắc chia part hàng loạt" value={instruction} onChange={(event) => setInstruction(event.target.value)} className="studio-textarea studio-transcript mt-3" />
+          <Textarea aria-label="Quy tắc chia part hàng loạt" value={instruction} onChange={(event) => {invalidateAnalysis();setInstruction(event.target.value);}} className="studio-textarea studio-transcript mt-3" />
           <p className="mt-2 text-xs text-zinc-500">Dùng chung quy tắc với tab chỉnh từng video. Thay đổi chỉ áp dụng cho lượt chạy mới.</p>
         </details>
         <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">Prompt bổ sung (không bắt buộc)</label>
-        <Textarea id="batch-extra-prompt" value={supplementalPrompt} onChange={(event) => setSupplementalPrompt(event.target.value)} className="studio-textarea mt-2 min-h-[80px]" placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…" />
+        <Textarea id="batch-extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…" />
         <label className="mt-3 flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => setSubtitleSettings((current) => ({ ...current, enabled: event.target.checked }))} /> Auto Subtitle cho lượt chạy mới · dùng style ở tab chỉnh từng video</label>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {isWebAi ? `${webAiName} không hỗ trợ tự động` : "ChatGPT"}</label>
@@ -1539,7 +1529,7 @@ export default function Home() {
             </Badge>
           </div>
 
-          <Tabs value={sourceMode} onValueChange={(value) => { sourceSelectionEpoch.current += 1; setSourceMode(value as "youtube" | "local"); setPreparedSource(null); setRenderJob(null); setHasEditPlan(false); setTranscript(""); }} className="mt-6">
+          <Tabs value={sourceMode} onValueChange={(value) => { sourceSelectionEpoch.current += 1; invalidateAnalysis(); setSourceMode(value as "youtube" | "local"); setPreparedSource(null); setRenderJob(null); setHasEditPlan(false); setTranscript(""); }} className="mt-6">
             <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1" style={{ height: 40 }}>
               <TabsTrigger value="youtube" className="min-w-0 rounded-lg text-xs" style={{ height: 32, paddingBlock: 0, fontSize: 12, lineHeight: '16px' }}>YouTube</TabsTrigger>
               <TabsTrigger value="local" className="min-w-0 rounded-lg text-xs" style={{ height: 32, paddingBlock: 0, fontSize: 12, lineHeight: '16px' }}>Local video</TabsTrigger>
@@ -1548,7 +1538,7 @@ export default function Home() {
               <label htmlFor="youtube-url" className="field-label">YouTube URL</label>
               <div className="relative mt-2">
                 <Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
-                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { sourceSelectionEpoch.current += 1; setSourceUrl(event.target.value); setPreparedSource(null); setRenderJob(null); setHasEditPlan(false); setTranscript(""); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
+                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { sourceSelectionEpoch.current += 1; invalidateAnalysis(); setSourceUrl(event.target.value); setPreparedSource(null); setRenderJob(null); setHasEditPlan(false); setTranscript(""); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
               </div>
               <p className="mt-2 text-[11px] leading-5 text-zinc-600">
                 {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
@@ -1673,17 +1663,17 @@ export default function Home() {
                   <label htmlFor="transcript" className="field-label">Timestamped transcript</label>
                   <span className="text-[10px] text-zinc-600">{transcript.length.toLocaleString()} chars</span>
                 </div>
-                <Textarea id="transcript" value={transcript} onChange={(event) => setTranscript(event.target.value)} className="studio-textarea studio-transcript mt-2 font-mono text-[12px] leading-5" placeholder="00:00 Transcript..." />
+                <Textarea id="transcript" value={transcript} onChange={(event) => {invalidateAnalysis();setTranscript(event.target.value);}} className="studio-textarea studio-transcript mt-2 font-mono text-[12px] leading-5" placeholder="00:00 Transcript..." />
                 <p className="mt-2 text-xs leading-5 text-zinc-500">{transcriptStatus}</p>
               </details>
               <details className="rounded-xl border border-white/8 p-3">
                 <summary className="cursor-pointer text-xs font-semibold text-zinc-300">Quy tắc chia part · xem / sửa</summary>
                 <label htmlFor="instruction" className="field-label mt-3 block">Your instruction</label>
-                <Textarea id="instruction" value={instruction} onChange={(event) => setInstruction(event.target.value)} className="studio-textarea studio-transcript mt-2" placeholder="Ví dụ: bỏ intro, Part 2 mở bằng sự cố..." />
+                <Textarea id="instruction" value={instruction} onChange={(event) => {invalidateAnalysis();setInstruction(event.target.value);}} className="studio-textarea studio-transcript mt-2" placeholder="Ví dụ: bỏ intro, Part 2 mở bằng sự cố..." />
               </details>
               <div>
                 <label htmlFor="extra-prompt" className="field-label">Prompt bổ sung (không bắt buộc)</label>
-                <Textarea id="extra-prompt" value={supplementalPrompt} onChange={(event) => setSupplementalPrompt(event.target.value)} className="studio-textarea mt-2 min-h-[80px]" placeholder="Ví dụ: Bỏ đoạn đầu, tập trung cảnh sửa xe, Part 2 ưu tiên cảnh chạy thử." />
+                <Textarea id="extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Ví dụ: Bỏ đoạn đầu, tập trung cảnh sửa xe, Part 2 ưu tiên cảnh chạy thử." />
                 <p className="mt-2 text-[11px] leading-5 text-zinc-500">Kết hợp với quy tắc mặc định khi tạo prompt mới. Để trống để giữ nguyên quy tắc.</p>
               </div>
               {isWebAi ? <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[.025] p-3">
@@ -1708,6 +1698,10 @@ export default function Home() {
               </div> : <Button onClick={analyze} disabled={isAnalyzing} className="h-12 w-full rounded-xl bg-[#ff4d2e] font-bold text-white shadow-[0_12px_30px_rgba(255,77,46,.18)] hover:bg-[#ff6247]">
                 {isAnalyzing ? <><Loader2 className="animate-spin" /> Building edit plan…</> : <><WandSparkles /> Generate 2-part plan</>}
               </Button>}
+              {isAnalyzing&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice("Đã dừng phân tích; plan cũ được giữ.");}} className="w-full text-xs">Dừng phân tích</Button>}
+              {analysisNotice&&<p role="status" className="text-xs leading-5 text-zinc-400">{analysisNotice}</p>}
+              {previewPlan.analysis&&<details className="rounded-xl border border-white/10 p-3 text-xs"><summary className="cursor-pointer">Lý do chọn · {previewPlan.analysis.method} · {previewPlan.analysis.provider}</summary><p className="mt-2 text-zinc-400">Điểm heuristic, không phải xác suất. Replay không phải retention/lượt xem.</p>{previewPlan.analysis.parts.map(p=><div key={p.id} className="mt-2"><strong>Part {p.id}</strong><p>{p.reason}</p><p className="text-zinc-400">{Object.entries(p.signals).map(([name,s])=>`${name}: ${s.contribution.toFixed(3)}`).join(" · ")||"Không có tín hiệu nội dung; fallback theo cấu trúc."}</p></div>)}{previewPlan.analysis.limitations.map((line,i)=><p key={i} className="mt-1 text-zinc-500">{line}</p>)}</details>}
+
               <p className="text-center text-[10px] leading-5 text-zinc-600">Không muốn đăng nhập? Chọn Mock hoặc chuyển sang Manual cut.</p>
             </TabsContent>
 
@@ -1881,11 +1875,13 @@ export default function Home() {
                   {boundary === "start" ? "Bắt đầu" : "Kết thúc"}
                   <Input aria-label={`Part ${index + 1} ${boundary}`} value={time[boundary]} onChange={(event) => {
                     const value = event.target.value;
+                    invalidateAnalysis();
                     setCustomTimes((current) => (current || partTimes(effectiveTiming.plan)).map((item, itemIndex) => itemIndex === index ? { ...item, [boundary]: value } : item));
                     setRenderJob(null);
                   }} className="studio-input mt-1 w-full font-mono text-xs" />
                 </label>)}
               </div>
+              <Button size="sm" variant="ghost" className="mt-2 h-7 text-[11px]" onClick={()=>{invalidateAnalysis();const locked=lockedParts(previewPlan)[index];setCustomTimes(null);setPlan(current=>({...current,parts:previewPlan.parts.map((p,i)=>i===index?{...p,manualLocked:!locked}:p)}));}}>{lockedParts(previewPlan)[index]?"Mở khóa main để phân tích lại":"Khóa main khi phân tích lại"}</Button>
             </div>)}
             {effectiveTiming.error && <p role="alert" className="mt-3 text-xs leading-5 text-red-300">{effectiveTiming.error} Preview giữ mốc hợp lệ cũ; render bị chặn đến khi sửa đúng.</p>}
           </div>}

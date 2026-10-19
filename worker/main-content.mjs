@@ -1,6 +1,6 @@
 import { normalizeLocalSignals } from '../lib/auto-cut/local-signals.mjs';
 import { createHash } from 'node:crypto';
-import { generateMainCandidates, deterministicMainSelection, selectionToPlan, MAIN_SCHEMA, MAIN_INSTRUCTIONS, lockedParts, assertMainLocks } from '../lib/auto-cut/main-content.mjs';
+import { generateMainCandidates, deterministicMainSelection, selectionToPlan, MAIN_SCHEMA, MAIN_INSTRUCTIONS, modelSelectionInput, lockedParts, assertMainLocks } from '../lib/auto-cut/main-content.mjs';
 import { createSharedOperations } from './shared-operation.mjs';
 import { createAnalysisCache } from './analysis-cache.mjs';
 import { validatePlan } from './plan-validation.mjs';
@@ -41,7 +41,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
           textOnly = !images.length;
           for (let attempt=0; attempt<2; attempt++) {
             try {
-              const response = await provider.analyze({ input:stableInput, images: attempt ? [] : images, schema:MAIN_SCHEMA, instructions:MAIN_INSTRUCTIONS, signal:bounded, maxTokens:2400 });
+              const response = await provider.analyze({ input:modelSelectionInput(stableInput), images: attempt ? [] : images, schema:MAIN_SCHEMA, instructions:MAIN_INSTRUCTIONS, signal:bounded, maxTokens:2400 });
               textOnly ||= Boolean(attempt);
               plan = selectionToPlan(prepared,response.value,{ currentPlan:options.currentPlan,provider:provider.id,model:provider.model });
               validatePlan(plan,source); break;

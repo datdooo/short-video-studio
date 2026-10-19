@@ -1,3 +1,16 @@
+# Active task — finish Smart Auto Cut D/E/F/G, 2026-10-19
+
+User supersedes the earlier A–C-only scope. Started clean at `801a544` on the same
+`recovery/visual-dev-reconstructed` branch. D core/backend `5ff7b83`; E local evidence
+`8e6731c`; F UI/orchestration is this checkpoint. G persistent batch integration and
+final tests/small smoke/one DEV build remain in progress. Do not stop after helpers.
+Reuse record: `docs/smart-auto-cut-reuse.md`. Preserve historical hook/visual QA.
+User performs H editorial/live acceptance. No production, push/merge or unrelated features.
+Disk baseline: df available83,200,000KiB; app1,347,576KiB; QA2,450,268KiB;
+DEV media/cache6,244KiB, sources3,480,604KiB. Preserve existing data/app until new smoke.
+
+---
+
 # Current checkpoint — Smart Auto Cut A/B/C, 2026-10-19
 
 Repository `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.

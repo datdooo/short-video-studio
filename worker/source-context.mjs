@@ -25,7 +25,8 @@ export function sourceContextFor(source) {
 export async function saveSourceContext(directory, context) {
   const file = path.join(directory, 'source.json');
   const current = JSON.parse(await readFile(file, 'utf8'));
-  await atomicJson(file, { ...current, sourceContext: context });
+  const preserved = Object.fromEntries(["visualSignals","audioSignals"].filter(k=>context[k]===undefined&&current.sourceContext?.[k]!==undefined).map(k=>[k,current.sourceContext[k]]));
+  await atomicJson(file, { ...current, sourceContext: {...context,...preserved} });
 }
 
 async function atomicJson(file, value) {

@@ -41,6 +41,8 @@ import { trimPartStart } from "./part-start.mjs";
 import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
 import { smartCutPlan } from "./smart-cut.mjs";
+import { createAutoCutWorkflow } from "./auto-cut-workflow.mjs";
+import { requireDiskSpace } from "./analysis-cache.mjs";
 import { createLocalSignalAnalyzer } from "./local-signals.mjs";
 import { createMainContentSelector } from "./main-content.mjs";
 import { createSourceContextService, sourceContextFor, saveSourceContext } from "./source-context.mjs";
@@ -740,6 +742,8 @@ function protectedAnalysisKeys() {
   return keys;
 }
 
+const analyzeSource = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers});
+
 async function mainAnalysisInputs(source, body, signal) {
   if (body.currentPlan) {
     if (body.currentPlan.analysis?.sourceId && body.currentPlan.analysis.sourceId !== source.id) throw new Error("Plan belongs to another source.");
@@ -754,9 +758,17 @@ async function mainAnalysisInputs(source, body, signal) {
   if (!cues.length) {
     try { cues = sourceCaptionTrack(JSON.parse(await readFile(path.join(source.directory, "speech-captions.json"), "utf8")), source).cues; } catch { /* Missing cached speech is normal. */ }
   }
+  if (!cues.length && !body.transcript?.trim() && source.hasAudio && source.duration <= 1800) {
+    try {
+      const status = await speech.status();
+      if(status.binaryReady&&status.modelReady){await requireDiskSpace(dataRoot,256*1024*1024+Math.ceil(source.duration*32000));cues=(await speech.captions(source,AbortSignal.any([signal,AbortSignal.timeout(60000)]))).cues;}
+    } catch { signal?.throwIfAborted(); /* Use available local/metadata evidence; no model is downloaded. */ }
+  }
+  const boundaryCues = cues;
+  if(body.captionCues)cues=sourceCaptionTrack(body.captionCues,source).cues;
   const lines = typeof body.transcript === "string" ? transcriptCues(body.transcript.slice(0, 100000)).filter(c => c.at < source.duration) : [];
   if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter(c => c.end > c.start);
-  return { context, options: { cues, local, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
+  return { context, options: { cues, boundaryCues:boundaryCues.length?boundaryCues:cues, local, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
 }
 
 async function planTeasers(plan, source, signal, transcript) {
@@ -1629,7 +1641,7 @@ const server = createServer(async (request, response) => {
       response.end();
       return;
     }
-    if (requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut|teaser-hooks)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
+    if (requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut|teaser-hooks|auto-cut)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
       const origin = request.headers.origin;
       let local = !origin;
       try { const url = new URL(origin); local = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname); } catch { /* Missing/native origin only. */ }
@@ -1722,8 +1734,9 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/youtube") {
       const body = await readJson(request);
-      const source = await importYouTube(String(body.url || "").trim());
-      sendJson(request, response, 201, { source });
+      const controller=new AbortController(),abort=()=>controller.abort(new Error("Source import cancelled"));response.once("close",abort);
+      try{const source=await importYouTube(String(body.url||"").trim(),controller.signal);sendJson(request,response,201,{source});}
+      finally{response.removeListener("close",abort);}
       return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/speech/status") {
@@ -1739,10 +1752,8 @@ const server = createServer(async (request, response) => {
       response.once("close", abort);
       try {
         const body = await readJson(request), source = await loadSource(mainSource[1]);
-        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(420000)]);
-        const { context, options } = await mainAnalysisInputs(source,body,signal);
-        if (body.mode === "context") sendJson(request,response,200,{ context:await mainContent.prepare(source,context,options) });
-        else sendJson(request,response,200,{ plan:await mainContent.select(source,context,options) });
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(600000)]);
+        sendJson(request,response,200,await analyzeSource(source,body,signal));
       } finally { response.removeListener("close",abort); }
       return;
     }
