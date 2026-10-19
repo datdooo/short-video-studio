@@ -1,7 +1,7 @@
 import type { Segment } from "../edit-plan";
-export type CutTransitionId = "none" | "dip-black" | "flash-white";
+export type CutTransitionId = "none" | "dip-black" | "flash-white" | "rainbow-light-leak" | "vr-light-leak-v2";
 export type CutTransitionWindow = { boundary: number; startFrame: number; cutFrame: number; endFrame: number; halfFrames: number; presetId?: CutTransitionId | "rainbow-light-leak" | "vr-light-leak-v2" };
-export type CutTransitionPreset = { id: CutTransitionId; label: string; durationMs: number; color: string; behavior: "none" | "linear-dip" };
+export type CutTransitionPreset = { id: CutTransitionId; label: string; durationMs: number; color: string; behavior: "none" | "smooth-dip" | "rainbow-screen" | "warm-cloud-screen" };
 export const CUT_TRANSITION_IDS: readonly CutTransitionId[];
 export function normalizeCutTransition(id?: unknown): CutTransitionId;
 export function getCutTransition(id?: unknown): CutTransitionPreset;

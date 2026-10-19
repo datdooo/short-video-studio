@@ -1,13 +1,13 @@
-import { getCutTransition, resolveCutTransitions } from "../lib/visual-style/cut-transitions.mjs";
-import { PLAYBACK_RATE, RENDER_FPS } from "../lib/render-config.mjs";
+import { normalizeCutTransition, resolveCutTransitions } from "../lib/visual-style/cut-transitions.mjs";
+import { foregroundTransitionFilters } from "../lib/visual-style/foreground-transitions.mjs";
 
-// Preset colors and timing come only from trusted mappings. No audio, timestamp
-// or user-supplied expression enters this adapter.
-export function cutTransitionFilters(id, segments, windows = resolveCutTransitions(id, segments)) {
-  if (!windows.length) return null;
-  const seconds = (frame) => (frame / RENDER_FPS * PLAYBACK_RATE).toFixed(9);
-  return "format=rgb24," + (windows.filter(w=>!["rainbow-light-leak","vr-light-leak-v2"].includes(w.presetId)).flatMap((window) => { const preset = getCutTransition(window.presetId || id); return [
-    `fade=t=out:st=${seconds(window.startFrame)}:d=${seconds(window.halfFrames)}:color=${preset.color}:enable='between(t,${seconds(window.startFrame)},${seconds(window.cutFrame)})'`,
-    `fade=t=in:st=${seconds(window.cutFrame)}:d=${seconds(window.halfFrames)}:color=${preset.color}:enable='between(t,${seconds(window.cutFrame)},${seconds(window.endFrame)})'`,
-  ]; }).join(",") || "null");
+// Foreground RGBA ONLY, after source geometry and before background/text/scene
+// composition. The caller supplies the one local sprite input, never a URL or
+// arbitrary expression. Output windows and source-clock conversion are shared
+// with preview; the renderer now supplies clockRate:1 on its final-output clock.
+export function cutTransitionFilters(id, segments, windows = resolveCutTransitions(id, segments), {input="mainUnlit",output="main",spriteInput=2,clockRate=1}={}) {
+  const ordinary=normalizeCutTransition(id);
+  const active=windows.map(w=>({...w,presetId:normalizeCutTransition(w.presetId||ordinary)})).filter(w=>w.presetId!=="none");
+  if(!active.length)return null;
+  return foregroundTransitionFilters(input,output,active,spriteInput,1080,1350,clockRate);
 }

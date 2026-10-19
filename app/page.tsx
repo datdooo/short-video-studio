@@ -1,6 +1,8 @@
 "use client";
 
-import {hookNeedsReselection,validateTeaser} from "@/lib/teaser-hooks.mjs";
+import {hookNeedsReselection,validateTeaser,hookRangeKey} from "@/lib/teaser-hooks.mjs";
+import {createPreviewDecks} from "@/lib/preview-decks.mjs";
+import {PreviewBackground} from "@/components/preview-background";
 import {MusicPanel} from '@/components/music-panel';
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,7 +45,7 @@ import { applyFilterPreset, applyFilterIntensity } from "@/lib/visual-style/filt
 import { browserFilterStyle } from "@/lib/visual-style/filters.mjs";
 import { TextAnimationPanel } from "@/components/text-animation-panel";
 import { TeaserEditor } from "@/components/teaser-editor";
-import { CutTransitionPanel, CutTransitionVeil, ForegroundLightLeak } from "@/components/cut-transition-panel";
+import { CutTransitionPanel, ForegroundTransition } from "@/components/cut-transition-panel";
 import { presentationSegments, partTransitionWindows, TEASER_POLICY } from "@/lib/teaser-hooks.mjs";
 import { titleAnimationPreviewCss } from "@/lib/visual-style/animations.mjs";
 import { normalizeVisualStyle } from "@/lib/visual-style/normalize.mjs";
@@ -385,12 +387,17 @@ export default function Home() {
   const [previewError, setPreviewError] = useState("");
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const previewSegmentIndex = useRef(0);
-  const backgroundVideoRef = useRef<HTMLVideoElement>(null);
+  const deckVideos=useRef<(HTMLVideoElement|null)[]>([null,null]);
+  const activeDeckSlot=useRef(0);
+  const [visibleDeck,setVisibleDeck]=useState(0),[previewBuffering,setPreviewBuffering]=useState(false);
+  const decks=useRef<ReturnType<typeof createPreviewDecks>|null>(null);
+  const bindDeckA=useCallback((v:HTMLVideoElement|null)=>{deckVideos.current[0]=v;if(activeDeckSlot.current===0)previewVideoRef.current=v;},[]);
+  const bindDeckB=useCallback((v:HTMLVideoElement|null)=>{deckVideos.current[1]=v;if(v)v.muted=true;if(activeDeckSlot.current===1)previewVideoRef.current=v;},[]);
   const previewPlayingRef = useRef(false);
   const musicPlaybackControl = useRef<{play:()=>void;pause:()=>void}|null>(null);
   const registerMusicPlayback = useCallback((handle:{play:()=>void;pause:()=>void}|null)=>{musicPlaybackControl.current=handle;},[]);
   function changeWorkspace(next:"editor"|"batch"|"storage"){
-    if(next!=="editor"){previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}
+    if(next!=="editor"){previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}
     setWorkspace(next);
   }
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
@@ -415,7 +422,7 @@ export default function Home() {
   const previewCaptions = useMemo(() => partCaptions(previewPlan.captionCues?.cues || subtitleCues, activePart, previewVisualStyle.subtitle), [previewPlan.captionCues, subtitleCues, activePart, previewVisualStyle.subtitle]);
   const previewCaption = previewCaptions.find((cue) => previewCurrentTime * PLAYBACK_RATE >= cue.start && previewCurrentTime * PLAYBACK_RATE < cue.end);
   const partDuration = finalDurationOf(activePart);
-  const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined })), cues: sourceCaptions?.cues });
+  const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined, customTeaser: undefined })), cues: sourceCaptions?.cues });
   const latestMainSignature = useRef(mainSignature);
   useEffect(() => { latestMainSignature.current = mainSignature; }, [mainSignature]);
   const hookIdentity = JSON.stringify({ sourceId: preparedSource?.id, provider, transcript, instruction, mainSignature });
@@ -454,64 +461,28 @@ export default function Home() {
   }, [titleFitInput, legacyTitlePair]);
   const { original: originalTitleFit, part: partTitleFit } = measuredTitlePair?.input === titleFitInput ? measuredTitlePair.pair : legacyTitlePair;
   const previewScale = previewWidth / 1080;
+  // Match FFmpeg's even-size scale before its foreground pad/crop.
+  const foregroundSourceWidth=preparedSource?.width||sourceSize.width,foregroundSourceHeight=preparedSource?.height||sourceSize.height;
+  const scaledForegroundWidth=Math.max(2,Math.trunc(foregroundSourceWidth*FOREGROUND_SCALE/2)*2);
+  const scaledForegroundHeight=Math.max(2,Math.round(foregroundSourceHeight*scaledForegroundWidth/foregroundSourceWidth/2)*2);
   const titleShineStyle = { maskImage: 'linear-gradient(to right, transparent, #000 50%, transparent)', maskRepeat: 'no-repeat', maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`, maskPosition: `${((1080 - TITLE_SHINE_WIDTH) * (previewCurrentTime % TITLE_SHINE_SECONDS) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0` };
   const previewVideoUrl = useMemo(
     () => (sourceMode === "local" && localVideoUrl) || (preparedSource ? `${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media` : ""),
     [localVideoUrl, preparedSource, sourceMode],
   );
 
-  useEffect(() => {
-    if (!hasEditPlan || !previewVideoUrl) return;
-    const video = previewVideoRef.current;
-    const background = backgroundVideoRef.current;
-    if (!video) return;
-    video.pause();
-    previewPlayingRef.current = false;
-    setIsPreviewPlaying(false);
-    background?.pause();
-    previewSegmentIndex.current = 0;
-    video.currentTime = playbackSegments[0]?.start || 0;
-    video.playbackRate = PLAYBACK_RATE;
-    video.preservesPitch = true;
-    if (background) {
-      background.currentTime = video.currentTime;
-      background.playbackRate = PLAYBACK_RATE;
-    }
-    const timer = window.setTimeout(() => setPreviewCurrentTime(0), 0);
-    return () => window.clearTimeout(timer);
-  }, [hasEditPlan, playbackSegments, previewVideoUrl]);
-
-  useEffect(() => {
-    let frame = 0;
-    const tick = () => {
-      const video = previewVideoRef.current;
-      if (video && hasEditPlan && previewPlayingRef.current && !video.seeking) {
-        const segments = playbackSegments;
-        const current = segments[previewSegmentIndex.current];
-        if (!video.paused) updatePreviewClock();
-        const complete = current && video.currentTime >= current.end - 0.025;
-        if (complete) {
-          const next = segments[previewSegmentIndex.current + 1];
-          if (next) {
-            previewSegmentIndex.current += 1;
-            video.currentTime = next.start;
-            if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = next.start;
-            void video.play().catch(() => setPreviewError("Bấm Play để tiếp tục footage bổ sung."));
-            void backgroundVideoRef.current?.play().catch(() => undefined);
-          } else {
-            video.pause();
-            backgroundVideoRef.current?.pause();
-            previewPlayingRef.current = false; setIsPreviewPlaying(false);
-          }
-        }
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  // The source media supplies the running clock across retained ranges.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasEditPlan, playbackSegments]);
+  useEffect(()=>{
+    const videos=deckVideos.current;if(!previewVideoUrl||!videos[0]||!videos[1])return;
+    if(!hasEditPlan){activeDeckSlot.current=0;previewVideoRef.current=videos[0];videos[0].muted=false;videos[0].playbackRate=1;if(!videos[0].getAttribute('src'))videos[0].src=previewVideoUrl;videos[1].pause();queueMicrotask(()=>setVisibleDeck(0));return;}
+    previewPlayingRef.current=false;
+    const controller=createPreviewDecks({videos:videos as HTMLVideoElement[],url:previewVideoUrl,segments:playbackSegments,
+      onActive:(slot,index)=>{activeDeckSlot.current=slot;previewVideoRef.current=videos[slot];previewSegmentIndex.current=index;setVisibleDeck(slot);},
+      onClock:setPreviewCurrentTime,onBuffer:setPreviewBuffering,onError:message=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();setPreviewError(message);},
+      onEnded:()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();}});
+    decks.current=controller;let frame=0;const tick=()=>{controller.tick();frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);
+    queueMicrotask(()=>setIsPreviewPlaying(false));
+    return()=>{cancelAnimationFrame(frame);controller.dispose();decks.current=null;};
+  },[hasEditPlan,playbackSegments,previewVideoUrl]);
 
   useEffect(() => {
     if (sourceMode !== "youtube" || !sourceUrl.trim() || !workerHealth?.ok) return;
@@ -1117,6 +1088,27 @@ export default function Home() {
     return result.plan;
   }
 
+  // A custom proposal is not installed until the per-part editor confirms it.
+  // Reuse the canonical selector; timestamps never enter this request path.
+  async function resolveCustomTeaser(partId:number,input:string,signal:AbortSignal) {
+    const source=preparedSource;
+    if(!source)throw new Error("Chuẩn bị nguồn video trước khi chọn teaser.");
+    const signature=latestMainSignature.current,sourceId=source.id;
+    const captionCues=sourceCaptions?.sourceId===sourceId?sourceCaptionTrack(sourceCaptions,source):previewPlan.captionCues;
+    const requestPlan={...previewPlan,parts:previewPlan.parts.map(p=>p.id===partId?{...p,teaser:undefined,customTeaser:undefined}:p),...(captionCues?{captionCues}:{})};
+    const response=await fetch(`${WORKER_ORIGIN}/api/sources/${sourceId}/teaser-hooks`,{
+      method:'POST',signal,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({plan:requestPlan,partId,transcript:transcript.slice(0,100_000),...(input?{customInstruction:input}:{})})
+    });
+    const result=await response.json() as {plan?:EditPlan;error?:string};
+    if(!response.ok||!result.plan)throw new Error(result.error||"Không chọn được teaser.");
+    if(signal.aborted||signature!==latestMainSignature.current||subtitleSourceRef.current!==sourceId)throw new Error("Nguồn/main đã thay đổi. Chuẩn bị teaser lại.");
+    const part=result.plan.parts.find(p=>p.id===partId);
+    if(!part?.teaser)throw new Error("Provider không trả kết quả teaser cho part này.");
+    validateTeaser(part,source.duration);
+    return part.teaser;
+  }
+
   async function reselectHooks(){
     if(!preparedSource)return;if(isWebAi){await createWebAiPrompt(true);return;}
     const ticket=analysisRequests.current.begin(),signature=latestMainSignature.current;setIsAnalyzing(true);setError('');
@@ -1270,7 +1262,7 @@ export default function Home() {
     setPreviewError("");
     if (!previewPlayingRef.current) {
       try {
-        if (hasEditPlan) {
+        if (hasEditPlan && !decks.current) {
           const last = playbackSegments.at(-1);
           if (last && previewSegmentIndex.current === playbackSegments.length - 1 && video.currentTime >= last.end - 0.05) {
             previewSegmentIndex.current = 0;
@@ -1280,36 +1272,31 @@ export default function Home() {
         }
         previewPlayingRef.current = true; setIsPreviewPlaying(true);
         musicPlaybackControl.current?.play();
-        await video.play();
-        if (backgroundVideoRef.current) {
-          backgroundVideoRef.current.currentTime = video.currentTime;
-          backgroundVideoRef.current.playbackRate = video.playbackRate;
-          await backgroundVideoRef.current.play().catch(() => undefined);
-        }
+        if(decks.current)await decks.current.play();else await video.play();
+
       } catch {
         previewPlayingRef.current = false; setIsPreviewPlaying(false);
         setPreviewError("Trình duyệt chưa phát được video source này.");
       }
     } else {
       previewPlayingRef.current = false; setIsPreviewPlaying(false);
-      video.pause();
+      decks.current?.pause();video.pause();
       musicPlaybackControl.current?.pause();
-      backgroundVideoRef.current?.pause();
     }
   }
 
   const seekPreview = useCallback((value: number) => {
     const video = previewVideoRef.current;
     if (!video || !Number.isFinite(value)) return;
+    if(decks.current){decks.current.seek(value);return;}
     let sourceTime = value;
     if (hasEditPlan) {
       const position = locateTimelineTime(playbackSegments, value);
       previewSegmentIndex.current = position.index;
       sourceTime = position.sourceTime;
-      if (previewPlayingRef.current) { void video.play(); void backgroundVideoRef.current?.play(); }
+      if (previewPlayingRef.current) { void video.play(); }
     }
     video.currentTime = sourceTime;
-    if (backgroundVideoRef.current) backgroundVideoRef.current.currentTime = sourceTime;
     setPreviewCurrentTime(value);
   }, [hasEditPlan, playbackSegments]);
 
@@ -1330,13 +1317,9 @@ export default function Home() {
     if (!video) return;
     let timelineTime = video.currentTime;
     if (hasEditPlan) {
-      timelineTime = timelineTimeForSegment(playbackSegments, previewSegmentIndex.current, video.currentTime);
+      timelineTime = decks.current?.clock() ?? timelineTimeForSegment(playbackSegments, previewSegmentIndex.current, video.currentTime);
     }
     setPreviewCurrentTime(timelineTime);
-    const background = backgroundVideoRef.current;
-    if (background && Math.abs(background.currentTime - video.currentTime) > 0.3) {
-      background.currentTime = video.currentTime;
-    }
   }
 
   async function prepareSource(signal?:AbortSignal) {
@@ -1799,20 +1782,19 @@ export default function Home() {
           >
             <VideoFilterDefinition filter={previewVisualStyle.filter} id="studio-preview-video-color" />
             {previewVideoUrl ? (
-              <video ref={backgroundVideoRef} className="absolute inset-0 size-full object-cover" style={{ filter: `${videoColorFilter} blur(${40 * previewScale}px)`, opacity: previewVisualStyle.background.mode === "source-blur" ? previewVisualStyle.background.opacity : 0 }} src={previewVideoUrl} muted preload="metadata" playsInline />
+              <PreviewBackground video={previewVideoRef} filter={`${videoColorFilter} blur(${40 * previewScale}px)`} opacity={previewVisualStyle.background.mode === "source-blur" ? previewVisualStyle.background.opacity : 0} />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
             )}
             {previewVisualStyle.background.mode !== "source-blur" && <div data-studio-background className="absolute inset-0" style={backgroundCss(previewVisualStyle.background)} />}
-            <SceneOverlays overlays={previewVisualStyle.overlays} />
-            <CutTransitionVeil value={previewVisualStyle.cutTransition} windows={transitionWindows} time={previewCurrentTime} />
             <div className="absolute inset-x-0 isolate overflow-hidden" style={{ top: `${FOREGROUND_Y / 1920 * 100}%`, height: `${FOREGROUND_HEIGHT / 1920 * 100}%` }}>
               {previewVideoUrl ? (
-                <video
-                  ref={previewVideoRef}
+                <>{[0,1].map(slot=><video key={slot}
+                  ref={slot===0?bindDeckA:bindDeckB}
+                  data-preview-deck={slot} data-preview-active={visibleDeck===slot}
                   crossOrigin="anonymous"
                   className="native-preview-video cursor-pointer"
-                  style={{ width: `${(preparedSource?.width || sourceSize.width) * FOREGROUND_SCALE * previewScale}px`, height: 'auto', filter: videoColorFilter }}
+                  style={{ width: `${scaledForegroundWidth*previewScale}px`, height: `${scaledForegroundHeight*previewScale}px`, filter: videoColorFilter, visibility:visibleDeck===slot?'visible':'hidden' }}
                   src={previewVideoUrl}
                   preload="metadata"
                   playsInline
@@ -1821,24 +1803,25 @@ export default function Home() {
                     const duration = Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : preparedSource?.duration || 0;
                     setPreviewDuration(duration);
                     setSourceSize({ width: event.currentTarget.videoWidth || 1920, height: event.currentTarget.videoHeight || 1080 });
-                    if (hasEditPlan) {
+                    if (hasEditPlan && event.currentTarget===previewVideoRef.current) {
                       event.currentTarget.currentTime = playbackSegments[0]?.start || 0;
                       event.currentTarget.playbackRate = PLAYBACK_RATE;
                     }
                     setPreviewError("");
                   }}
-                  onTimeUpdate={updatePreviewClock}
-                  onPlay={() => { previewPlayingRef.current = true; setIsPreviewPlaying(true); }}
+                  onTimeUpdate={event=>{if(event.currentTarget===previewVideoRef.current)updatePreviewClock();}}
+                  onPlay={event => { if(event.currentTarget===previewVideoRef.current){previewPlayingRef.current = true; setIsPreviewPlaying(true);} }}
                   onPause={() => { if (!hasEditPlan) { previewPlayingRef.current = false; setIsPreviewPlaying(false); } }}
-                  onEnded={() => { if (!hasEditPlan) { previewPlayingRef.current = false; setIsPreviewPlaying(false); } backgroundVideoRef.current?.pause(); }}
-                  onError={() => setPreviewError("Không phát được source. Hãy bấm Chuẩn bị source lại hoặc thử video MP4/H.264.")}
-                />
+                  onEnded={() => { if (!hasEditPlan) { previewPlayingRef.current = false; setIsPreviewPlaying(false); }  }}
+                  onError={event => {if(event.currentTarget===previewVideoRef.current)setPreviewError("Không phát được source. Hãy bấm Chuẩn bị source lại hoặc thử video MP4/H.264.");}}
+                />)}</>
               ) : (
                 <div className="absolute inset-0 bg-[linear-gradient(125deg,#111_0%,#572317_42%,#ef6b32_43%,#241716_47%,#0b0c0f_100%)]" />
               )}
-              <ForegroundLightLeak windows={transitionWindows} time={previewCurrentTime} width={preparedSource?.width || sourceSize.width} height={preparedSource?.height || sourceSize.height} />
+              <ForegroundTransition value={previewVisualStyle.cutTransition} windows={transitionWindows} time={previewCurrentTime} width={preparedSource?.width || sourceSize.width} height={preparedSource?.height || sourceSize.height} />
               {previewVideoUrl && !isPreviewPlaying && <button type="button" onClick={() => void togglePreview()} aria-label="Play preview" style={{ zIndex: transitionWindows.length ? 30 : undefined }} className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
             </div>
+            <SceneOverlays overlays={previewVisualStyle.overlays} />
             <div data-title-animation={previewVisualStyle.titleAnimation || "none"} className="pointer-events-none absolute inset-0 z-10" style={titleAnimationPreviewCss(previewVisualStyle.titleAnimation, previewCurrentTime, previewScale)}>
             <div className="absolute inset-x-[8.35%] z-10 flex items-end justify-center text-center" style={{ top: TITLE_LAYOUT.original.top * previewScale, height: (TITLE_LAYOUT.original.bottom - TITLE_LAYOUT.original.top) * previewScale, clipPath: `inset(-${20 * previewScale}px)` }}>
               <p
@@ -1879,7 +1862,7 @@ export default function Home() {
               {isPreviewPlaying ? <Pause className="size-4 fill-current" /> : <Play className="ml-0.5 size-4 fill-current" />}
             </button>
             <button type="button" aria-label="Tua tới 5 giây" title="→ · Tới 5 giây" disabled={!previewVideoUrl} onClick={() => seekPreview(Math.min(timelineDuration, previewCurrentTime + 5))}><ArrowRight className="size-3" /></button>
-            <span>{formatTime(previewCurrentTime)}</span>
+            <span>{formatTime(previewCurrentTime)}</span>{previewBuffering&&<span role="status" className="text-xs text-amber-200">Đang giải mã đoạn kế…</span>}
             <input
               className="preview-seek"
               type="range"
@@ -1979,10 +1962,22 @@ export default function Home() {
           })} />,
           }} />
           {hookNeedsReselection(activePart)&&<p role="status" className="mt-3 text-xs text-amber-300">Hook cũ lặp ngay phần mở đầu. Chọn lại hook rõ ràng để áp dụng khoảng cách 10 giây; snapshot đã queue được giữ nguyên.</p>}
-          {hasEditPlan&&<TeaserEditor part={activePart} cues={previewPlan.captionCues?.cues||subtitleCues} onChange={part=>setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?part:p)}))} />}
-          {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Chọn lại hook part này · giữ nguyên main</button>}
+          {hasEditPlan&&previewPlan.parts.map(part=><div key={`${preparedSource?.id}:${part.id}`} hidden={part.id!==activePart.id}>
+            <TeaserEditor part={part} active={workspace==='editor'&&part.id===activePart.id} sourceUrl={previewVideoUrl} cues={previewPlan.captionCues?.cues||subtitleCues}
+              onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
+              onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();}}
+              onChange={next=>{invalidateAnalysis();setPlan(current=>{
+                try{const base={...current,parts:current.parts.map(trimPartStart)};
+                  const effective=customTimes?applyPartTimes(base,customTimes,preparedSource?.duration):base;
+                  const target=effective.parts.find(p=>p.id===next.id);
+                  if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
+                  return {...current,teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser}:p)};
+                }catch{return current;}
+              });}}/>
+          </div>)}
+          {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing||Boolean(activePart.customTeaser)} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Chọn lại hook part này · giữ nguyên main</button>}
           <label className="mt-4 block text-xs">Hook → Main<select aria-label="Hook transition" className="studio-input mt-2 w-full" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Legacy · theo transition đã lưu</option><option value="vr-light-leak-v2">Warm Cloud Light Leak · video only</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>
-          <MusicPanel previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}} />
+          <MusicPanel previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}} />
           <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}</summary>
             <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => {

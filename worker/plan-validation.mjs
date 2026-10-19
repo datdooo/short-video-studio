@@ -1,3 +1,4 @@
+import{validateCustomTeaser}from"../lib/custom-teaser.mjs";
 import {normalizeMusic,validateSpeechActivity} from '../lib/music/settings.mjs';
 import {validateMainAnalysis} from '../lib/auto-cut/analysis.mjs';
 import { PLAYBACK_RATE } from '../lib/render-config.mjs';
@@ -42,5 +43,6 @@ export function validatePlan(plan, source) {
     }
     previousPartEnd = previousEnd;
     validateTeaser(part, source.duration);
+    validateCustomTeaser(part);
   }
 }

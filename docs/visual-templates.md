@@ -31,7 +31,7 @@ interpreted. There is no import, download or community-template API.
 | `korean-tutorial` | `kr-clean` | `Noto Sans KR` | `clean` | `dark-blur` | `none` |
 | `news` | `news` | `Montserrat` | `contrast` | `dark-gradient` | `rec-hud` |
 | `cinematic-dark` | `minimal` | `Inter` | `muted` | `dark-gradient` | `film-frame` |
-| `bright-social` | `yellow-hook` | `Oswald` | `bright` | `soft-gradient` | `soft-glow` |
+| `bright-social` | `yellow-hook` | `Oswald` | `bright` | `current` | `soft-glow` |
 
 Font IDs deliberately use the existing registry names. General-purpose fonts retain
 the existing bundled Japanese/Korean fallback stacks. Grain is static; the existing
@@ -109,3 +109,8 @@ ordinary VisualStyle, requiring no knowledge of template names.
 
 See [phase7-qualification.md](phase7-qualification.md) for measured render, browser,
 snapshot and compatibility evidence and remaining platform limits.
+
+2026-10-20 recipe update: newly selecting Bright Social reuses the existing
+Background Current preset. Other recipe fields are unchanged. Effective styles
+already saved in plans/history/queued jobs are not migrated; an older Bright
+Social recipe using Soft Gradient may now derive Custom until reselected.

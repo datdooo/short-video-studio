@@ -41,8 +41,9 @@ export function hookFailure(error) {
 
 export function createTeaserSelector({ cacheRoot, resolveProvider, frames = async () => [], fingerprint, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   const pending = new Map();
-  async function selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, maxAttempts = 2) {
+  async function selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, maxAttempts = 2, customInstruction) {
     const input = hookInput(part, source, cues, supporting);
+    if(customInstruction)input.customTeaserRequest=customInstruction;
     // Edited/rounded transcript text remains authoritative for meaning, while
     // source caption timing still protects known speech from being split.
     input.speechBoundaryCues = boundaryCues.slice(0, 20_000).filter(c =>
@@ -67,7 +68,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           signal?.throwIfAborted();
           try {
-            const response = await provider.analyze({ input: { ...input, ...(attempt ? { retry: "Previous selection was invalid or split known speech; recheck all bounds and choose complete timed cues." } : {}) }, images, instructions: HOOK_INSTRUCTIONS, schema: HOOK_SCHEMA, signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(90_000)]) });
+            const response = await provider.analyze({ input: { ...input, ...(attempt ? { retry: "Previous selection was invalid or split known speech; recheck all bounds and choose complete timed cues." } : {}) }, images, instructions: HOOK_INSTRUCTIONS+(customInstruction?"\nUSER CUSTOM REQUEST is a strict footage-search constraint, not a request to create speech/images. Select ONLY an excerpt matching customTeaserRequest in this retained part. If the requested event cannot be established with available speech/visual evidence, return unavailable with a clear reason. Never substitute an unrelated attractive moment. Explain the observed match in reason/relation. Sparse images cannot prove the largest catch or a complete action without evidence.":""), maxTokens:3000, schema: HOOK_SCHEMA, signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(90_000)]) });
             const value = validateHookResponse(response.value);
             if(value.start===null&&value.end===null&&typeof value.reason==='string'&&value.reason.trim())return unavailableHook(part,value.reason);
             validateEditorialEvidence(value,{candidates:input.transcriptCandidates,images,cues});
@@ -92,7 +93,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
           }
         }
       }
-      result ||= fallbackTeaser(part, failure, boundaryCues, key);
+      result ||= customInstruction?unavailableHook(part,"Không tìm được Custom Teaser có bằng chứng phù hợp ("+failure+"). Teaser hiện tại được giữ; không thay bằng fallback."):fallbackTeaser(part, failure, boundaryCues, key);
       try {
         await mkdir(cacheRoot, { recursive: true, mode: 0o700 });
         await writeFile(file, JSON.stringify({ at: Date.now(), teaser: result }), { mode: 0o600 });
@@ -104,7 +105,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
     pending.set(key, task);
     try { return structuredClone(await task); } finally { pending.delete(key); }
   }
-  return async function select(plan, source, { cues = [], boundaryCues = cues, supporting = {}, signal, targetPartId, maxAttempts = 2 } = {}) {
+  return async function select(plan, source, { cues = [], boundaryCues = cues, supporting = {}, signal, targetPartId, maxAttempts = 2, customInstruction } = {}) {
     signal?.throwIfAborted();
     let provider, providerFailure;
     try { provider = await resolveProvider(signal); } catch (e) { providerFailure = hookFailure(e); }
@@ -113,7 +114,7 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
     if(plan.teaserPolicy===undefined&&!plan.parts.some(p=>p.teaser)&&plan.hookTransition===undefined)result.hookTransition="vr-light-leak-v2";
     result.teaserPolicy = TEASER_POLICY;
     // Sequential parts bound provider cost/concurrency and never share context.
-    for (const part of result.parts) if(targetPartId===undefined||targetPartId===part.id)part.teaser = await selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, Math.min(2,Math.max(1,maxAttempts)));
+    for (const part of result.parts) if((targetPartId===undefined||targetPartId===part.id)&&(!part.customTeaser||customInstruction))part.teaser = await selectPart(part, source, cues, boundaryCues, supporting, provider, sourceHash, signal, providerFailure, Math.min(2,Math.max(1,maxAttempts)),customInstruction);
     return result;
   };
 }

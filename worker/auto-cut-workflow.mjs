@@ -1,6 +1,6 @@
 import {externalPlanAnalysis,modelSelectionInput} from '../lib/auto-cut/main-content.mjs';
 import {assertMainLocks,lockedParts} from '../lib/auto-cut/locks.mjs';
-import {isLaterHookPolicy,fallbackTeaser,TEASER_POLICY} from '../lib/teaser-hooks.mjs';
+import {isLaterHookPolicy,fallbackTeaser,TEASER_POLICY,hookRangeKey,unavailableHook} from '../lib/teaser-hooks.mjs';
 import {validatePlan} from './plan-validation.mjs';
 // One orchestration path for single-source Auto, external context/import and batch.
 export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
@@ -20,9 +20,10 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
     }
     let plan=await mainContent.select(source,context,options);
     if(body.captionCues)plan.captionCues=structuredClone(body.captionCues);
+    for(const part of plan.parts){const previous=body.currentPlan?.parts?.find(p=>p.id===part.id);if(previous?.customTeaser){part.customTeaser=structuredClone(previous.customTeaser);part.teaser=hookRangeKey(previous)===hookRangeKey(part)?structuredClone(previous.teaser):unavailableHook(part,'Main đã đổi; Custom Teaser cần kiểm tra lại. Không tự chọn đoạn thay thế.');}}
     if(!lockedParts(body.currentPlan).every(Boolean)){
       if(plan.analysis?.method==='deterministic-fallback'&&/provider-/.test(plan.analysis.fallbackReason||'')){
-        plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"vr-light-leak-v2"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>({...p,teaser:p.manualLocked&&p.teaser?p.teaser:fallbackTeaser(p,'AI main selection unavailable; deterministic same-part hook, editorial relevance unverified.',options.boundaryCues||options.cues,plan.analysis.analysisKey)}))};
+        plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"vr-light-leak-v2"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>({...p,teaser:(p.customTeaser||p.manualLocked)&&p.teaser?p.teaser:fallbackTeaser(p,'AI main selection unavailable; deterministic same-part hook, editorial relevance unverified.',options.boundaryCues||options.cues,plan.analysis.analysisKey)}))};
       }else plan=await selectHooks(plan,{...source,sourceContext:context},signal,body.transcript);
     }
     validatePlan(plan,source);assertMainLocks(plan,body.currentPlan);signal?.throwIfAborted();return{plan};

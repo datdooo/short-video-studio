@@ -1,14 +1,14 @@
 import { normalizeTitleAnimation, TITLE_ANIMATION_SECONDS, TITLE_SLIDE_PIXELS, TITLE_POP_START_SCALE } from "../lib/visual-style/animations.mjs";
 import { PLAYBACK_RATE, TITLE_SHINE_WIDTH, TITLE_SHINE_SECONDS } from "../lib/render-config.mjs";
 
-// Runs before the exporter's final speed adjustment. All expressions are trusted
+// clockRate describes the caller's video clock. All expressions are trusted
 // constants, selected only by the bounded registry ID. Each part has its own graph.
-export function titleAnimationFilters({ id, titleInput, shineInput, sceneInput, overlayFormat }) {
+export function titleAnimationFilters({ id, titleInput, shineInput, sceneInput, overlayFormat, clockRate = PLAYBACK_RATE }) {
   id = normalizeTitleAnimation(id);
   if (id === "none") return null;
-  const duration = TITLE_ANIMATION_SECONDS * PLAYBACK_RATE;
+  const duration = TITLE_ANIMATION_SECONDS * clockRate;
   const progress = `min(t/${duration},1)`;
-  const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t/${PLAYBACK_RATE},${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
+  const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t/${clockRate},${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
   const scale = `${TITLE_POP_START_SCALE}+(1-${TITLE_POP_START_SCALE})*${progress}`;
   const motion = id === "pop-in" ? `scale=w='round(1080*(${scale})/2)*2':h='round(1920*(${scale})/2)*2':eval=frame:flags=bilinear,` : "";
   const y = id === "slide-up" ? `(H-h)/2+${TITLE_SLIDE_PIXELS}*(1-${progress})` : "(H-h)/2";

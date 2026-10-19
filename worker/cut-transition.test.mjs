@@ -8,14 +8,14 @@ test("None and single-segment parts introduce no filter; invalid IDs cannot beco
   assert.equal(cutTransitionFilters("dip-black", [segments[0]]), null);
   assert.throws(() => cutTransitionFilters("white:movie=/secret", segments), /Invalid/);
 });
-test("trusted fades use shared speed-adjusted windows, gated so each cut recovers; no audio/timestamp filters", () => {
-  for (const id of ["dip-black", "flash-white"]) {
-    const graph = cutTransitionFilters(id, segments);
-    assert.equal((graph.match(/fade=t=/g) || []).length, 4);
-    assert.match(graph, /fade=t=out:st=0\.750000000:d=0\.250000000/);
-    assert.match(graph, /fade=t=in:st=1\.000000000:d=0\.250000000/);
-    assert.equal((graph.match(/enable='between/g) || []).length, 4);
-    assert.ok(graph.includes(id === "dip-black" ? "color=#000000" : "color=#ffffff"));
-    assert.doesNotMatch(graph, /xfade|acrossfade|setpts|atempo|subtitle|titlecard|concat|movie=/);
+test("foreground-only shared sprite blend preserves alpha and introduces no timeline/audio filters", () => {
+  for (const id of ["dip-black", "flash-white", "rainbow-light-leak", "vr-light-leak-v2"]) {
+    const graph = cutTransitionFilters(id, segments, undefined, {spriteInput:7}).join(";");
+    assert.match(graph, /^\[mainUnlit\]split/);
+    assert.match(graph, /\[7:v\]crop=216:270/);
+    assert.match(graph, /alphaextract/);
+    assert.match(graph, /alphamerge\[main\]/);
+    assert.match(graph, /blend=all_expr/);
+    assert.doesNotMatch(graph, /fade=t=|xfade|acrossfade|setpts|atempo|subtitle|titlecard|concat|movie=/);
   }
 });

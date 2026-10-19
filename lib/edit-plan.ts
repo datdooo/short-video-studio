@@ -23,6 +23,7 @@ export type Segment = {
 };
 
 export type EditPart = {
+  customTeaser?: import("./custom-teaser.mjs").CustomTeaser;
   manualLocked?: boolean;
   teaser?: import("./teaser-hooks.mjs").Teaser;
   startTrimApplied?: boolean;

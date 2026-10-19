@@ -1,3 +1,15 @@
+# Active DEV delivery — transitions / Bright Social / Custom Teaser / credit UI
+
+2026-10-20. Base `dfc141641bc2ad9b2d55026a445f02c3816442f0`, branch
+`recovery/visual-dev-reconstructed`; resulting HEAD is `git log -1`.
+Read `docs/dev-editor-transitions-custom-teaser.md` for implementation and manual
+checklist. User explicitly cancelled automated QA, AI/YouTube requests and renders;
+only code review + one integrated DEV build is authorized for this delivery.
+User manual acceptance is pending. Do not resume old QA matrices or push/merge.
+Historical handoff/qualification evidence below is preserved, not new proof.
+
+---
+
 # GitHub source publication checkpoint — 2026-10-20
 
 Source through757320b is preserved. Current user task is to publish the complete

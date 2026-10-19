@@ -1,6 +1,6 @@
-import {VR_LEAK_ID,VR_LEAK_SPRITE,vrLeakForegroundFilters} from '../lib/music/vr-light-leak.mjs';
+import{parseCustomTeaser}from"../lib/custom-teaser.mjs";
+import {TRANSITION_SPRITE} from '../lib/visual-style/foreground-transitions.mjs';
 import {createMusicPreview} from './music-preview.mjs';
-import {rainbowSceneFilters} from '../lib/music/light-leak.mjs';
 import {createMusicLibrary} from './music-library.mjs';
 import {createMusicSpeech} from './music-speech.mjs';
 import {normalizeMusic,effectiveMusic} from '../lib/music/settings.mjs';
@@ -36,8 +36,8 @@ import path from "node:path";
 import { homedir } from "node:os";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
+import { cutTransitionFilters } from './cut-transition.mjs';
 import { titleAnimationFilters } from "./title-animation.mjs";
-import { cutTransitionFilters } from "./cut-transition.mjs";
 import { normalizeTitleAnimation } from "../lib/visual-style/animations.mjs";
 import { renderSceneOverlay } from "./scene-overlays.mjs";
 import { removeBatchItem } from "./batch-cleanup.mjs";
@@ -1198,7 +1198,7 @@ async function subtitleFrames(source, plan, part, directory, signal) {
   const blank = path.join(directory, "subtitle-blank.png");
   await sharp({ create: { width: 1080, height: 1920, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toFile(blank);
   const frames = []; let position = 0;
-  const add = (file, duration) => { if (duration > 0.001) frames.push(`file '${path.basename(file)}'\nduration ${duration.toFixed(6)}`); };
+  const add = (file, duration) => { if (duration > 0.001) frames.push(`file '${path.basename(file)}'\nduration ${(duration/PLAYBACK_RATE).toFixed(6)}`); };
   for (const [index, cue] of captions.entries()) {
     signal?.throwIfAborted();
     const start = Math.max(position, cue.start), end = Math.min(cue.end, captions[index + 1]?.start ?? Infinity);
@@ -1240,47 +1240,42 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     visualStyle: plan.visualStyle || DEFAULT_VISUAL_STYLE,
   });
 
-  // The existing title-card input carries scene pixels below unchanged text.
-  // None reuses the exact original path/graph; static scenes need no extra decoder.
+  // Scene decorations stay outside the foreground transition, under text.
   const animated = normalizeTitleAnimation(plan.visualStyle?.titleAnimation) !== "none";
   const musicSettings=effectiveMusic(plan.music,part.id);
   const musicAsset=musicSettings.enabled?await musicLibrary.resolve(musicSettings.assetId):null;
-  const segments = presentationSegments(part), finitePresentation = animated || segments !== part.segments;
-  // Fractional hook/cut times cross two fps conversions and image overlays.
-  // Bound only hook presentations to their intended output frame count, filling
-  // at most three EOF frames without shortening the independently finite audio.
-  const hookTail = segments !== part.segments ? `,tpad=stop_mode=clone:stop_duration=0.1,trim=end_frame=${Math.round(presentationDuration(part) / PLAYBACK_RATE * 30)}` : "";
-  const transitionWindows=partTransitionWindows(part,plan.visualStyle?.cutTransition,plan.hookTransition);
-  const vrLeak=transitionWindows.some(w=>w.presetId===VR_LEAK_ID);
-  const rainbow=transitionWindows.some(w=>w.presetId==="rainbow-light-leak");
-  const transitionFilters = cutTransitionFilters(plan.visualStyle?.cutTransition, segments, partTransitionWindows(part, plan.visualStyle?.cutTransition,plan.hookTransition));
+  const segments = presentationSegments(part);
+  // One output clock before composition. Do not use AV-concat's longest-stream
+  // padding, per-segment fps conversion or cloned EOF frames to conceal cuts.
+  const outputFrames=Math.round(presentationDuration(part)/PLAYBACK_RATE*30);
+  const transitionWindows=partTransitionWindows(part,plan.visualStyle?.cutTransition,plan.hookTransition).map(w=>({...w,presetId:w.presetId||plan.visualStyle?.cutTransition||"none"}));
+  const hasTransitions=transitionWindows.length>0;
   let titleInputPath = titleOverlayPath;
-  if (sceneAsset && !animated && !transitionFilters) {
+  if (sceneAsset && !animated) {
     titleInputPath = path.join(workDirectory, `part-${part.id}-scene-titles.png`);
     await sharp(sceneAsset).composite([{ input: titleOverlayPath }]).png().toFile(titleInputPath);
   }
   const audioInput = source.hasAudio ? "0:a" : "1:a";
   const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
-  const strictSegmentTiming=['later-main-v1','adaptive-editorial-v3'].includes(part.teaser?.selectionPolicy);
-  const segmentFilters = segments.flatMap((segment, index) => [
-    `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS,fps=30,setsar=1${strictSegmentTiming?`,tpad=stop_mode=clone:stop_duration=0.5,trim=duration=${segment.end-segment.start}`:""}[v${index}]`,
+  let elapsed=0;
+  const segmentFilters=segments.flatMap((segment,index)=>{const offset=elapsed;elapsed+=segment.end-segment.start;return[
+    `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-${segment.start}/TB+${offset}/TB,setsar=1[v${index}]`,
     `[${audioInput}]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${index}]`,
-  ]);
-  const concatInputs = segments.map((_, index) => `[v${index}][a${index}]`).join("");
+  ];});
   const overlayInput = source.hasAudio ? 1 : 2;
-  const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t/${PLAYBACK_RATE},${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
-  // New RGB recipes stay RGB through composition, then convert explicitly to
-  // Rec.709 limited YUV. Current's historical graph remains byte-for-byte.
+  const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t,${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
+  // Keep the existing Rec.709 limited output contract after composition.
   const background = assertRenderableBackground(plan.visualStyle?.background);
   const rgbFilter = Boolean(plan.visualStyle?.filter?.presetId) || background.mode !== "source-blur";
   const overlayFormat = rgbFilter ? ":format=rgb" : "";
   const outputColor = rgbFilter ? "scale=out_color_matrix=bt709:out_range=tv," : "";
-  const animatedSceneInput = (animated || transitionFilters) && sceneAsset ? overlayInput + 2 + (subtitlesPath ? 1 : 0) + (backgroundAsset ? 1 : 0) : undefined;
+  const animatedSceneInput = animated && sceneAsset ? overlayInput + 2 + (subtitlesPath ? 1 : 0) + (backgroundAsset ? 1 : 0) : undefined;
   const vrInput=overlayInput+2+(subtitlesPath?1:0)+(backgroundAsset?1:0)+(animatedSceneInput!==undefined?1:0);
-  const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput: overlayInput + 1, sceneInput: transitionFilters ? undefined : animatedSceneInput, overlayFormat });
+  const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput: overlayInput + 1, sceneInput: animatedSceneInput, overlayFormat, clockRate:1 });
   const filters = [
     ...segmentFilters,
-    `${concatInputs}concat=n=${segments.length}:v=1:a=1[cutv][cuta]`,
+    `${segments.map((_,i)=>`[v${i}]`).join("")}${segments.length>1?`interleave=nb_inputs=${segments.length}:duration=longest`:"null"},settb=AVTB,setpts=PTS/${PLAYBACK_RATE},fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
+    `${segments.map((_,i)=>`[a${i}]`).join("")}concat=n=${segments.length}:v=0:a=1[cuta]`,
     `[cutv]${ffmpegFilterExpression(plan.visualStyle?.filter, { contrast: renderContrast, saturation: renderSaturation })}[graded]`,
     ...(background.mode === "source-blur" ? [
       `[graded]split=2[bgsrc][mainsrc]`,
@@ -1291,14 +1286,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
       `[graded]null[mainsrc]`,
       background.mode === "solid" ? `color=c=black:s=1080x1920:r=30,format=rgb24[bg]` : `[${overlayInput + 2 + (subtitlesPath ? 1 : 0)}:v]format=rgb24[bg]`,
     ]),
-    `[mainsrc]${foregroundFilter()}[${vrLeak?"mainUnlit":"main"}]`,
-    ...(vrLeak?vrLeakForegroundFilters("mainUnlit","main",transitionWindows,vrInput):[]),
-    `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[${transitionFilters ? "cutScene" : "layout"}]`,
-    ...(transitionFilters ? [
-      ...(animatedSceneInput !== undefined ? [`[${animatedSceneInput}:v]format=rgba[cutDecoration]`, `[cutScene][cutDecoration]overlay=0:0:shortest=1${overlayFormat}[decoratedCutScene]`] : []),
-      `[${animatedSceneInput !== undefined ? "decoratedCutScene" : "cutScene"}]${transitionFilters}[${rainbow?"rainbowScene":"layout"}]`,
-      ...(rainbow?rainbowSceneFilters("rainbowScene","layout",transitionWindows):[]),
-    ] : []),
+    `[mainsrc]${foregroundFilter()}[mainUnlit]`,
+    ...(cutTransitionFilters(plan.visualStyle?.cutTransition,segments,transitionWindows,{spriteInput:vrInput})||["[mainUnlit]null[main]"]),
+    `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[layout]`,
     ...(animationFilters || [
     `[${overlayInput}:v]format=rgba[titlecard]`,
     `[layout][titlecard]overlay=0:0:shortest=1${overlayFormat}[baseTitles]`,
@@ -1306,7 +1296,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1${overlayFormat}[titled]`,
     ]),
     ...(subtitlesPath ? [`[${overlayInput + 2}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`] : []),
-    `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,${finitePresentation ? "settb=AVTB," : ""}setpts=PTS/${PLAYBACK_RATE}${finitePresentation ? ",fps=30:start_time=0:eof_action=pass" : ""}${hookTail}[vout]`,
+    `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,trim=end_frame=${outputFrames}[vout]`,
     `[cuta]atempo=${PLAYBACK_RATE}[${musicAsset?"originalaudio":"aout"}]`,
   ];
 
@@ -1323,7 +1313,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
     if (backgroundAsset) args.push("-loop", "1", "-framerate", "30", "-i", backgroundAsset);
     if (animatedSceneInput !== undefined) args.push("-loop", "1", "-framerate", "30", "-i", sceneAsset);
-    if(vrLeak)args.push("-loop","1","-framerate","30","-i",path.join(projectRoot,"public",VR_LEAK_SPRITE.slice(1)));
+    if(hasTransitions)args.push("-loop","1","-framerate","30","-i",path.join(projectRoot,"public",TRANSITION_SPRITE.slice(1)));
     const renderFilters=[...filters];
     if(musicAsset){const input=args.filter(a=>a==="-i").length;args.push("-stream_loop","-1","-i",musicAsset.file);renderFilters.push(...musicMixFilters({input,settings:musicSettings,part,activity:plan.musicSpeech,duration:presentationDuration(part)/PLAYBACK_RATE}));}
     args.push(
@@ -1361,9 +1351,8 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
       "-c:a", "aac",
       "-b:a", "192k",
       "-movflags", "+faststart+write_colr",
-      // Animated video/audio are already finite. Do not truncate the audio tail
-      // to the final fps filter's EOF; None retains its historical options.
-      ...(!finitePresentation ? ["-shortest"] : []),
+      // Both streams are finite. Let independently concatenated source audio
+      // finish rather than truncating its tail to the video frame grid.
       "-progress", "pipe:1",
       "-nostats",
       outputPath,
@@ -1807,7 +1796,8 @@ const server = createServer(async (request, response) => {
         try {
           if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 100_000)) throw new Error("Invalid hook transcript.");
           if(body.partId!==undefined&&!body.plan.parts.some(p=>p.id===body.partId))throw Error("Invalid hook part ID.");
-          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2});
+          if(body.customInstruction!==undefined&&(body.partId===undefined||parseCustomTeaser(body.customInstruction).mode!=='description'))throw Error('Custom description cần part cụ thể và mô tả hợp lệ; timestamp không gọi AI.');
+          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction});
           validatePlan(next, source); sendJson(request, response, 200, { plan: next });
         } finally { response.removeListener("close", abort); }
         return;

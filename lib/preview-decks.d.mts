@@ -1,0 +1,2 @@
+import type{Segment}from'./edit-plan';
+export function createPreviewDecks(options:{videos:HTMLVideoElement[];url:string;segments:Segment[];onActive:(slot:number,index:number)=>void;onClock:(seconds:number)=>void;onBuffer:(value:boolean)=>void;onError:(message:string)=>void;onEnded:()=>void}):{clock:()=>number;pause:()=>void;play:()=>Promise<void>;tick:()=>void;seek:(seconds:number)=>void;dispose:()=>void};
