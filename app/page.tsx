@@ -386,6 +386,10 @@ export default function Home() {
   const previewSegmentIndex = useRef(0);
   const backgroundVideoRef = useRef<HTMLVideoElement>(null);
   const previewPlayingRef = useRef(false);
+  function changeWorkspace(next:"editor"|"batch"|"storage"){
+    if(next!=="editor"){previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}
+    setWorkspace(next);
+  }
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
 
   // Timing depends on cuts/provider, never on appearance-only edits.
@@ -1463,9 +1467,9 @@ export default function Home() {
       </header>
 
       <nav aria-label="Chế độ làm việc" className="flex flex-wrap gap-2 border-b border-white/8 px-5 py-3">
-        <button onClick={() => setWorkspace("editor")} className={`rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "editor" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}>Chỉnh từng video</button>
-        <button onClick={() => setWorkspace("batch")} className={`rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "batch" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}>Xử lý hàng loạt {batch && !batch.finished ? "· Đang chạy" : ""}</button>
-        <button onClick={() => setWorkspace("storage")} className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "storage" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}><Trash2 className="size-4" /> Thùng rác</button>
+        <button onClick={() => changeWorkspace("editor")} className={`rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "editor" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}>Chỉnh từng video</button>
+        <button onClick={() => changeWorkspace("batch")} className={`rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "batch" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}>Xử lý hàng loạt {batch && !batch.finished ? "· Đang chạy" : ""}</button>
+        <button onClick={() => changeWorkspace("storage")} className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "storage" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}><Trash2 className="size-4" /> Thùng rác</button>
       </nav>
       {workspace === "storage" && <MediaLibraryPanel workerOrigin={WORKER_ORIGIN} ready={Boolean(workerHealth?.ok)} onMoved={libraryMoved} onRestored={libraryRestored} />}
       {workspace === "batch" && <section className="mx-auto max-w-6xl px-5 py-6">
@@ -1480,7 +1484,7 @@ export default function Home() {
           </Select>
           <Badge variant="outline" className={provider === "chatgpt" && chatGPTSession?.sharing ? "text-emerald-300" : "text-zinc-400"}>{isWebAi ? `${webAiName} bán tự động` : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
           {provider === "chatgpt" && !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
-          {isWebAi && <p className="w-full text-xs leading-5 text-amber-200/80">{webAiName} cần nhập JSON từng video. <button onClick={() => setWorkspace("editor")} className="underline">Về tab chỉnh từng video</button>, hoặc chọn ChatGPT để chạy hàng loạt tự động.</p>}
+          {isWebAi && <p className="w-full text-xs leading-5 text-amber-200/80">{webAiName} cần nhập JSON từng video. <button onClick={() => changeWorkspace("editor")} className="underline">Về tab chỉnh từng video</button>, hoặc chọn ChatGPT để chạy hàng loạt tự động.</p>}
         </div>
         <details className="mt-4 rounded-xl border border-white/8 p-4">
           <summary className="cursor-pointer text-sm text-zinc-300">Quy tắc chia part · xem / sửa</summary>
@@ -1971,7 +1975,7 @@ export default function Home() {
           {hookNeedsReselection(activePart)&&<p role="status" className="mt-3 text-xs text-amber-300">Hook cũ lặp ngay phần mở đầu. Chọn lại hook rõ ràng để áp dụng khoảng cách 10 giây; snapshot đã queue được giữ nguyên.</p>}
           {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Chọn lại hook · giữ nguyên main</button>}
           <label className="mt-4 block text-xs">Hook → Main<select aria-label="Hook transition" className="studio-input mt-2 w-full" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Legacy · theo transition đã lưu</option><option value="rainbow-light-leak">Rainbow Light Leak</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>
-          <MusicPanel plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={isPreviewPlaying} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}} />
+          <MusicPanel plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}} />
           <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}</summary>
             <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => {

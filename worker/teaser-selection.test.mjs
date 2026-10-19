@@ -123,3 +123,9 @@ test('hook context receives bounded source-time replay bins only for this part, 
   const unavailable = hookInput(plan().parts[0], source, [], { heatmap: { bins: [{ intensity: 1 }] } });
   assert.equal(unavailable.supporting.heatmap, undefined);
 });
+
+test('only newly introduced teaser policies default to rainbow; legacy inheritance and explicit None survive selection',async t=>{
+ const ctx=await setup(t,valid);const fresh=await ctx.select(plan(),source);assert.equal(fresh.hookTransition,'rainbow-light-leak');
+ const legacy=await ctx.select({...plan(),teaserPolicy:'per-part-v1'},source);assert.equal(legacy.hookTransition,undefined);
+ const explicit=await ctx.select({...plan(),teaserPolicy:'per-part-v1',hookTransition:'none'},source);assert.equal(explicit.hookTransition,'none');assert.deepEqual(explicit.parts.map(p=>p.segments),plan().parts.map(p=>p.segments));
+});
