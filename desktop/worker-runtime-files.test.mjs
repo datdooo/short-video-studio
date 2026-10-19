@@ -8,6 +8,9 @@ test('macOS and Windows shared runtime manifest includes the entire worker relat
   for(const match of s.matchAll(/(?:from\s+|import\s*\()(['"])(\.[^'"]+)\1/g)) await visit(path.resolve(path.dirname(file),match[2]));
  }await visit(path.join(app,'worker/server.mjs'));
  assert.ok(seen.has(path.join(app,'lib/source-context/comments.mjs')));
+ assert.ok(seen.has(path.join(app,'lib/source-context/heatmap.mjs')));
+ assert.ok(seen.has(path.join(app,'worker/source-context.mjs')));
+ assert.ok(seen.has(path.join(app,'worker/shared-operation.mjs')));
  assert.ok(seen.has(path.join(app,'worker/chatgpt-auth-state.mjs')));
  for(const platform of ['macos','windows'])assert.match(await readFile(path.join(project,`scripts/package-${platform}.mjs`),'utf8'),/await copyWorkerLibraries\(/);
 });

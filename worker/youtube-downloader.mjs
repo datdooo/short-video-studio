@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { youtubeUrl, fallback } from './youtube-common.mjs';
 import { YOUTUBE_FORMAT, YOUTUBE_SORT, upscaleDimensions } from './youtube-quality.mjs';
 import { createSharedOperations } from './shared-operation.mjs';
-import { normalizeSourceContext } from '../lib/source-context/index.mjs';
+import { normalizeSourceContext, heatmapUnavailable } from '../lib/source-context/index.mjs';
 import { buildYouTubeCommentArgs } from '../lib/source-context/comments.mjs';
 
 // Comment scraping is far slower than metadata and needs its own bounded budget.
@@ -35,14 +35,27 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
       if (origin === 'yt-dlp') next.provenance.fields[field] = provider;
     }
     next.provenance.fields.contextMetadata = provider;
+    next.provenance.fields.contextHeatmap = provider;
+    if (engine !== 'yt') next.heatmap = heatmapUnavailable('provider-unsupported', { source: provider });
     if (Array.isArray(info.comments)) next.provenance.fields.contextComments = provider;
     const previous = contextCache.get(parsed.id)?.value;
     if (previous) {
       next.metadata = { ...previous.metadata, ...next.metadata };
+      if (!info.title) next.metadata.title = previous.metadata.title;
+      if (!Array.isArray(info.tags)) next.metadata.tags = previous.metadata.tags;
       if (!next.chapters.length) next.chapters = previous.chapters;
       if (!next.descriptionMarkers.length) next.descriptionMarkers = previous.descriptionMarkers;
       if (!Array.isArray(info.comments)) next.comments = previous.comments;
+      if (previous.heatmap?.status === 'available' && next.heatmap?.status !== 'available') {
+        next.heatmap = previous.heatmap;
+        next.provenance.fields.contextHeatmap = previous.provenance.fields.contextHeatmap;
+      }
       next.provenance.fields = { ...previous.provenance.fields, ...next.provenance.fields };
+    }
+    next.source.title = next.metadata.title;
+    if (Number.isFinite(next.metadata.durationSeconds)) {
+      next.source.durationSeconds = next.metadata.durationSeconds;
+      next.source.durationMs = Math.round(next.metadata.durationSeconds * 1000);
     }
     if (contextCache.size >= 128) contextCache.delete(contextCache.keys().next().value);
     contextCache.set(parsed.id, { value: next, expires: Date.now() + 5 * 60_000 });

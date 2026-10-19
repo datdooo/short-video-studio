@@ -94,6 +94,18 @@ export interface CommentSignals {
   provenance: SourceProvenance;
 }
 
+export type HeatmapUnavailableReason = 'not-provided' | 'empty' | 'malformed' | 'unknown-duration'
+  | 'unsupported-source' | 'provider-unsupported' | 'retrieval-timeout' | 'extraction-failed' | 'invalid-serialized';
+export interface HeatmapSignals {
+  status: 'available' | 'unavailable' | 'disabled';
+  reason?: HeatmapUnavailableReason;
+  timeline: 'source';
+  timeUnit: 'ms';
+  intensitySemantics: 'relative-replay-interest';
+  bins: { startMs: number; endMs: number; intensity: number }[];
+  provenance: SourceProvenance;
+}
+
 export interface SourceContext {
   version: typeof SOURCE_CONTEXT_VERSION;
   source: SourceIdentity;
@@ -102,7 +114,7 @@ export interface SourceContext {
   descriptionMarkers: DescriptionMarker[];
   transcript?: unknown;
   comments?: CommentSignals;
-  heatmap?: unknown;
+  heatmap?: HeatmapSignals;
   visualSignals?: unknown;
   audioSignals?: unknown;
   provenance: SourceProvenance;

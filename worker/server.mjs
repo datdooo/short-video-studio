@@ -729,7 +729,10 @@ const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cac
 });
 async function planTeasers(plan, source, signal, transcript) {
   const sourceContext = await sourceContexts.ensure(source, { signal, comments: true });
-  if (source.directory) await saveSourceContext(source.directory, sourceContext);
+  if (source.directory) {
+    try { await saveSourceContext(source.directory, sourceContext); }
+    catch { signal?.throwIfAborted(); /* Context persistence failure must not disable hook analysis. */ }
+  }
   source = { ...source, sourceContext };
   let cues = Array.isArray(source.captions) ? source.captions : [];
   if (plan.captionCues) cues = sourceCaptionTrack(plan.captionCues, source).cues;
@@ -743,7 +746,7 @@ async function planTeasers(plan, source, signal, transcript) {
     if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter((c) => c.end > c.start);
   }
   const context = source.sourceContext;
-  return selectTeasers(plan, sourceInput, { cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters } : source, signal });
+  return selectTeasers(plan, sourceInput, { cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap } : source, signal });
 }
 
 function safeName(value) {

@@ -6,14 +6,33 @@ branch: recovery/visual-dev-reconstructed
 implementation_head_before_resume: d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6
 initial_worktree: six_inherited_modified_files_at_558ad67
 rc_status: historical_qualified_visual_editor_baseline
-smart_auto_cut_status: foundation_A_B_and_teaser_extension_present_C_to_H_incomplete
-next_task: await_user_instructions
+smart_auto_cut_status: A_B_wired_C_fixture_verified_D_to_H_unimplemented
+next_task: user_live_A_B_C_acceptance
+abc_task_base: 74d138d6406eeefc43c6735600f253742632941a
+abc_wiring_commit: 316ea60
+abc_checks: focused_94_pass_full_unit_287_pass_typecheck_lint_pass
 teaser_status: mac_dev_verified_with_external_provenance_and_editorial_limits
 ---
 
 # Gemini / Antigravity handoff
 
-## Latest hook repair closure — 2026-10-19
+## Current scope — Smart Auto Cut A/B/C only, 2026-10-19
+
+Started clean at `74d138d6406eeefc43c6735600f253742632941a`, same standalone recovery
+branch. A/B wiring commit `316ea60`; C is the following checkpoint (`git log -2`).
+A/B normalization and downloader helpers existed but imports did not populate
+context. Imports now persist A/C from existing extraction; explicit hook analysis
+acquires bounded comments and reuses cached source-specific context. C is a typed,
+validated Most Replayed relative-interest signal; it is not retention/view counts.
+Main planning/fusion, vision/audio and new batch orchestration remain unimplemented.
+
+Read `docs/next-agent-task.md` and `docs/smart-auto-cut-abc-qualification.md` first.
+Only fixture/unit/type/lint/package-closure checks were run; user live acceptance
+is next. Existing built DEV app needs rebuilding, which was intentionally not run.
+No new AI calls/render/browser matrices or production operations. Preserved hook
+qualification below remains historical evidence, not a new A–C quality claim.
+
+## Historical hook repair closure — 2026-10-19
 
 Both original hook-only repairs have arrived; no provider response is pending.
 Gemini8.280–15.000 /160.360–166.840; Muse61.800–68.439 /160.360–166.840.

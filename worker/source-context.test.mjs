@@ -92,3 +92,107 @@ test('source persistence changes context only; serialized source mismatch is dis
   const stale = sourceContextFor({ ...source, sourceUrl: 'https://youtu.be/abcdefghijk', sourceContext: context });
   assert.notEqual(stale.metadata.videoId, context.metadata.videoId);
 });
+
+test('C reuses heatmap from existing metadata/transcript extraction and preserves it through disk cache reuse', async t => {
+  const fixture = JSON.parse(await readFile(new URL('../lib/fixtures/youtube-source-context.json', import.meta.url), 'utf8'));
+  const f = await setup(t, async () => fixture);
+  await f.youtube.transcript(url);
+  const result = await f.service.ensure(source, { comments: true });
+  assert.equal(result.heatmap.status, 'available'); assert.equal(result.heatmap.bins[2].intensity, 1);
+  assert.equal(result.comments.status, 'available'); assert.deepEqual(f.calls, ['transcript']);
+  const restarted = createSourceContextService(f.options);
+  assert.deepEqual((await restarted.ensure(source, { comments: true })).heatmap, result.heatmap);
+  assert.deepEqual(f.calls, ['transcript']);
+});
+test('old A/B cache missing C enriches heatmap alone without discarding existing comments or changing identity', async t => {
+  const { createHash } = await import('node:crypto');
+  const { computeSourceCacheKey } = await import('../lib/source-context/index.mjs');
+  const { mkdir } = await import('node:fs/promises');
+  const fixture = JSON.parse(await readFile(new URL('../lib/fixtures/youtube-source-context.json', import.meta.url), 'utf8'));
+  const f = await setup(t, async () => ({ ...fixture, comments: undefined }));
+  const old = sourceContextFor(source);
+  old.metadata.description = 'Preserved A description';
+  const { normalizeComments } = await import('../lib/source-context/index.mjs');
+  old.comments = normalizeComments(info.comments, { durationMs: 120000 }); delete old.heatmap;
+  old.provenance.fields = { contextMetadata: 'yt-dlp', contextComments: 'yt-dlp' };
+  const key = computeSourceCacheKey(old); await mkdir(f.options.cacheRoot, { recursive: true });
+  await writeFile(path.join(f.options.cacheRoot, createHash('sha256').update(key).digest('hex') + '.json'), JSON.stringify(old));
+  const enriched = await f.service.ensure(source, { comments: true });
+  assert.equal(enriched.heatmap.status, 'available'); assert.deepEqual(enriched.comments, old.comments);
+  assert.equal(computeSourceCacheKey(enriched), key); assert.deepEqual(f.calls, ['metadata']);
+  await f.service.ensure(source, { comments: true }); assert.deepEqual(f.calls, ['metadata']);
+});
+test('C absence is normal; unavailable extraction and timeout give explicit reasons with no fabricated bins', async t => {
+  for (const mode of ['absent', 'failure', 'timeout']) {
+    const f = await setup(t, async (op, parsed, dir, signal) => {
+      if (mode === 'failure') throw new Error('PRIVATE failure');
+      if (mode === 'timeout') return untilAbort(signal);
+      return { ...info, comments: undefined };
+    }, { metadata: 10 });
+    const keepAlive = setTimeout(() => {}, 1000); t.after(() => clearTimeout(keepAlive));
+    const context = await f.service.ensure(source);
+    assert.equal(context.heatmap.status, 'unavailable'); assert.deepEqual(context.heatmap.bins, []);
+    assert.equal(context.heatmap.reason, mode === 'absent' ? 'not-provided' : mode === 'failure' ? 'extraction-failed' : 'retrieval-timeout');
+    const count = f.calls.length; await f.service.ensure(source); assert.equal(f.calls.length, count);
+  }
+});
+test('concurrent metadata-only import and comment analysis serialize enrichment without losing either signal', async t => {
+  const f = await setup(t);
+  const [a, b] = await Promise.all([f.service.ensure(source), f.service.ensure(source, { comments: true })]);
+  assert.ok(a.metadata.description); assert.equal(b.comments.status, 'available');
+  assert.equal((await f.service.ensure(source, { comments: true })).comments.status, 'available');
+  assert.deepEqual(f.calls, ['metadata', 'comments']);
+});
+
+test('extractor/probed duration mismatch cannot leak out-of-source replay intervals into source/cache', async t => {
+  const f = await setup(t, async () => ({ ...info, duration: 120.2, heatmap: [{ start_time: 119, end_time: 120.2, value: 0.8 }] }));
+  const context = await f.service.ensure(source);
+  assert.deepEqual(context.heatmap.bins, [{ startMs: 119000, endMs: 120000, intensity: 0.8 }]);
+  assert.equal(context.heatmap.provenance.fields.clipped, '1');
+  assert.deepEqual((await f.service.ensure(source)).heatmap, context.heatmap);
+});
+
+test('partial fallback extraction preserves earlier richer A/C and reports the actual heatmap provider', async t => {
+  let calls = 0;
+  const f = await setup(t, async () => ++calls === 1 ? { ...info, comments: undefined, heatmap: [{ start_time: 10, end_time: 20, value: 0.4 }], tags: ['tutorial'] }
+    : { title: info.title });
+  await f.youtube.metadata(url);
+  await f.youtube.transcript(url);
+  const context = await f.service.ensure(source);
+  assert.equal(context.metadata.description, info.description); assert.deepEqual(context.metadata.tags, ['tutorial']);
+  assert.deepEqual(context.heatmap.bins, [{ startMs: 10000, endMs: 20000, intensity: 0.4 }]);
+});
+
+test('a later normal extraction enriches a cached failure without duplicate metadata/comment calls', async t => {
+  let available = false;
+  const f = await setup(t, async () => { if (!available) throw new Error('unavailable'); return { ...info, heatmap: [{ start_time: 50, end_time: 60, value: 1 }] }; });
+  assert.equal((await f.service.ensure(source)).heatmap.reason, 'extraction-failed');
+  available = true; await f.youtube.metadata(url);
+  const count = f.calls.length, context = await f.service.ensure(source, { comments: true });
+  assert.equal(context.metadata.description, info.description); assert.equal(context.heatmap.status, 'available');
+  assert.equal(context.comments.status, 'available'); assert.equal(f.calls.length, count);
+});
+
+test('a partial fresh extraction cannot erase a valid cached heatmap or tags after service restart', async t => {
+  const f = await setup(t, async () => ({ ...info, heatmap: [{ start_time: 50, end_time: 60, value: 0.8 }], tags: ['tutorial'] }));
+  const original = await f.service.ensure(source);
+  const partial = await setup(t, async () => ({ title: info.title, duration: 120 }));
+  await partial.youtube.metadata(url);
+  const restarted = createSourceContextService({ ...f.options, youtube: partial.youtube });
+  const reused = await restarted.ensure(source);
+  assert.deepEqual(reused.heatmap, original.heatmap); assert.deepEqual(reused.metadata.tags, ['tutorial']);
+  assert.deepEqual(partial.calls, ['metadata']);
+});
+
+test('legacy rounded-duration cache keys still enforce the exact current media duration on disk-only reuse', async t => {
+  const f = await setup(t, async () => ({ ...info, duration: 120.2, heatmap: [{ start_time: 119, end_time: 120.2, value: 0.8 }] }));
+  const first = await f.service.ensure({ ...source, duration: 120.2 });
+  const { computeSourceCacheKey } = await import('../lib/source-context/index.mjs');
+  const short = { ...source, id: 'shorter', duration: 119.8 };
+  assert.equal(computeSourceCacheKey(first), computeSourceCacheKey(sourceContextFor(short)));
+  const offline = createSourceContextService({ ...f.options, youtube: { peekContext: () => undefined, context: () => assert.fail('No new metadata extraction') } });
+  const result = await offline.ensure(short);
+  assert.deepEqual(result.heatmap.bins, [{ startMs: 119000, endMs: 119800, intensity: 0.8 }]);
+  assert.equal(result.source.id, 'shorter'); assert.deepEqual(f.calls, ['metadata']);
+  assert.deepEqual(sourceContextFor({ ...short, sourceContext: first }).heatmap.bins, result.heatmap.bins);
+});

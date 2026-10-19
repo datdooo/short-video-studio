@@ -108,3 +108,18 @@ test('rounded edited text does not replace precise source timing; changed timing
  await ctx.select(plan(),source,{cues,boundaryCues:[{start:1,end:7.25,text:'Original timing'}]});
  assert.equal(ctx.calls(),4,'Unchanged timing uses cache');
 });
+
+test('hook context receives bounded source-time replay bins only for this part, never raw comments or viewer/retention counts', async () => {
+  const { normalizeHeatmap } = await import('../lib/source-context/index.mjs');
+  const heatmap = normalizeHeatmap(Array.from({ length: 80 }, (_, i) => ({ start_time: i, end_time: i + 1, value: i / 80 })), { durationMs: 80000 });
+  const input = hookInput({ id: 2, title: 'Part', segments: [{ start: 40, end: 70 }] }, source, [], {
+    heatmap, description: 'source data', comments: [{ text: 'PRIVATE RAW COMMENT' }], commentClusters: [{ centerMs: 1000, score: 1 }, { centerMs: 45000, score: 0.5 }],
+  });
+  assert.equal(input.supporting.heatmap.bins.length, 24); assert.equal(input.supporting.heatmap.timeUnit, 'ms');
+  assert.equal(input.supporting.heatmap.intensitySemantics, 'relative-replay-interest');
+  assert.ok(input.supporting.heatmap.bins.every(b => b.startMs >= 40000 && b.endMs <= 70000));
+  assert.deepEqual(input.supporting.commentClusters, [{ centerMs: 45000, score: 0.5 }]);
+  assert.ok(!JSON.stringify(input).includes('PRIVATE RAW COMMENT'));
+  const unavailable = hookInput(plan().parts[0], source, [], { heatmap: { bins: [{ intensity: 1 }] } });
+  assert.equal(unavailable.supporting.heatmap, undefined);
+});

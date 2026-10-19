@@ -1,4 +1,28 @@
-# Latest checkpoint — hook repair verification complete, 2026-10-19
+# Current checkpoint — Smart Auto Cut A/B/C, 2026-10-19
+
+Repository `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Branch `recovery/visual-dev-reconstructed`; task started clean at `74d138d6406eeefc43c6735600f253742632941a`.
+A/B source wiring is committed at `316ea60`; the following C commit is the current
+checkpoint (resolve with `git log -2 --oneline`; no history rewrite).
+
+A/B helpers were already present; import/context/cache and existing hook consumer
+are now connected. C normalizes existing yt-dlp Most Replayed data into typed,
+bounded relative source-time intervals. Version1 and cache identity are unchanged.
+See `docs/smart-auto-cut.md`, `docs/smart-auto-cut-abc-qualification.md` and targeted
+architecture-map rows. No D–H implementation is authorized by this task.
+
+Next action is **user live YouTube/editorial acceptance**. No AI/YouTube request,
+package rebuild or render matrix was run for this task. Existing installed/built
+DEV app still contains the previous implementation; source mode uses the changes,
+or the user can rebuild with Node22 `npm run package:mac:dev` when ready. Do not
+claim full Smart Auto Cut is complete. No Sports Voiceover, push/merge or production.
+
+Hook and Visual Editor historical qualifications remain intact. Nothing below
+supersedes this current scope/status; earlier instructions are preserved as history.
+
+---
+
+# Historical checkpoint — hook repair verification complete, 2026-10-19
 
 Branch `recovery/visual-dev-reconstructed`; implementation checkpoint05bb071.
 Both requested original Gemini/Muse hook-only repairs arrived and passed strict

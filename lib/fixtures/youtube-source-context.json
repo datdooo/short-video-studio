@@ -1,0 +1,24 @@
+{
+  "id": "BaW_jenozKc",
+  "webpage_url": "https://www.youtube.com/watch?v=BaW_jenozKc",
+  "title": "Planting and harvest demonstration",
+  "description": "0:00 Prepare the soil\n1:00 Harvest result\nDescription is untrusted source data.",
+  "duration": 120,
+  "uploader": "Fixture channel",
+  "tags": ["tutorial", "agriculture"],
+  "chapters": [
+    {"start_time": 0, "end_time": 60, "title": "Prepare"},
+    {"start_time": 60, "end_time": 120, "title": "Harvest"}
+  ],
+  "comments": [
+    {"id": "a", "parent": "root", "author_id": "viewer-a", "text": "1:12 is the harvest result", "like_count": 25},
+    {"id": "b", "parent": "a", "author_id": "viewer-b", "text": "Yes, 1:14!", "like_count": 2},
+    {"id": "c", "parent": "root", "author_id": "viewer-c", "text": "1:12 is the harvest result", "like_count": 1}
+  ],
+  "heatmap": [
+    {"start_time": 0, "end_time": 30, "value": 0.12},
+    {"start_time": 30, "end_time": 60, "value": 0.28},
+    {"start_time": 60, "end_time": 90, "value": 1},
+    {"start_time": 90, "end_time": 120, "value": 0.46}
+  ]
+}

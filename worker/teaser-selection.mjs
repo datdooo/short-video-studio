@@ -7,16 +7,22 @@ import path from "node:path";
 import { TEASER_POLICY, HOOK_PROMPT_VERSION, mainRanges, hookRangeKey, fallbackTeaser, validateTeaser } from "../lib/teaser-hooks.mjs";
 
 const clean = (s, max) => String(s || "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "").slice(0, max);
+import { validateHeatmap } from "../lib/source-context/heatmap.mjs";
+
 const hash = (s) => createHash("sha256").update(JSON.stringify(s)).digest("hex");
 export function hookInput(part, source, cues = [], supporting = {}) {
   const allRanges = mainRanges(part), ranges = allRanges.slice(0, 200);
   const available = cues.slice(0, 20_000).filter((c) => Number.isFinite(c.start) && Number.isFinite(c.end) && ranges.some((s) => c.start < s.end && c.end > s.start));
   const bounded = available.length > 120 ? Array.from({ length: 120 }, (_, i) => available[Math.floor(i * available.length / 120)]) : available;
+  const heatmap = validateHeatmap(supporting.heatmap, { durationMs: Math.round(source.duration * 1000) });
+  const relevantBins = heatmap?.status === 'available' ? heatmap.bins.filter(b => ranges.some(r => b.startMs < r.end * 1000 && b.endMs > r.start * 1000)) : [];
+  // Uniform bounded sampling of existing bins, no candidate generation or new ranking.
+  const replayBins = relevantBins.length > 24 ? Array.from({ length: 24 }, (_, i) => relevantBins[Math.floor(i * relevantBins.length / 24)]) : relevantBins;
   return { sourceTitle: clean(source.title, 500), partTitle: clean(part.title, 500), partContext: clean(part.hook, 500), partId: part.id,
     allowedRanges: ranges.slice(0, 200).map(({ start, end }) => ({ start, end })),
     transcript: bounded.map((c) => ({ start: c.start, end: c.end, text: clean(c.text, 180) })),
     untimedTranscript: available.length ? "" : clean(source.transcript, 6000),
-    supporting: { chapters: Array.isArray(supporting.chapters) ? supporting.chapters.slice(0, 20).map((c) => ({ startMs: c.startMs, endMs: c.endMs, title: clean(c.title, 100) })) : [],
+    supporting: { ...(replayBins.length ? { heatmap: { timeline: 'source', timeUnit: 'ms', intensitySemantics: 'relative-replay-interest', bins: replayBins } } : {}), chapters: Array.isArray(supporting.chapters) ? supporting.chapters.slice(0, 20).map((c) => ({ startMs: c.startMs, endMs: c.endMs, title: clean(c.title, 100) })) : [],
       description: clean(supporting.description, 1500), commentClusters: Array.isArray(supporting.commentClusters) ? supporting.commentClusters.filter((c) => ranges.some((r) => c.centerMs / 1000 >= r.start && c.centerMs / 1000 <= r.end)).slice(0, 12).map((c) => ({ centerMs: c.centerMs, score: c.score })) : [] },
     missing: [...(!available.length ? ["No timestamped transcript; do not infer speech/audio meaning."] : []), ...(available.length > 120 || allRanges.length > 200 || cues.length > 20_000 ? ["Context was bounded/sampled."] : [])],
   };

@@ -10,10 +10,10 @@ See [per-part-teaser-hooks.md](per-part-teaser-hooks.md). New real automatic pla
 can prepend a separately selected same-part excerpt while preserving their main
 ranges. Selection/provenance and presentation order are separate; existing
 renderer, subtitle/seek mapping and snapshot storage are reused. This is not the
-full candidate-generation/fusion engine. **Live AI qualification is blocked** by
-the missing DEV ChatGPT session/login failure; deterministic fallbacks are
-explicitly labeled and do not satisfy AI verification. Gemini/Muse remain web/
-copy-paste main-plan workflows, not verified hook-analysis APIs. C–H below remain
+full candidate-generation/fusion engine. The original login blocker is resolved;
+GPT two-part inference and externally imported Gemini/Muse hook repairs have their
+own historical evidence in `docs/teaser-hooks-qualification.md`. This A–C task made
+no live provider requests and does not requalify editorial quality. D–H remain
 incomplete; no Sports Voiceover was added.
 
 ## Implementation Progress
@@ -22,7 +22,7 @@ incomplete; no Sports Voiceover was added.
 | --- | --- | --- | --- |
 | **A** | **SourceContext + metadata/description/chapters foundation** | **COMPLETED** | Normalized schema, yt-dlp metadata extraction, deterministic description timestamp markers, chapter normalization/bounding, source identity cache keys, local-file representation |
 | **B** | **Comments + timestamp clustering** | **COMPLETED** | Bounded best-effort yt-dlp comment retrieval (no media redownload), deterministic M:SS/MM:SS/H:MM:SS mention parsing, conservative dedupe, bounded engagement weighting, fixed-window non-drifting clusters |
-| **C** | Heatmap normalization | **UNIMPLEMENTED** | Most Replayed engagement curve normalization (0–1 relative scores) |
+| **C** | Most Replayed acquisition/normalization | **IMPLEMENTED; fixture verified** | Existing yt-dlp info JSON → typed source-time intervals; optional unavailable/error states; source cache enrichment; user live acceptance pending |
 | **D** | Candidate generation + multi-signal score fusion | **UNIMPLEMENTED** | Semantic/visual/audio/heatmap/comment candidate ranking and selection |
 | **E** | Vision + audio integration | **UNIMPLEMENTED** | Sparse candidate frame inspection & silence/energy detection |
 | **F** | Single-video Auto/Semi-Auto integration | **UNIMPLEMENTED** | UI candidate review and Auto pipeline integration |
@@ -47,7 +47,7 @@ Checkpoint A implements the canonical normalized source-intelligence foundation 
     descriptionMarkers: DescriptionMarker[];
     transcript?: unknown;      // Unpopulated (future checkpoint)
     comments?: CommentSignals; // Checkpoint B — see below
-    heatmap?: unknown;         // Unpopulated (Checkpoint C)
+    heatmap?: HeatmapSignals;  // Checkpoint C — source-time ms / relative replay interest
     visualSignals?: unknown;   // Unpopulated (Checkpoint E)
     audioSignals?: unknown;    // Unpopulated (Checkpoint E)
     provenance: SourceProvenance;
@@ -148,7 +148,7 @@ stays `1`, and source cache identity is unchanged (identity never depends on com
 - Output carries center/start/end timestamps, mention/comment/distinct-author counts, a bounded score and supporting comment IDs for Checkpoint D.
 
 ### 7. Optional-Field Preservation (`lib/source-context/normalize.mjs`)
-- Re-normalizing a `SourceContext` no longer silently drops `transcript`, `comments`, `heatmap`, `visualSignals` or `audioSignals`; present optional fields are deep-cloned and preserved.
+- Re-normalizing a `SourceContext` preserves optional signals as fresh copies; comments and heatmap are validated at the serialized boundary. Older contexts missing heatmap remain distinguishable from acquired absence.
 - YouTube contexts normalize `info.comments` when present and otherwise report an `unavailable` comment signal; local sources report `disabled` and keep working with no YouTube metadata.
 - Checkpoint A description-timestamp parsing was reused, not refactored.
 
@@ -164,3 +164,77 @@ source/duration/revision-specific, cloned and rebound to each imported source ID
 Subscriber-aware cancellation and optional failure isolation are retained. No main
 planner/fusion or new batch orchestration was added. Fixture focused checks: 73/73;
 live YouTube acceptance is intentionally deferred to the user.
+
+## Checkpoint C: Most Replayed (2026-10-19)
+
+`lib/source-context/heatmap.mjs` implements `HeatmapSignals`: status/reason,
+`timeline: "source"`, `timeUnit: "ms"`, `intensitySemantics:
+"relative-replay-interest"`, bounded `{startMs,endMs,intensity}[]` and provenance.
+The upstream extractor contract is documented by
+[yt-dlp InfoExtractor](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/common.py)
+and implemented by
+[YouTube `_extract_heatmap`](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_video.py).
+Reuse is through the existing installed yt-dlp, with no vendored code, new package,
+API, scraper, Python service or GPU stack.
+
+- Raw `start_time`/`end_time` seconds become integer source milliseconds. Duration
+  must be finite, positive and safely representable. Reject negative starts,
+  empty/reversed intervals, numeric strings, non-finite/out-of-range intensity;
+  discard intervals starting beyond duration; clip ends to duration.
+- Keep yt-dlp's original `[0,1]` relative values (zero is valid). No min/max
+  rescaling, interpolation, inferred scores, retention estimates or viewer counts.
+- Scan at most 4,000 entries, retain at most 2,000 bins. Sort start/end ascending,
+  intensity descending. Exact interval duplicates keep the strongest value;
+  later overlapping intervals are dropped. Gaps stay gaps. Provenance records
+  dropped/clipped/duplicate/overlap counts and whether input/output was bounded.
+- Absent/null, empty, malformed, unknown duration, unsupported local source,
+  unsupported fallback provider, extraction failure and timeout are explicit
+  reasons. Missing heatmap is normal; unavailable/disabled signals have no bins.
+- Serialized heatmap requires exact units/semantics, finite bounded ordered
+  non-overlapping bins, status consistency and bounded string provenance. Invalid
+  data becomes `invalid-serialized`; unknown extras are stripped. Valid data
+  round-trips as independent copies. Local sources stay disabled.
+
+### Source flow, consumers and cache
+
+`worker/youtube-downloader.mjs` retains bounded normalized context from successful
+metadata/download/transcript/comments extraction for five minutes (max128 video
+IDs). The metadata response remains its existing small shape; transcript responses
+also carry context. Import saves context from those existing extractions; it does
+not run another extraction for A/C. Existing subtitle retrieval is unchanged.
+
+`worker/source-context.mjs` owns explicit enrichment and a normalized disk cache
+under DEV `media/cache/source-context/`. Keys still use the existing
+`computeSourceCacheKey` (source/video + rounded duration + rev1), hashed for filenames.
+`SOURCE_CONTEXT_VERSION` remains1. VisualStyle is excluded. Copies are rebound to
+individual source IDs; other source identities cannot reuse them. Atomic writes
+contain only normalized context, not raw signed format URLs/cookies/media.
+
+Acquisition markers in provenance distinguish attempted absence/failure from an
+old v1 cache missing C. Missing C enriches through existing cached extraction or
+one bounded metadata operation; A/B are retained, without re-fetching comments.
+Later ordinary extraction can enrich a cached failure without an extra call;
+partial fallback data cannot erase a previously valid replay signal. Fresh bins
+are bounded again against probed media duration. Missing/failed signals are reused,
+not polled repeatedly. There is no new refresh dashboard/endpoint.
+
+Source reload validates context but performs no network calls. Import populates A/C;
+B is deliberately deferred to explicit existing hook selection, with <=200 comments
+and a separate **180s total** signal budget. Metadata enrichment has a **60s total**
+budget. Embedded comments avoid another fetch. User cancellation propagates;
+optional timeouts/failures become unavailable and preserve other evidence.
+Concurrent consumers share work; cancelling one does not cancel the others.
+
+Only the existing hook-analysis consumer is extended: source title plus bounded
+untrusted description, chapters, derived same-part comment clusters, and at most24
+uniformly sampled replay bins intersecting that part's allowed ranges. The AI input
+labels replay interest as relative source-time evidence. This proves delivery,
+not that the model follows it or improves editorial quality. Actual supporting
+input participates in the existing hook cache; style does not. Raw comments never
+enter the model. Manual main ranges, locks and independent part plans are unchanged.
+
+The main Auto/Semi-Auto planner remains transcript-driven. External Gemini/Muse
+copy/paste prompts do not receive these new signals. Batch source imports inherit
+ordinary saved context, but no new batch planner/orchestration was implemented.
+D–H remain unimplemented. See `smart-auto-cut-abc-qualification.md` for checks and
+user acceptance steps; the existing built DEV app needs rebuilding to include A–C.

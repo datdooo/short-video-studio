@@ -40,3 +40,9 @@ export function commentSignalsUnavailable(options?: { extractedAt?: string }, re
 export function normalizeComments(rawComments?: unknown, options?: { durationMs?: number | null; enabled?: boolean; maxComments?: number; extractedAt?: string }): import("./schema").CommentSignals;
 export function collectCommentSignals(load?: (() => unknown | Promise<unknown>) | null, options?: { durationMs?: number | null; enabled?: boolean; maxComments?: number; extractedAt?: string }): Promise<import("./schema").CommentSignals>;
 export function clusterCommentMentions(comments: import("./schema").SourceComment[], options?: { windowMs?: number; maxClusters?: number; maxSupportingIds?: number }): import("./schema").CommentCluster[];
+
+export const MAX_HEATMAP_BINS: number;
+export const MAX_HEATMAP_SCAN: number;
+export function normalizeHeatmap(raw?: unknown, options?: { durationMs?: number | null; enabled?: boolean; source?: string; extractedAt?: string }): import('./schema').HeatmapSignals;
+export function heatmapUnavailable(reason?: import('./schema').HeatmapUnavailableReason, options?: { source?: string; extractedAt?: string }): import('./schema').HeatmapSignals;
+export function validateHeatmap(raw: unknown, options?: { durationMs?: number | null }): import('./schema').HeatmapSignals | undefined;
