@@ -1,4 +1,6 @@
 "use client";
+import {useEffect,useRef} from "react";
+import {rainbowPixel} from "@/lib/music/light-leak.mjs";
 import { Check } from "lucide-react";
 import { listCutTransitions, normalizeCutTransition, cutTransitionPose } from "@/lib/visual-style/cut-transitions.mjs";
 import type { CutTransitionId, CutTransitionWindow } from "@/lib/visual-style/cut-transitions.mjs";
@@ -12,7 +14,10 @@ export function CutTransitionPanel({ value, onChange }: { value?: CutTransitionI
   </section>;
 }
 export function CutTransitionVeil({ value, windows, time }: { value?: CutTransitionId; windows: CutTransitionWindow[]; time: number }) {
-  const pose = cutTransitionPose(value, windows, time);
+  const canvas=useRef<HTMLCanvasElement>(null);
+  const rainbow=windows.find(w=>w.presetId==='rainbow-light-leak'&&time*30>=w.startFrame&&time*30<=w.endFrame);
+  useEffect(()=>{const c=canvas.current,ctx=c?.getContext('2d');if(!ctx||!c)return;const image=ctx.createImageData(180,320);if(rainbow){const phase=(time*30-rainbow.startFrame)/(rainbow.halfFrames*2);for(let y=0;y<320;y++)for(let x=0;x<180;x++){const pixel=rainbowPixel(x/180,y/320,phase),i=(y*180+x)*4;image.data[i]=pixel[0];image.data[i+1]=pixel[1];image.data[i+2]=pixel[2];image.data[i+3]=255;}}ctx.putImageData(image,0,0);},[rainbow,time]);
+  const pose = cutTransitionPose(value, windows.filter(w=>w.presetId!=='rainbow-light-leak'), time);
   if (!windows.length || (normalizeCutTransition(value) === "none" && !windows.some((w) => w.presetId))) return null;
-  return <div aria-hidden="true" data-cut-transition={normalizeCutTransition(value)} className="pointer-events-none absolute inset-0 z-[8]" style={{ backgroundColor: pose.color, opacity: pose.opacity }} />;
+  return <><canvas ref={canvas} width={180} height={320} aria-hidden="true" className="pointer-events-none absolute inset-0 z-[8] size-full" style={{mixBlendMode:"screen",opacity:rainbow?1:0}}/><div aria-hidden="true" data-cut-transition={normalizeCutTransition(value)} className="pointer-events-none absolute inset-0 z-[8]" style={{ backgroundColor: pose.color, opacity: pose.opacity }} /></>;
 }

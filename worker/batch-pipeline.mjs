@@ -24,7 +24,7 @@ export function createBatchProcessor({acquire,load,analyze,render,resumeRender,g
           item.state='analyzing';await persist();
           const result=await analyze(source,{transcript:source.transcript||'',instruction:settings.instruction||'',supplementalPrompt:settings.supplementalPrompt||'',...(item.plan?.parts?.some(p=>p.manualLocked)?{currentPlan:item.plan}:{})},signal);
           signal.throwIfAborted();
-          item.plan=snapshotPlanVisualStyle({...result.plan,visualStyle:settings.visualStyle,subtitles:settings.subtitles});
+          item.plan=snapshotPlanVisualStyle({...result.plan,visualStyle:settings.visualStyle,subtitles:settings.subtitles,music:settings.music,...(settings.hookTransition?{hookTransition:settings.hookTransition}:{})});
           item.checkpoint='plan';item.needsAnalysis=false;
           if(item.plan.analysis?.method==='deterministic-fallback'){
             const reason=item.plan.analysis.fallbackReason||'';item.approved=false;

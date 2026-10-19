@@ -76,6 +76,7 @@ async function copyPackage(name, from = resolver, optional = false) {
 }
 await copyPackage("sharp");
 await copyPackage("youtubei.js");
+await copyPackage("@ozymandiasthegreat/vad");
 console.log(`Removed ${Math.round((await trimRuntime(path.join(appRoot, "node_modules"))) / 1e6)} MB of generated development metadata.`);
 
 // Relocate Homebrew dylibs so Node/FFmpeg do not depend on Homebrew after packaging.

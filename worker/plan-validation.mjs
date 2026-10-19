@@ -1,9 +1,13 @@
+import {normalizeMusic,validateSpeechActivity} from '../lib/music/settings.mjs';
 import {validateMainAnalysis} from '../lib/auto-cut/analysis.mjs';
 import { PLAYBACK_RATE } from '../lib/render-config.mjs';
 import { assertRenderableVisualStyle, resolvePlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { validateTeaser, TEASER_POLICY } from "../lib/teaser-hooks.mjs";
 export function validatePlan(plan, source) {
   if (!plan || !Array.isArray(plan.parts) || plan.parts.length !== 2) throw new Error("Edit plan phải có đúng 2 Part.");
+  if(plan.hookTransition!==undefined&&!["rainbow-light-leak","dip-black","flash-white","none"].includes(plan.hookTransition))throw Error("Invalid hook transition.");
+  normalizeMusic(plan.music);
+  if(plan.musicSpeech!==undefined)validateSpeechActivity(plan.musicSpeech,source);
   assertRenderableVisualStyle(resolvePlanVisualStyle(plan));
   if(plan.analysis!==undefined)validateMainAnalysis(plan.analysis,source);
   if (plan.teaserPolicy !== undefined && plan.teaserPolicy !== TEASER_POLICY) throw new Error("Invalid teaser policy.");

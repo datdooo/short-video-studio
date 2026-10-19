@@ -14,12 +14,12 @@ test('ordinary Auto orchestration runs the shared main engine then independent h
  const cached=await f.run(source,{...body,visualStyle:{font:'ignored'}});assert.deepEqual(cached.plan.parts,plan.parts);assert.deepEqual(f.counts(),[1,2]);
 });
 test('missing auth is an explicit deterministic main/hook fallback without a second provider attempt',async t=>{
- const f=await setup(t,true),{plan}=await f.run(source,{});validatePlan(plan,source);assert.equal(plan.analysis.method,'deterministic-fallback');assert.ok(plan.parts.every(p=>p.teaser.selection==='fallback'));assert.deepEqual(f.counts(),[0,0]);
+ const f=await setup(t,true),{plan}=await f.run(source,{});validatePlan(plan,source);assert.equal(plan.analysis.method,'deterministic-fallback');assert.ok(plan.parts.every(p=>p.teaser.status==='unavailable'&&p.teaser.reason.includes('10 rendered seconds')));assert.deepEqual(f.counts(),[0,0]);
 });
 test('Semi-Auto imports intentional ranges and external hooks without reranking/snap; mismatched context/locks/missing hook are rejected',async t=>{
  const f=await setup(t),prepared=(await f.run(source,{mode:'context'})).context;
  const base=(await f.run(source,{})).plan;
- const selections=base.parts.map(p=>{const start=p.segments[0].start+4;return{start,end:start+6.25,reason:'External fixture reason',relation:'This same part',evidenceTimes:[start],limitations:['External fixture, no API claim.'],model:'self-reported'};});
+ const selections=base.parts.map(p=>{const start=p.segments[0].start+14;return{start,end:start+6.25,reason:'External fixture reason',relation:'This same part',evidenceTimes:[start],limitations:['External fixture, no API claim.'],model:'self-reported'};});
  const plan=await attachExternalHooks({...base,providerUsed:'gemini'},selections,source,'','gemini');
  const body={mode:'import',sourceId:source.id,requestId:'11111111-1111-4111-8111-111111111111',analysisKey:prepared.analysisKey,provider:'gemini',plan};
  const result=await f.run(source,body);assert.deepEqual(result.plan.parts,plan.parts);assert.equal(result.plan.analysis.method,'external-import');assert.deepEqual(f.counts(),[1,2]);

@@ -1,0 +1,17 @@
+import initVAD from '@ozymandiasthegreat/vad';import{createReadStream}from'node:fs';import{mkdir,rm}from'node:fs/promises';import{randomUUID,createHash}from'node:crypto';import path from'node:path';import{createAnalysisCache,requireDiskSpace}from'./analysis-cache.mjs';import{createSharedOperations}from'./shared-operation.mjs';import{validateSpeechActivity}from'../lib/music/settings.mjs';
+export function voiceFramesToIntervals(frames,duration){const out=[];let start;for(let i=0;i<=frames.length;i++){if(frames[i]&&start===undefined)start=i*.03;if(!frames[i]&&start!==undefined){const end=Math.min(duration,i*.03);if(end-start>=.09){const last=out.at(-1);if(last&&start-last.end<=.2)last.end=end;else out.push({start,end});}start=undefined;}}return out;}
+export function createMusicSpeech({root,ffmpeg,run,fingerprint,protectedKeys}){const cache=createAnalysisCache(path.join(root,'cache'),{protectedKeys}),shared=createSharedOperations(),busy=new Map();let serial=Promise.resolve();
+ return{isBusy:id=>busy.has(id),async detect(source,signal){signal?.throwIfAborted();const sourceKey=await fingerprint(source,signal),key=createHash('sha256').update(JSON.stringify(['webrtc-vad-v1-zcr1',sourceKey,source.duration,source.hasAudio])).digest('hex');
+ const base={version:'webrtc-vad-v1',sourceId:source.id,sourceKey,cacheKey:key,timeUnit:'source-seconds',status:'available',intervals:[],limitations:['Local WebRTC VAD + broadband-noise guard estimates speech; music/noise can still cause false positives and some unvoiced speech may be missed.']};
+ return shared(key,active=>cache.using(key,async()=>{const cached=await cache.get(key);if(cached?.sourceKey===sourceKey)try{return validateSpeechActivity({...cached,sourceId:source.id},source);}catch{/* invalid cache */}
+ const task=serial.then(async()=>{busy.set(source.id,true);let temporary;try{
+ if(!source.hasAudio)return base;
+ if(source.duration>1800)return{...base,status:'unavailable',limitations:['Ducking chưa khả dụng: video quá 30 phút; giữ nguyên mức nhạc thủ công.']};
+ const bounded=AbortSignal.any([active,AbortSignal.timeout(90000)]);await mkdir(root,{recursive:true});await requireDiskSpace(root,256*1024*1024+source.duration*32000);temporary=path.join(root,'.vad-'+randomUUID()+'.pcm');
+ await run(ffmpeg,['-v','error','-nostdin','-y','-i',source.mediaPath,'-t',String(source.duration),'-vn','-ar','16000','-ac','1','-f','s16le',temporary],{signal:bounded});
+ const VAD=await initVAD(),vad=new VAD(3,16000),frames=[];let rest=Buffer.alloc(0);
+ try{for await(const chunk of createReadStream(temporary)){bounded.throwIfAborted();const b=Buffer.concat([rest,chunk]);let offset=0;for(;offset+960<=b.length;offset+=960){const frame=new Int16Array(480);for(let i=0;i<480;i++)frame[i]=b.readInt16LE(offset+i*2);const v=vad.processFrame(frame);if(v<0)throw Error('VAD frame failed');let crossings=0;for(let i=1;i<480;i++)if((frame[i]>=0)!==(frame[i-1]>=0))crossings++;frames.push(v===1&&crossings/479<.35);}rest=Buffer.from(b.subarray(offset));}}finally{vad.destroy();}
+ const value={...base,intervals:voiceFramesToIntervals(frames,source.duration)};await cache.put(key,value);return value;
+ }catch{active.throwIfAborted();return{...base,status:'unavailable',limitations:['Không chạy được WebRTC VAD (timeout/thiếu runtime/dung lượng). Giữ nguyên mức nhạc thủ công.']};}finally{busy.delete(source.id);if(temporary)await rm(temporary,{force:true});}});serial=task.catch(()=>{});return task;}),signal).then(structuredClone);
+ }};
+}

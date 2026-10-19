@@ -15,14 +15,14 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
       const plan=structuredClone(body.plan);
       if(plan.providerUsed!==body.provider||plan.parts?.some((p,i)=>p.id!==i+1))throw new Error('External plan provider/part identity mismatch.');
       validatePlan(plan,source);assertMainLocks(plan,body.currentPlan);
-      if(plan.parts.some(p=>p.teaser?.selection!=='external-import'||p.teaser.provider!==body.provider))throw new Error('Missing valid external hooks; use the hook-only prompt for this provider.');
+      if(plan.parts.some(p=>!(p.teaser?.status==='unavailable'&&p.teaser.selectionPolicy==='later-main-v1')&&(p.teaser?.selection!=='external-import'||p.teaser.provider!==body.provider)))throw new Error('Missing valid external hooks; use the hook-only prompt for this provider.');
       return{plan:externalPlanAnalysis(plan,source,context,options,input)};
     }
     let plan=await mainContent.select(source,context,options);
     if(body.captionCues)plan.captionCues=structuredClone(body.captionCues);
     if(!lockedParts(body.currentPlan).every(Boolean)){
       if(plan.analysis?.method==='deterministic-fallback'&&/provider-/.test(plan.analysis.fallbackReason||'')){
-        plan={...plan,teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>({...p,teaser:p.manualLocked&&p.teaser?p.teaser:fallbackTeaser(p,'AI main selection unavailable; deterministic same-part hook, editorial relevance unverified.',options.boundaryCues||options.cues,plan.analysis.analysisKey)}))};
+        plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"rainbow-light-leak"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>({...p,teaser:p.manualLocked&&p.teaser?p.teaser:fallbackTeaser(p,'AI main selection unavailable; deterministic same-part hook, editorial relevance unverified.',options.boundaryCues||options.cues,plan.analysis.analysisKey)}))};
       }else plan=await selectHooks(plan,{...source,sourceContext:context},signal,body.transcript);
     }
     validatePlan(plan,source);assertMainLocks(plan,body.currentPlan);signal?.throwIfAborted();return{plan};

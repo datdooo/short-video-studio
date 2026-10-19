@@ -87,7 +87,7 @@ async function copyPackage(name, from = resolver, optional = false) {
   for (const dependency of Object.keys(metadata.dependencies || {})) await copyPackage(dependency, next);
   for (const dependency of Object.keys(metadata.optionalDependencies || {})) await copyPackage(dependency, next, true);
 }
-await copyPackage('sharp'); await copyPackage('youtubei.js');
+await copyPackage('sharp'); await copyPackage('youtubei.js'); await copyPackage('@ozymandiasthegreat/vad');
 // Sharp's Windows package contains the native addon and its libvips DLLs.
 const sharpVersion = JSON.parse(readFileSync(path.join(project, 'node_modules/sharp/package.json'))).version;
 const sharpPackage = await json(`https://registry.npmjs.org/@img%2fsharp-win32-x64/${sharpVersion}`);

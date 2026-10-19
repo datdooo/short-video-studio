@@ -9,7 +9,7 @@ import { partTransitionWindows, presentationSegments } from "../lib/teaser-hooks
 import { cutTransitionFilters } from "./cut-transition.mjs";
 import { cutTransitionPose } from "../lib/visual-style/cut-transitions.mjs";
 const source = { id: "test-source", title: "Tutorial", duration: 80 };
-const plan = () => ({ providerUsed: "manual", parts: [0, 40].map((start, i) => ({ id: i + 1, title: `Part ${i + 1}`, startTrimApplied: true, smartCutApplied: true, segments: [{ start, end: start + 10 }, { start: start + 12, end: start + 20 }] })) });
+const plan = () => ({ providerUsed: "manual", parts: [0, 40].map((start, i) => ({ id: i + 1, title: `Part ${i + 1}`, startTrimApplied: true, smartCutApplied: true, segments: [{ start, end: start + 10 }, { start: start + 12, end: start + 30 }] })) });
 async function setup(t, analyze) {
   const cacheRoot = await mkdtemp(path.join(tmpdir(), "hook-unit-")); t.after(() => rm(cacheRoot, { recursive: true, force: true }));
   let calls = 0, frameCalls = 0;
@@ -21,7 +21,7 @@ const valid = ({ input }) => { const start = input.allowedRanges[0].start + 1; r
 test("structured selection is per-part, preserves all main locks, copies outputs; style edits use disk cache without frames/AI", async t => {
   const ctx = await setup(t, valid), input = plan(), before = structuredClone(input);
   const result = await ctx.select(input, source);
-  assert.equal(result.parts[0].teaser.start, 1); assert.equal(result.parts[1].teaser.start, 41);
+  assert.equal(result.parts[0].teaser.start, 15.5); assert.equal(result.parts[1].teaser.start, 55.5);
   for (let i = 0; i < 2; i++) { assert.deepEqual(result.parts[i].segments, before.parts[i].segments); assert.equal(result.parts[i].smartCutApplied, true); }
   assert.deepEqual(input, before);
   const changedStyle = { ...input, visualStyle: { arbitraryForCacheTest: true } };
@@ -32,10 +32,10 @@ test("structured selection is per-part, preserves all main locks, copies outputs
 });
 test("ranges, content fingerprint and transcript edits invalidate selection; Custom Time locks remain authoritative", async t => {
   const ctx = await setup(t, valid), initial = await ctx.select(plan(), source);
-  const locked = applyPartTimes(initial, [{ start: "2", end: "20" }, { start: "40", end: "60" }], 80);
-  assert.equal(locked.parts[0].teaser.selection, "fallback");
+  const locked = applyPartTimes(initial, [{ start: "2", end: "30" }, { start: "40", end: "70" }], 80);
+  assert.equal(locked.parts[0].teaser.status, "unavailable");
   const fresh = await ctx.select(locked, source);
-  assert.equal(fresh.parts[0].segments[0].start, 2); assert.equal(fresh.parts[0].teaser.start, 3);
+  assert.equal(fresh.parts[0].segments[0].start, 2); assert.equal(fresh.parts[0].teaser.start, 17.5);
   assert.equal(ctx.calls(), 3, "Unchanged part retains its cache entry");
   await ctx.select(locked, { ...source, digest: "different bytes" }); assert.equal(ctx.calls(), 5);
   await ctx.select(locked, source, { cues: [{ start: 3, end: 5, text: "Changed sentence." }] }); assert.equal(ctx.calls(), 6);
@@ -44,7 +44,7 @@ test("out-of-part or malformed model timestamps retry twice then explicitly fall
   const ctx = await setup(t, () => ({ value: { start: 70, end: 76.25, reason: "bad", relation: "bad", evidenceTimes: [70], limitations: [] } }));
   const result = await ctx.select(plan(), source);
   assert.equal(ctx.calls(), 4);
-  assert.ok(result.parts.every(p => p.teaser.selection === "fallback" && p.teaser.provider === "none"));
+  assert.ok(result.parts.every(p => p.teaser.status === "unavailable" && p.teaser.reason.includes("no coherent")));
 });
 test("image rejection uses a bounded text-only retry and records lost evidence", async t => {
   const ctx = await setup(t, args => { if (args.images.length) throw Object.assign(new Error("unsupported"), {status:400}); return valid(args); });
@@ -57,7 +57,7 @@ test("auth, timeout, unavailable model and rate limits produce bounded non-secre
     const ctx = await setup(t, () => { throw error; });
     const result = await ctx.select(plan(), source);
     assert.ok(ctx.calls() <= 4); assert.ok(!JSON.stringify(result).includes("PRIVATE"));
-    assert.ok(result.parts.every(p => p.teaser.selection === "fallback"));
+    assert.ok(result.parts.every(p => p.teaser.status === "unavailable"));
   }
 });
 test("prompt inputs bound untrusted source text and filter cues to this part; no confidence interpretation", () => {
@@ -69,7 +69,7 @@ test("missing configured credentials performs no inference/frame extraction and 
   const cacheRoot = await mkdtemp(path.join(tmpdir(), "hook-auth-unit-"));t.after(()=>rm(cacheRoot,{recursive:true,force:true}));
   const select=createTeaserSelector({cacheRoot,resolveProvider:async()=>{throw new Error("AUTH_REQUIRED private-token");},fingerprint:async()=>"content",frames:()=>assert.fail("No frames should be extracted without a provider")});
   const result=await select(plan(),source);
-  assert.ok(result.parts.every(p=>p.teaser.selection==="fallback"&&p.teaser.reason==="provider-auth-unavailable"));
+  assert.ok(result.parts.every(p=>p.teaser.status==="unavailable"&&p.teaser.reason.startsWith("provider-auth-unavailable")));
   assert.ok(!JSON.stringify(result).includes("private-token"));
 });
 test("hook-only Dip Black leaves ordinary None cuts unchanged; Flash choice is honored in preview and FFmpeg", async t => {
@@ -90,22 +90,22 @@ test('edited transcript with unchanged captions and model changes cannot hit the
  model='two';await select(plan(),{...source,transcript:'edited'},{cues});assert.equal(calls,6);
 });
 test('known timed speech clipping is retried then explicit fallback; no invented sentence coherence',async t=>{
- const ctx=await setup(t,valid);const result=await ctx.select(plan(),source,{cues:[{start:0,end:4,text:'A complete sentence.'}]});
- assert.equal(result.parts[0].teaser.selection,'fallback');assert.equal(result.parts[1].teaser.selection,'ai');assert.equal(ctx.calls(),3);
+ const ctx=await setup(t,valid);const result=await ctx.select(plan(),source,{cues:[{start:15,end:18,text:'A complete sentence.'}]});
+ assert.equal(result.parts[0].teaser.status,'unavailable');assert.equal(result.parts[1].teaser.selection,'ai');assert.equal(ctx.calls(),3);
 });
 test('rounded edited text does not replace precise source timing; changed timing invalidates cache', async t => {
  const ctx=await setup(t,args=>{
    if(args.input.partId===1) assert.equal(args.input.transcript[0].text,'Edited words');
    return valid(args);
  });
- const cues=[{start:1,end:7.25,text:'Edited words'}];
- const boundaryCues=[{start:0.5,end:4,text:'Original timing'}];
+ const cues=[{start:15.5,end:21.75,text:'Edited words'}];
+ const boundaryCues=[{start:15,end:18,text:'Original timing'}];
  const rejected=await ctx.select(plan(),source,{cues,boundaryCues});
- assert.equal(rejected.parts[0].teaser.selection,'fallback');assert.equal(ctx.calls(),3);
- const accepted=await ctx.select(plan(),source,{cues,boundaryCues:[{start:1,end:7.25,text:'Original timing'}]});
+ assert.equal(rejected.parts[0].teaser.status,'unavailable');assert.equal(ctx.calls(),3);
+ const accepted=await ctx.select(plan(),source,{cues,boundaryCues:[{start:15.5,end:21.75,text:'Original timing'}]});
  assert.equal(accepted.parts[0].teaser.selection,'ai');assert.equal(ctx.calls(),4);
  assert.notEqual(rejected.parts[0].teaser.inputKey,accepted.parts[0].teaser.inputKey);
- await ctx.select(plan(),source,{cues,boundaryCues:[{start:1,end:7.25,text:'Original timing'}]});
+ await ctx.select(plan(),source,{cues,boundaryCues:[{start:15.5,end:21.75,text:'Original timing'}]});
  assert.equal(ctx.calls(),4,'Unchanged timing uses cache');
 });
 

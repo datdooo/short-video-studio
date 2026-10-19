@@ -1,0 +1,1 @@
+export const MUSIC_CATALOG:readonly{id:string;title:string;artist:string;mood:string;duration:number;sourceUrl:string;licenseUrl:string;termsUrl:string;checkedDate:string;instrumentalVerified:boolean;availability:string}[];

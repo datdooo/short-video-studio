@@ -1,3 +1,10 @@
+import {createMusicPreview} from './music-preview.mjs';
+import {rainbowSceneFilters} from '../lib/music/light-leak.mjs';
+import {createMusicLibrary} from './music-library.mjs';
+import {createMusicSpeech} from './music-speech.mjs';
+import {normalizeMusic,effectiveMusic} from '../lib/music/settings.mjs';
+import {MUSIC_CATALOG} from '../lib/music/catalog.mjs';
+import {musicMixFilters} from './music-audio.mjs';
 import { spawn, spawnSync } from "node:child_process";
 import {
   createHash,
@@ -161,6 +168,7 @@ const mediaLibrary = createMediaLibrary({
   ],
   isBusy: ({ storageId, sourceId }) => storageId === "current" && (
     speech.isBusy(sourceId) ||
+    musicSpeech.isBusy(sourceId) || musicPreview.isBusy(sourceId) ||
     localSignals.isBusy(sourceId) ||
     [...jobs.values()].some((job) => job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id))) ||
     [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing", "paused", "awaiting-import", "review-required", "render-ready", "submitting"].includes(item.state))))
@@ -272,7 +280,7 @@ function corsHeaders(request) {
   return {
     "Access-Control-Allow-Origin": request.headers.origin || "*",
     "Access-Control-Allow-Methods": "GET, HEAD, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Filename, Range",
+    "Access-Control-Allow-Headers": "Content-Type, X-Filename, X-Catalog-Id, Range",
     "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
     "Access-Control-Allow-Private-Network": "true",
     "Access-Control-Max-Age": "86400",
@@ -728,11 +736,16 @@ async function resolveEditingProvider(signal) {
     } };
 }
 const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
+const musicLibrary=createMusicLibrary({root:path.join(dataRoot,"music"),ffmpeg,ffprobe,run});
+const musicSpeech=createMusicSpeech({root:path.join(dataRoot,"cache","music-speech"),ffmpeg,run,fingerprint:hookSourceFingerprint,protectedKeys:protectedAnalysisKeys});
+const musicPreview=createMusicPreview({root:path.join(dataRoot,"cache","music-preview"),ffmpeg,run,musicLibrary,musicSpeech,fingerprint:hookSourceFingerprint});
 const localSignals = createLocalSignalAnalyzer({ ffmpeg, run, fingerprint: hookSourceFingerprint, cacheRoot:path.join(dataRoot,"cache","local-signals"), protectedKeys:protectedAnalysisKeys });
 const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider, protectedKeys:protectedAnalysisKeys });
 
 function protectedAnalysisKeys() {
   const keys=new Set();
+  for(const job of jobs.values())if(job.plan?.musicSpeech?.cacheKey)keys.add(job.plan.musicSpeech.cacheKey);
+  for(const batch of batches.values())for(const item of batch.items)if(!item.deleted&&item.plan?.musicSpeech?.cacheKey)keys.add(item.plan.musicSpeech.cacheKey);
   for(const plan of [...jobs.values()].map(j=>j.plan).concat([...batches.values()].flatMap(b=>b.items.filter(i=>!i.deleted).map(i=>i.plan)))) {
     if(plan?.analysis?.cacheKey)keys.add(plan.analysis.cacheKey);if(plan?.analysis?.localCacheKey)keys.add(plan.analysis.localCacheKey);
   }
@@ -1229,12 +1242,16 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   // The existing title-card input carries scene pixels below unchanged text.
   // None reuses the exact original path/graph; static scenes need no extra decoder.
   const animated = normalizeTitleAnimation(plan.visualStyle?.titleAnimation) !== "none";
+  const musicSettings=effectiveMusic(plan.music,part.id);
+  const musicAsset=musicSettings.enabled?await musicLibrary.resolve(musicSettings.assetId):null;
   const segments = presentationSegments(part), finitePresentation = animated || segments !== part.segments;
   // Fractional hook/cut times cross two fps conversions and image overlays.
   // Bound only hook presentations to their intended output frame count, filling
   // at most three EOF frames without shortening the independently finite audio.
   const hookTail = segments !== part.segments ? `,tpad=stop_mode=clone:stop_duration=0.1,trim=end_frame=${Math.round(presentationDuration(part) / PLAYBACK_RATE * 30)}` : "";
-  const transitionFilters = cutTransitionFilters(plan.visualStyle?.cutTransition, segments, partTransitionWindows(part, plan.visualStyle?.cutTransition));
+  const transitionWindows=partTransitionWindows(part,plan.visualStyle?.cutTransition,plan.hookTransition);
+  const rainbow=transitionWindows.some(w=>w.presetId==="rainbow-light-leak");
+  const transitionFilters = cutTransitionFilters(plan.visualStyle?.cutTransition, segments, partTransitionWindows(part, plan.visualStyle?.cutTransition,plan.hookTransition));
   let titleInputPath = titleOverlayPath;
   if (sceneAsset && !animated && !transitionFilters) {
     titleInputPath = path.join(workDirectory, `part-${part.id}-scene-titles.png`);
@@ -1242,8 +1259,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   }
   const audioInput = source.hasAudio ? "0:a" : "1:a";
   const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
+  const strictSegmentTiming=part.teaser?.selectionPolicy==='later-main-v1';
   const segmentFilters = segments.flatMap((segment, index) => [
-    `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS,fps=30,setsar=1[v${index}]`,
+    `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-STARTPTS,fps=30,setsar=1${strictSegmentTiming?`,tpad=stop_mode=clone:stop_duration=0.5,trim=duration=${segment.end-segment.start}`:""}[v${index}]`,
     `[${audioInput}]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${index}]`,
   ]);
   const concatInputs = segments.map((_, index) => `[v${index}][a${index}]`).join("");
@@ -1274,7 +1292,8 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[${transitionFilters ? "cutScene" : "layout"}]`,
     ...(transitionFilters ? [
       ...(animatedSceneInput !== undefined ? [`[${animatedSceneInput}:v]format=rgba[cutDecoration]`, `[cutScene][cutDecoration]overlay=0:0:shortest=1${overlayFormat}[decoratedCutScene]`] : []),
-      `[${animatedSceneInput !== undefined ? "decoratedCutScene" : "cutScene"}]${transitionFilters}[layout]`,
+      `[${animatedSceneInput !== undefined ? "decoratedCutScene" : "cutScene"}]${transitionFilters}[${rainbow?"rainbowScene":"layout"}]`,
+      ...(rainbow?rainbowSceneFilters("rainbowScene","layout",transitionWindows):[]),
     ] : []),
     ...(animationFilters || [
     `[${overlayInput}:v]format=rgba[titlecard]`,
@@ -1284,7 +1303,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     ]),
     ...(subtitlesPath ? [`[${overlayInput + 2}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`] : []),
     `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,${finitePresentation ? "settb=AVTB," : ""}setpts=PTS/${PLAYBACK_RATE}${finitePresentation ? ",fps=30:start_time=0:eof_action=pass" : ""}${hookTail}[vout]`,
-    `[cuta]atempo=${PLAYBACK_RATE}[aout]`,
+    `[cuta]atempo=${PLAYBACK_RATE}[${musicAsset?"originalaudio":"aout"}]`,
   ];
 
   const buildArgs = (videoEncoder) => {
@@ -1300,8 +1319,10 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
     if (backgroundAsset) args.push("-loop", "1", "-framerate", "30", "-i", backgroundAsset);
     if (animatedSceneInput !== undefined) args.push("-loop", "1", "-framerate", "30", "-i", sceneAsset);
+    const renderFilters=[...filters];
+    if(musicAsset){const input=args.filter(a=>a==="-i").length;args.push("-stream_loop","-1","-i",musicAsset.file);renderFilters.push(...musicMixFilters({input,settings:musicSettings,part,activity:plan.musicSpeech,duration:presentationDuration(part)/PLAYBACK_RATE}));}
     args.push(
-      "-filter_complex", filters.join(";"),
+      "-filter_complex", renderFilters.join(";"),
       "-map", "[vout]",
       "-map", "[aout]",
       "-r", "30",
@@ -1464,9 +1485,13 @@ async function startRender(body, parentSignal) {
   if (!["manual", "mock"].includes(originalPlan.providerUsed) && originalPlan.parts.some((part) => !part.smartCutApplied)) {
     originalPlan = smartCutPlan(originalPlan, await speech.boundaries(source), source.duration);
   }
-  if (body.selectTeasers === true || (originalPlan.teaserPolicy === TEASER_POLICY && originalPlan.parts.some((p) => !p.teaser || p.teaser.inputKey === "0".repeat(64)))) originalPlan = await planTeasers(originalPlan, source, parentSignal);
+  if (body.selectTeasers === true || (originalPlan.teaserPolicy === TEASER_POLICY && originalPlan.parts.some((p) => !p.teaser))) originalPlan = await planTeasers(originalPlan, source, parentSignal);
   originalPlan = snapshotPlanVisualStyle(originalPlan);
   if (originalPlan.subtitles.enabled && originalPlan.captionCues) originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
+  originalPlan.music=normalizeMusic(originalPlan.music);
+  if(originalPlan.music.enabled){for(const part of originalPlan.parts){const m=effectiveMusic(originalPlan.music,part.id);if(m.enabled)await musicLibrary.resolve(m.assetId);}
+    if(originalPlan.music.ducking)originalPlan.musicSpeech=await musicSpeech.detect(source,parentSignal);
+  }
   const renderPlan = originalPlan;
   validatePlan(renderPlan, source);
   if (mediaLibrary.isLocked(source.id)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
@@ -1549,7 +1574,7 @@ function batchSnapshot(batch) {
 
 function mediaContentType(target) {
   return {
-    ".mp4": "video/mp4",
+    ".mp4": "video/mp4", ".flac":"audio/flac", ".m4a":"audio/mp4",
     ".m4v": "video/mp4",
     ".mov": "video/quicktime",
     ".webm": "video/webm",
@@ -1630,12 +1655,12 @@ const server = createServer(async (request, response) => {
       response.end();
       return;
     }
-    if (requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut|teaser-hooks|auto-cut)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
+    if (requestUrl.pathname.startsWith("/api/music") || requestUrl.pathname.endsWith("/music-speech") || requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut|teaser-hooks|auto-cut)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
       const origin = request.headers.origin;
       let local = !origin;
       try { const url = new URL(origin); local = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname); } catch { /* Missing/native origin only. */ }
       if (!local) { sendJson(request, response, 403, { error: "Kho video chỉ cho phép thao tác từ app local trên máy này." }); return; }
-      if (["POST", "DELETE"].includes(request.method) && request.headers["content-type"]?.split(";")[0].trim() !== "application/json") {
+      if (requestUrl.pathname!=="/api/music/import" && ["POST", "DELETE"].includes(request.method) && request.headers["content-type"]?.split(";")[0].trim() !== "application/json") {
         sendJson(request, response, 415, { error: "Thao tác kho video yêu cầu JSON từ app." }); return;
       }
     }
@@ -1728,6 +1753,20 @@ const server = createServer(async (request, response) => {
       finally{response.removeListener("close",abort);}
       return;
     }
+    if(request.method==='POST'&&requestUrl.pathname==='/api/music/preview'){
+      const body=await readJson(request),source=await loadSource(body.sourceId);if(mediaLibrary.isLocked(source.id))throw Error('Source is busy in Trash.');validatePlan(body.plan,source);const controller=new AbortController(),abort=()=>controller.abort(new Error('Audio preview cancelled'));response.once('close',abort);try{sendJson(request,response,200,await musicPreview.prepare(source,body.plan,body.partId,body.sessionId,controller.signal));}finally{response.removeListener('close',abort);}return;
+    }
+    const musicPreviewFile=requestUrl.pathname.match(/^\/api\/music\/preview\/([a-f0-9]{64})\/media$/);
+    if(['GET','HEAD'].includes(request.method)&&musicPreviewFile){await serveMediaPath(request,response,await musicPreview.resolve(musicPreviewFile[1]),{download:false});return;}
+    if(request.method==='GET'&&requestUrl.pathname==='/api/music'){sendJson(request,response,200,{assets:await musicLibrary.list(),catalog:MUSIC_CATALOG});return;}
+    if(request.method==='POST'&&requestUrl.pathname==='/api/music/import'){
+      const controller=new AbortController(),abort=()=>controller.abort(new Error('Music import cancelled'));response.once('close',abort);
+      try{const asset=await musicLibrary.import(request,{filename:decodeURIComponent(String(request.headers['x-filename']||'music.mp3')),catalogId:MUSIC_CATALOG.some(t=>t.id===request.headers['x-catalog-id'])?request.headers['x-catalog-id']:undefined,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(120000)])});const{file,...metadata}=asset;void file;sendJson(request,response,201,{asset:metadata});}finally{response.removeListener('close',abort);}return;
+    }
+    const musicFile=requestUrl.pathname.match(/^\/api\/music\/([a-f0-9]{64})\/media$/);
+    if(['GET','HEAD'].includes(request.method)&&musicFile){const asset=await musicLibrary.resolve(musicFile[1]);await serveMediaPath(request,response,asset.file,{download:false});return;}
+    const musicDetect=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/music-speech$/i);
+    if(request.method==='POST'&&musicDetect){await readJson(request);const source=await loadSource(musicDetect[1]);const controller=new AbortController(),abort=()=>controller.abort(new Error('Speech detection cancelled'));response.once('close',abort);try{sendJson(request,response,200,await musicSpeech.detect(source,controller.signal));}finally{response.removeListener('close',abort);}return;}
     if (request.method === "GET" && requestUrl.pathname === "/api/speech/status") {
       sendJson(request, response, 200, await speech.status()); return;
     }

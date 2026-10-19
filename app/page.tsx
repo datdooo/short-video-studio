@@ -1,5 +1,8 @@
 "use client";
 
+import {hookNeedsReselection,validateTeaser} from "@/lib/teaser-hooks.mjs";
+import {MusicPanel} from '@/components/music-panel';
+
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -151,7 +154,7 @@ type BatchJob = {
     title?: string;
     sourceId?: string;
     state: "pending" | "downloading" | "analyzing" | "queued" | "rendering" | "done" | "error" | "cancelled" | "paused" | "awaiting-import" | "review-required" | "render-ready" | "submitting";
-    settings?:{provider?:AiProvider;instruction?:string;supplementalPrompt?:string;visualStyle?:EditPlan["visualStyle"];subtitles?:SubtitleStyle};
+    settings?:{music?:EditPlan["music"];hookTransition?:EditPlan["hookTransition"];provider?:AiProvider;instruction?:string;supplementalPrompt?:string;visualStyle?:EditPlan["visualStyle"];subtitles?:SubtitleStyle};
     error: string | null;
     plan?: EditPlan;
     job?: RenderJob;
@@ -306,7 +309,7 @@ export default function Home() {
     });
   }, []);
   const replacePlan = useCallback((next: EditPlan) => {
-    setPlan((current) => { const style = resolvePlanVisualStyle(current); return snapshotPlanVisualStyle({ ...next, visualStyle: style, subtitles: style.subtitle }); });
+    setPlan((current) => { const style = resolvePlanVisualStyle(current); return snapshotPlanVisualStyle({ ...next, music:current.music, musicSpeech:current.musicSpeech, visualStyle: style, subtitles: style.subtitle, hookTransition:current.hookTransition??next.hookTransition }); });
   }, []);
   const [sourceCaptions, setSourceCaptions] = useState<CaptionTrack | null>(null);
   const subtitleRequestSerial = useRef(0);
@@ -395,12 +398,12 @@ export default function Home() {
     } catch (caught) { return { parts: base.parts, analysis:base.analysis, error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ." }; }
   }, [plan.parts, plan.providerUsed, plan.analysis, customTimes, preparedSource?.duration]);
   const effectiveTiming = { plan: { ...plan, parts: timing.parts, analysis:timing.analysis }, error: timing.error };
-  const previewPlan: EditPlan = effectiveTiming.plan;
+  const previewPlan: EditPlan = {...effectiveTiming.plan,musicSpeech:plan.musicSpeech?.sourceId===preparedSource?.id?plan.musicSpeech:undefined};
   const previewVisualStyle = useMemo(() => resolvePlanVisualStyle({ visualStyle: previewPlan.visualStyle, subtitles: subtitleSettings }), [previewPlan.visualStyle, subtitleSettings]);
   const videoColorFilter = browserFilterStyle(previewVisualStyle.filter, { contrast: workerHealth?.render?.contrast ?? DEFAULT_VISUAL_STYLE.filter.contrast, saturation: workerHealth?.render?.saturation ?? DEFAULT_VISUAL_STYLE.filter.saturation });
   const activePart = previewPlan.parts[activePartIndex];
   const playbackSegments = useMemo(() => presentationSegments(activePart), [activePart]);
-  const transitionWindows = useMemo(() => hasEditPlan ? partTransitionWindows(activePart, previewVisualStyle.cutTransition) : [], [hasEditPlan, previewVisualStyle.cutTransition, activePart]);
+  const transitionWindows = useMemo(() => hasEditPlan ? partTransitionWindows(activePart, previewVisualStyle.cutTransition, previewPlan.hookTransition) : [], [hasEditPlan, previewVisualStyle.cutTransition, activePart,previewPlan.hookTransition]);
   const subtitleCues = useMemo(() => sourceCaptions?.sourceId === preparedSource?.id ? sourceCaptions?.cues || [] : [], [sourceCaptions, preparedSource?.id]);
   const previewCaptions = useMemo(() => partCaptions(previewPlan.captionCues?.cues || subtitleCues, activePart, previewVisualStyle.subtitle), [previewPlan.captionCues, subtitleCues, activePart, previewVisualStyle.subtitle]);
   const previewCaption = previewCaptions.find((cue) => previewCurrentTime * PLAYBACK_RATE >= cue.start && previewCurrentTime * PLAYBACK_RATE < cue.end);
@@ -928,7 +931,7 @@ export default function Home() {
       const source=data.source;setSourceMode("youtube");setSourceUrl(source.sourceUrl||item.url);setPreparedSource(source);setSourceTitle(source.title);setTranscript(source.transcript||"");setCustomTimes(null);setRenderJob(null);
       setProvider(item.settings?.provider||"chatgpt");setInstruction(item.settings?.instruction||"");setSupplementalPrompt(item.settings?.supplementalPrompt||"");
       setSourceCaptions(source.captions?.length?sourceCaptionTrack({sourceId:source.id,cues:source.captions,origin:"youtube"},source):null);
-      if(item.plan){setPlan(snapshotPlanVisualStyle(item.plan));setHasEditPlan(true);}else{setPlan(current=>snapshotPlanVisualStyle({...current,originalTitle:source.title,visualStyle:item.settings?.visualStyle,subtitles:item.settings?.subtitles}));setHasEditPlan(false);}
+      if(item.plan){setPlan(snapshotPlanVisualStyle(item.plan));setHasEditPlan(true);}else{setPlan(current=>snapshotPlanVisualStyle({...current,originalTitle:source.title,music:item.settings?.music,musicSpeech:undefined,hookTransition:item.settings?.hookTransition,visualStyle:item.settings?.visualStyle,subtitles:item.settings?.subtitles}));setHasEditPlan(false);}
       setBatchEditing({batchId:group.id,itemId:item.id,sourceId:source.id});setWebAiPrompt("");setWebAiResult("");setWebAiContext(null);setWorkspace("editor");
     }catch(error){if(analysisRequests.current.isCurrent(ticket))setBatchError(error instanceof Error?error.message:"Không mở được item.");}finally{analysisRequests.current.finish(ticket);}
   }
@@ -954,7 +957,7 @@ export default function Home() {
       if (!urls.length || urls.length > 20) throw new Error("Nhập từ 1 đến 20 link, mỗi link một dòng.");
       const response = await fetch(`${WORKER_ORIGIN}/api/batches`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ urls, provider, instruction, supplementalPrompt, visualStyle: previewVisualStyle, subtitles: subtitleSettings, batchId: batch && !batch.finished ? batch.id : undefined }),
+        body: JSON.stringify({ urls, provider, instruction, supplementalPrompt, visualStyle: previewVisualStyle, subtitles: subtitleSettings, music:previewPlan.music, hookTransition:previewPlan.hookTransition, batchId: batch && !batch.finished ? batch.id : undefined }),
       });
       const data = await response.json() as { batch?: BatchJob; error?: string };
       if (!response.ok || !data.batch) throw new Error(data.error || "Không tạo được hàng đợi.");
@@ -1094,16 +1097,23 @@ export default function Home() {
   const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && webAiContext.supplementalPrompt === supplementalPrompt && webAiContext.mainSignature === mainSignature);
 
 
-  async function chooseTeasers(nextPlan: EditPlan, source: WorkerSource) {
+  async function chooseTeasers(nextPlan: EditPlan, source: WorkerSource, force=false,signal?:AbortSignal) {
+    if(!force&&nextPlan.parts.every(part=>{try{if(!part.teaser)return false;validateTeaser(part,source.duration);return true;}catch{return false;}}))return nextPlan;
     if (["gemini", "muse"].includes(nextPlan.providerUsed) && nextPlan.teaserPolicy === TEASER_POLICY) {
       if (!await externalHooksCurrent(nextPlan, source, transcript)) throw new Error("Hook import đã cũ sau sửa nội dung/transcript. Tạo prompt mới cho provider này trước khi xuất; không tự thay bằng ChatGPT/fallback.");
       return nextPlan;
     }
     const captionCues = sourceCaptions?.sourceId === source.id ? sourceCaptionTrack(sourceCaptions, source) : nextPlan.captionCues;
-    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/teaser-hooks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcript.slice(0,100_000), plan: { ...nextPlan, ...(captionCues ? { captionCues } : {}) } }) });
+    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/teaser-hooks`, { method: "POST", signal,headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcript.slice(0,100_000), plan: { ...nextPlan, ...(captionCues ? { captionCues } : {}) } }) });
     const result = await response.json() as { plan?: EditPlan; error?: string };
     if (!response.ok || !result.plan) throw new Error(result.error || "Không chọn được teaser hook.");
     return result.plan;
+  }
+
+  async function reselectHooks(){
+    if(!preparedSource)return;if(isWebAi){await createWebAiPrompt(true);return;}
+    const ticket=analysisRequests.current.begin(),signature=latestMainSignature.current;setIsAnalyzing(true);setError('');
+    try{const next=await chooseTeasers(previewPlan,preparedSource,true,ticket.controller.signal);if(analysisRequests.current.isCurrent(ticket)&&latestMainSignature.current===signature)setPlan(current=>({...current,parts:next.parts,teaserPolicy:next.teaserPolicy,hookTransition:current.hookTransition??next.hookTransition}));}catch(e){if(analysisRequests.current.isCurrent(ticket))setError(e instanceof Error?e.message:String(e));}finally{if(analysisRequests.current.isCurrent(ticket))setIsAnalyzing(false);}
   }
 
   useEffect(() => {
@@ -1791,6 +1801,7 @@ export default function Home() {
               {previewVideoUrl ? (
                 <video
                   ref={previewVideoRef}
+                  crossOrigin="anonymous"
                   className="native-preview-video cursor-pointer"
                   style={{ width: `${(preparedSource?.width || sourceSize.width) * FOREGROUND_SCALE * previewScale}px`, height: 'auto', filter: videoColorFilter }}
                   src={previewVideoUrl}
@@ -1957,6 +1968,10 @@ export default function Home() {
             return { ...current, visualStyle, subtitles: { ...visualStyle.subtitle } };
           })} />,
           }} />
+          {hookNeedsReselection(activePart)&&<p role="status" className="mt-3 text-xs text-amber-300">Hook cũ lặp ngay phần mở đầu. Chọn lại hook rõ ràng để áp dụng khoảng cách 10 giây; snapshot đã queue được giữ nguyên.</p>}
+          {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Chọn lại hook · giữ nguyên main</button>}
+          <label className="mt-4 block text-xs">Hook → Main<select aria-label="Hook transition" className="studio-input mt-2 w-full" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Legacy · theo transition đã lưu</option><option value="rainbow-light-leak">Rainbow Light Leak</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>
+          <MusicPanel plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={isPreviewPlaying} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);previewVideoRef.current?.pause();backgroundVideoRef.current?.pause();}} />
           <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}</summary>
             <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => {

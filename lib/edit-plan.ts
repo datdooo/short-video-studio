@@ -35,6 +35,9 @@ export type EditPart = {
 };
 
 export type EditPlan = {
+  hookTransition?: "rainbow-light-leak"|"dip-black"|"flash-white"|"none";
+  music?: import("./music/settings.mjs").MusicSettings;
+  musicSpeech?: import("./music/settings.mjs").SpeechActivity;
   analysis?: import("./auto-cut/main-content.mjs").MainAnalysis;
   teaserPolicy?: "per-part-v1";
   visualStyle?: VisualStyle;
@@ -129,6 +132,9 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
   }
 
   return {
+    ...(plan.hookTransition ? {hookTransition:plan.hookTransition} : {}),
+    ...(plan.music ? {music:structuredClone(plan.music)} : {}),
+    ...(plan.musicSpeech ? {musicSpeech:structuredClone(plan.musicSpeech)} : {}),
     ...(plan.analysis ? { analysis: structuredClone(plan.analysis) } : {}),
     ...(plan.teaserPolicy ? { teaserPolicy: plan.teaserPolicy } : {}),
     visualStyle: resolvePlanVisualStyle(plan),

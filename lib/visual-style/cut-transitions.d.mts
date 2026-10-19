@@ -1,6 +1,6 @@
 import type { Segment } from "../edit-plan";
 export type CutTransitionId = "none" | "dip-black" | "flash-white";
-export type CutTransitionWindow = { boundary: number; startFrame: number; cutFrame: number; endFrame: number; halfFrames: number; presetId?: CutTransitionId };
+export type CutTransitionWindow = { boundary: number; startFrame: number; cutFrame: number; endFrame: number; halfFrames: number; presetId?: CutTransitionId | "rainbow-light-leak" };
 export type CutTransitionPreset = { id: CutTransitionId; label: string; durationMs: number; color: string; behavior: "none" | "linear-dip" };
 export const CUT_TRANSITION_IDS: readonly CutTransitionId[];
 export function normalizeCutTransition(id?: unknown): CutTransitionId;
