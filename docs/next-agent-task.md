@@ -1,3 +1,17 @@
+# Latest UI follow-up — remove the entire music information card
+
+2026-10-20, base `124a635`, same DEV branch. Removed the complete selected-track
+card below Music Panel in `components/music-panel.tsx`. Credit/textarea/copy UI
+was already removed; no replacement card is added. Track names remain in music
+selectors; import/audition/gain/ducking/preview/export and internal source/license
+metadata are unchanged. No tests/QA requested or run. DEV build passed in one
+Node22 `npm run package:mac:dev` invocation (exit 0). App:
+`release/dev/ShortCut Studio Dev.app`. Local log:
+`/tmp/shortcut-dev-remove-music-card-build-20261020.log`. No app launch or manual
+acceptance performed; no new push.
+
+---
+
 # Active follow-up — all templates use Background Current on selection
 
 2026-10-20, base `d0eae09bc97d6fdc7a399ee64e63ad1abf147cac`, branch
