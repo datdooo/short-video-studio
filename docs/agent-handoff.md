@@ -5,14 +5,32 @@ repository: /Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev
 branch: recovery/visual-dev-reconstructed
 implementation_head_before_resume: d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6
 initial_worktree: six_inherited_modified_files_at_558ad67
-rc_status: qualified_baseline_6ffd2d4_new_teaser_AI_verification_pending
+rc_status: historical_qualified_visual_editor_baseline
 smart_auto_cut_status: foundation_A_B_and_teaser_extension_present_C_to_H_incomplete
-next_task: finish_teaser_web_and_real_video_qualification
+next_task: await_user_instructions
+teaser_status: mac_dev_verified_with_external_provenance_and_editorial_limits
 ---
 
 # Gemini / Antigravity handoff
 
-## Active resume after reconstruction
+## Latest hook repair closure — 2026-10-19
+
+Both original hook-only repairs have arrived; no provider response is pending.
+Gemini8.280–15.000 /160.360–166.840; Muse61.800–68.439 /160.360–166.840.
+Strict source/request/precise-cue checks pass; only hook metadata changed.
+Four packaged MP4s pass exact frames, source/caption repetition, transition,
+source-derived PCM and download/playback smoke checks. Nominal audio-duration
+failures were preserved and diagnosed against pre-AAC PCM, which matches decoded
+sample counts exactly (EOF correlation>0.9997); no product change was needed.
+
+See the leading closure section in `docs/teaser-hooks-qualification.md`. Implementation
+checkpoint05bb071 remains unchanged. Existing260/260 unit/lint/typecheck and prior
+QA are reused, not newly rerun. No rebuild/new AI request. Web models are self-
+reported; live external UI paste, clean word alignment/human editorial listening
+and the old native quit initiator are not independently proved. Await user direction;
+do not automatically start C–H or Sports Voiceover. Earlier pending sections are history.
+
+## Earlier resume after reconstruction (historical)
 
 Git is now standalone in DEV, on the branch/base above. Recovery and cleanup are
 complete; source was preserved, not newly qualified. The old local 21 checkpoints

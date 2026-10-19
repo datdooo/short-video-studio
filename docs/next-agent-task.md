@@ -1,4 +1,21 @@
-# Active task — per-part hook qualification, 2026-10-19
+# Latest checkpoint — hook repair verification complete, 2026-10-19
+
+Branch `recovery/visual-dev-reconstructed`; implementation checkpoint05bb071.
+Both requested original Gemini/Muse hook-only repairs arrived and passed strict
+source/request/cue validation. Four changed-hook MP4s rendered on the existing
+DEV package; locked main content/style/captions stayed identical. Frame, repeated
+source/caption, transition, exact pre-AAC PCM reference and editor-history download/
+playback smoke checks passed. See the leading closure section in
+`docs/teaser-hooks-qualification.md`; previous pending instructions below are history.
+
+No provider response is pending. Do not request another full plan, reupload video,
+rerun completed matrices, rebuild the unchanged package or start another feature.
+Await user instructions. Preserve original JSONs and prior failed-check evidence.
+Web provider/model remain self-reported external imports; clean word-level timing,
+full human editorial listening and the earlier native quit initiator are unproven.
+No C–H, Sports Voiceover, push, merge or production work is authorized.
+
+# Earlier task — per-part hook qualification (resolved)
 
 User resumed hook work after Git reconstruction. DEV is a standalone checkout on
 `recovery/visual-dev-reconstructed`, reconstruction base
@@ -14,7 +31,7 @@ evidence and fixtures; distinguish current auth from successful inference.
 repeat research, completed implementation or the historical RC matrix. No C–H,
 Sports Voiceover, production operations, push or merge.
 
-## Resume exactly here
+## Historical resume instructions (resolved)
 
 Code fixes and DEV package are coherent: preserve original cue timing separately
 from edited transcript; stop owned detached commands on shutdown; clamp hook-only

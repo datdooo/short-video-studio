@@ -4,8 +4,9 @@ Current DEV: `recovery/visual-dev-reconstructed`, reconstruction base `d1e2cd6`.
 Historical implementation began at `6ffd2d4`; that local Git history is unavailable.
 Current follow-up implementation and evidence: `docs/teaser-hooks-qualification.md`.
 The original blocked qualification below is historical. DEV Keychain saving is
-fixed and ChatGPT live two-part requests now pass; Gemini/Muse require separate
-web-workflow evidence and are never inferred operational from GPT success.
+fixed and ChatGPT live two-part requests pass. Repaired Gemini/Muse web imports
+now pass the documented canonical validation/render checks. See their separate
+web-workflow evidence; their status is never inferred from GPT success.
 
 ## Reuse decision (bounded research, 2026-10-18)
 

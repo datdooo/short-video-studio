@@ -1,6 +1,100 @@
 # Per-part teaser follow-up qualification
 
-## Resumed verification — 2026-10-19
+## Hook-only repair closure — 2026-10-19
+
+The user returned both original hook-only repair JSONs. The pending precise-cue
+boundary gate at05bb071 is resolved for these inputs. Qualification covers the
+observed macOS DEV GPT API/UI path and canonical external web-import/render paths,
+with the provenance/editorial limits below. No further provider request is pending.
+Implementation remains05bb071; this closure changes documentation/evidence only.
+
+Artifacts: `.isolation-verification/teaser-resume-20261019/`, original
+`{gemini,muse}-hook-repair-response.json`; new measured results under `hook-repair/`.
+Old responses, failed checks and prior exports remain preserved.
+
+| Provider | Model/provenance | P1 source hook / output seconds | P2 source hook / output seconds | Locked main source ranges P1 / P2 |
+| --- | --- | --- | --- | --- |
+| Gemini web |`Gemini`, self-reported; version unknown |8.280–15.000 /5.376 |160.360–166.840 /5.184 |5–95 /101–200 |
+| Muse web |`Muse Spark`, self-reported |61.800–68.439 /5.3112 |160.360–166.840 /5.184 |1–95 /101–200 |
+
+- Both pass `parseExternalHookOnly` source/request/part/schema validation, then
+  `attachExternalHooks` with the original precise source cues. Every start/end is
+  an actual cue start/end within its own retained range and duration policy.
+  `externalHooksCurrent` passes. Deep comparisons confirm main ranges, titles,
+  hashtags, content strings, caption cues, subtitle settings and all other style/
+  operational fields are unchanged; only teaser metadata changes. Original raw
+  responses were saved without semantic edits, with SHA256 in validation reports.
+- Real configured GPT inference for both parts remains proved by the earlier
+  recorded `gpt-6.1-sol` API requests and ordinary UI upload/selection/preview/export.
+  No GPT or other AI request was made during this repair closure. No heuristic
+  substituted for a web selection. Video attachment was confirmed by the user in
+  the preceding web roundtrips; no authenticated Gemini/Muse analysis API or
+  independently established AV understanding is claimed. Web acceptance uses
+  the same canonical app functions with saved context, not a live UI paste claim.
+
+| Repaired job | Mux seconds P1 / P2 | Exact video frames P1 / P2 |
+| --- | --- | --- |
+| Gemini `2afc0569-4f61-4a10-9a61-b2d0424f13dd` |77.387167 /84.411854 |2321 /2532 |
+| Muse `9d2d15a1-0202-4cef-8ddb-e54ba0d68ade` |80.532729 /84.411854 |2415 /2532 |
+
+All four MP4s:1080×1920,30fps,H.264/AAC; the current packaged DEV worker byte-
+matches source. Existing Black background and genuine preserved source captions
+were reused; source files were hash-checked before submission. Queued/final plan
+snapshots compare equal. Decoded hook vs retained main occurrence has gray-pixel
+mean absolute error0.55–1.75/255; matching subtitle PNGs are byte-identical and
+hook boundaries reach Dip Black. Both full main occurrences remain in output.
+`hook-repair/playback.json` verifies four ordinary editor-history download links,
+Chrome metadata/start playback, seek near EOF and ended without media/page errors.
+This is a playback smoke check, not a full human watch/listen. Cropped comparisons
+were inspected in `hook-repair/real-hooks-contact.png`.
+
+### Audio diagnostic: retain the failure, correct the reference
+
+The old nominal-duration check (within1024 samples of arithmetic duration) failed
+on Gemini P2 and Muse P1/P2. Original scripts/logs remain as
+`qualify-nominal-aac-check.mjs` and `*-nominal-aac-check.log`. It was not silently
+widened to two AAC frames or treated as a successful original test.
+
+An independent source-derived PCM reference reconstructs the selected source
+ranges, original30fps video/audio concat timing,48kHz resampling and atempo1.25,
+without video composition or AAC encoding. Every decoded MP4 sample count equals
+that pre-AAC reference **exactly**; measured EOF waveform correlation is
+0.999729–0.999759 over the actual final250ms through EOF, with zero lag
+(`audio-reference-final.log`). The extra length already exists before encoding,
+so it is not evidence of export tail loss. Final checks require exact reference
+sample equality and correlation>0.99. No renderer/audio change was needed.
+
+| Output | Reference = decoded samples | Difference from nominal samples |
+| --- | --- | --- |
+| Gemini P1 |3714584 |+536 |
+| Gemini P2 |4051769 |+1337 |
+| Muse P1 |3865571 |+1033 |
+| Muse P2 |4051769 |+1337 |
+
+This measures source/tempo preservation; it does not establish word-level semantic
+completeness. Maximum arithmetic duration difference is27.854ms (1337/48000).
+
+### Closure checks and remaining limits
+
+- This closure ran strict validation for two provider responses/four hooks, four
+  actual packaged exports, frame/caption/transition/snapshot checks, four independent
+  PCM references and four download/playback smoke checks. All final checks passed.
+- No product code changed; the260/260 unit, lint/typecheck, eight synthetic exports
+  and earlier six real exports at05bb071 were reused, not rerun or claimed as new.
+  No package rebuild, recovery, cleanup, provider research or full RC matrix.
+- Cue-level clipping is resolved. Automatic cue boundaries are not guaranteed
+  sentence/word boundaries: Muse explicitly notes omitted lead-ins, while retaining
+  the question/unit or numerical comparison. Clean audio alignment and human
+  editorial/engagement review are not proved. Gemini's reason mentions1.385m;
+  the selected transcript says1.38, so that precision is not independently verified.
+  Raw provider text is preserved rather than corrected and presented as AI output.
+- Earlier native interruption logs establish approved normal quits, not the
+  initiator. Separately demonstrated owned-child orphaning is fixed at05bb071.
+  No new unexplained interruption occurred during these four exports.
+- Windows and fresh live multi-link batch remain untested in this resume. No new
+  renderer, subscription, production changes, C–H or Sports Voiceover work.
+
+## Earlier resumed verification — 2026-10-19 (checkpoint05bb071)
 
 Active branch: `recovery/visual-dev-reconstructed`; base `d1e2cd6`.
 Git reconstruction preserved the implementation, not the old local commit
