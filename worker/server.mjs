@@ -41,6 +41,7 @@ import { trimPartStart } from "./part-start.mjs";
 import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
 import { smartCutPlan } from "./smart-cut.mjs";
+import { createLocalSignalAnalyzer } from "./local-signals.mjs";
 import { createMainContentSelector } from "./main-content.mjs";
 import { createSourceContextService, sourceContextFor, saveSourceContext } from "./source-context.mjs";
 import { createYouTubeDownloader } from "./youtube-downloader.mjs";
@@ -161,6 +162,7 @@ const mediaLibrary = createMediaLibrary({
   ],
   isBusy: ({ storageId, sourceId }) => storageId === "current" && (
     speech.isBusy(sourceId) ||
+    localSignals.isBusy(sourceId) ||
     [...jobs.values()].some((job) => job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id))) ||
     [...batches.values()].some((batch) => batch.items.some((item) => (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing"].includes(item.state))))
   ),
@@ -727,7 +729,16 @@ async function resolveEditingProvider(signal) {
     } };
 }
 const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
-const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
+const localSignals = createLocalSignalAnalyzer({ ffmpeg, run, fingerprint: hookSourceFingerprint, cacheRoot:path.join(dataRoot,"cache","local-signals"), protectedKeys:protectedAnalysisKeys });
+const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider, protectedKeys:protectedAnalysisKeys });
+
+function protectedAnalysisKeys() {
+  const keys=new Set();
+  for(const plan of [...jobs.values()].map(j=>j.plan).concat([...batches.values()].flatMap(b=>b.items.filter(i=>!i.deleted).map(i=>i.plan)))) {
+    if(plan?.analysis?.cacheKey)keys.add(plan.analysis.cacheKey);if(plan?.analysis?.localCacheKey)keys.add(plan.analysis.localCacheKey);
+  }
+  return keys;
+}
 
 async function mainAnalysisInputs(source, body, signal) {
   if (body.currentPlan) {
@@ -735,6 +746,9 @@ async function mainAnalysisInputs(source, body, signal) {
     validatePlan(body.currentPlan, source);
   }
   const context = await sourceContexts.ensure(source, { signal, comments: true });
+  const local = await localSignals.forSource(source,signal);
+  context.visualSignals = { ...local.visual,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
+  context.audioSignals = { ...local.audio,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
   try { await saveSourceContext(source.directory, context); } catch { signal?.throwIfAborted(); }
   let cues = source.captions || [];
   if (!cues.length) {
@@ -742,7 +756,7 @@ async function mainAnalysisInputs(source, body, signal) {
   }
   const lines = typeof body.transcript === "string" ? transcriptCues(body.transcript.slice(0, 100000)).filter(c => c.at < source.duration) : [];
   if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter(c => c.end > c.start);
-  return { context, options: { cues, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
+  return { context, options: { cues, local, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
 }
 
 async function planTeasers(plan, source, signal, transcript) {

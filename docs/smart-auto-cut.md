@@ -263,3 +263,26 @@ New analysis cache is atomic, 24MiB/14days/512 files, <=2MiB per entry; active a
 referenced resume keys are protected, and writes are skipped if protection fills
 the budget. No user media/exports/plans/credentials or other cache directories
 are deleted. See `smart-auto-cut-reuse.md`; H is not qualified by fixtures.
+
+## E checkpoint — bounded local FFmpeg evidence
+
+`worker/local-signals.mjs` reuses FFmpeg `scdet`/MAFD and `silencedetect`/`astats`.
+It analyzes at most180 source seconds (full short source or three60s windows),
+2fps/160px video, mono16k audio metadata; one analyzer operation is active at once,
+with a60s total subprocess budget and cancellation. No analysis video/audio
+intermediate is written. Silence and RMS/luma changes are numeric proxies only;
+no action, emotion, speech transcription or semantic-event recognition is claimed.
+Sparse semantic images reuse the existing bounded six-JPEG provider adapter;
+images rejected/unavailable are retried text-only and explicitly recorded.
+
+The `ffmpeg-local-v1` contract uses explicit source seconds, media fingerprint,
+sampled ranges, bounded finite boundaries/activity/silences and availability
+reasons. Consumers validate fingerprint/time units/duration; missing/partial data
+is optional and coverage is disclosed. Cache uses the same24MiB/14day protected
+policy. SourceContext stores visual/audio evidence; main preparation actually
+consumes it for boundary candidates and bounded contributions. ASR remains the
+existing speech service (no model download or duplicate recognizer).
+
+Focused D/E/package-closure checks include an actual4s/64px scene+silence FFmpeg
+fixture (<100KB, removed after test), optional timeout, cancellation and cache reuse.
+Ordinary UI wiring and final delivery are F/G, not established by helpers alone.

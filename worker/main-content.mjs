@@ -1,3 +1,4 @@
+import { normalizeLocalSignals } from '../lib/auto-cut/local-signals.mjs';
 import { createHash } from 'node:crypto';
 import { generateMainCandidates, deterministicMainSelection, selectionToPlan, MAIN_SCHEMA, MAIN_INSTRUCTIONS, lockedParts, assertMainLocks } from '../lib/auto-cut/main-content.mjs';
 import { createSharedOperations } from './shared-operation.mjs';
@@ -9,7 +10,8 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
   const cache = createAnalysisCache(cacheRoot, { protectedKeys }), shared = createSharedOperations();
   async function prepare(source, context, options = {}) {
     options.signal?.throwIfAborted();
-    const input = generateMainCandidates(source, context, options), digest = await fingerprint(source, options.signal);
+    const digest = await fingerprint(source, options.signal);
+    const input = generateMainCandidates(source, context, { ...options, localSourceKey:digest, ...(options.local ? { local:normalizeLocalSignals(options.local,{duration:source.duration,sourceKey:digest}) } : {}) });
     const { sourceId, ...stable } = input;
     const analysisKey = hash({ digest, input: stable });
     return { ...input, sourceId, analysisKey };
@@ -30,15 +32,17 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
         if (cached) {
           try { const plan = { ...cached, originalTitle:source.title, analysis:{ ...cached.analysis, sourceId, cacheKey:key } }; validatePlan(plan,source); assertMainLocks(plan,options.currentPlan); return plan; } catch { /* Invalid/old cache is not a valid analysis. */ }
         }
-        let plan;
+        let plan, textOnly = false;
         if (provider) {
           const bounded = AbortSignal.any([signal, AbortSignal.timeout(90000)]);
           let images = [];
           try { images = frames ? await frames({ segments:[{start:0,end:source.duration}] },source,bounded) : []; }
           catch { bounded.throwIfAborted(); /* Optional sparse images; text still works. */ }
+          textOnly = !images.length;
           for (let attempt=0; attempt<2; attempt++) {
             try {
               const response = await provider.analyze({ input:stableInput, images: attempt ? [] : images, schema:MAIN_SCHEMA, instructions:MAIN_INSTRUCTIONS, signal:bounded, maxTokens:2400 });
+              textOnly ||= Boolean(attempt);
               plan = selectionToPlan(prepared,response.value,{ currentPlan:options.currentPlan,provider:provider.id,model:provider.model });
               validatePlan(plan,source); break;
             } catch (e) {
@@ -48,6 +52,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
           }
         }
         if (!plan) plan = deterministicMainSelection(prepared,options.currentPlan,failure || 'provider-unavailable');
+        if (textOnly) plan.analysis.limitations.push('Main semantic selection received no accepted images; text/signal evidence only.');
         plan.analysis = { ...plan.analysis, sourceId, analysisKey, cacheKey:key, ...(options.local?.cacheKey ? { localCacheKey:options.local.cacheKey } : {}) };
         validatePlan(plan,source); signal.throwIfAborted();
         // Do not perpetually cache auth/rate/timeout failures as a successful AI result.
