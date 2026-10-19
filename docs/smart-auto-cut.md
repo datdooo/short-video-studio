@@ -356,3 +356,11 @@ transcodes or retained WAVs are introduced; optional existing ASR cleans its own
 Focused G tests cover resume, partial failure, cancellation, duplicate source reuse,
 identity/disk refusal, explicit external review and output reuse. H remains user
 acceptance; final UI/render/package smoke and full-check record are separate.
+
+### Integration hardening
+
+Near-identical recipe pairs (both window IoU>=.96) are suppressed after stable
+ranking. Serialized plan/cache analysis is validated for source identity, method,
+finite bounded contributions/evidence and safe UI shapes. Custom Time range edits
+clear only that part's automatic evidence and mark it manual; other-part provenance
+is retained. The editor cancels in-flight main analysis on explicit title/input edits.

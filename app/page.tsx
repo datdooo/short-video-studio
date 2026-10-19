@@ -387,14 +387,15 @@ export default function Home() {
 
   // Timing depends on cuts/provider, never on appearance-only edits.
   const timing = useMemo(() => {
-    let base = { parts: plan.parts, providerUsed: plan.providerUsed };
+    let base = { parts: plan.parts, providerUsed: plan.providerUsed, analysis:plan.analysis };
     try {
       base = { ...base, parts: plan.parts.map(trimPartStart) };
-      return { parts: customTimes ? applyPartTimes(base, customTimes, preparedSource?.duration).parts : base.parts, error: "" };
-    } catch (caught) { return { parts: base.parts, error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ." }; }
-  }, [plan.parts, plan.providerUsed, customTimes, preparedSource?.duration]);
-  const effectiveTiming = { plan: { ...plan, parts: timing.parts }, error: timing.error };
-  const previewPlan = effectiveTiming.plan;
+      const effective=customTimes?applyPartTimes(base,customTimes,preparedSource?.duration):base;
+      return {parts:effective.parts,analysis:effective.analysis,error:""};
+    } catch (caught) { return { parts: base.parts, analysis:base.analysis, error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ." }; }
+  }, [plan.parts, plan.providerUsed, plan.analysis, customTimes, preparedSource?.duration]);
+  const effectiveTiming = { plan: { ...plan, parts: timing.parts, analysis:timing.analysis }, error: timing.error };
+  const previewPlan: EditPlan = effectiveTiming.plan;
   const previewVisualStyle = useMemo(() => resolvePlanVisualStyle({ visualStyle: previewPlan.visualStyle, subtitles: subtitleSettings }), [previewPlan.visualStyle, subtitleSettings]);
   const videoColorFilter = browserFilterStyle(previewVisualStyle.filter, { contrast: workerHealth?.render?.contrast ?? DEFAULT_VISUAL_STYLE.filter.contrast, saturation: workerHealth?.render?.saturation ?? DEFAULT_VISUAL_STYLE.filter.saturation });
   const activePart = previewPlan.parts[activePartIndex];
@@ -1418,6 +1419,7 @@ export default function Home() {
   }
 
   function updatePartTitle(title: string) {
+    invalidateAnalysis();
     setPlan((current) => ({
       ...current,
       parts: current.parts.map((part, index) => index === activePartIndex ? { ...part, title } : part),

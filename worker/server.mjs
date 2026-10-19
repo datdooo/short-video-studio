@@ -1858,7 +1858,7 @@ const server = createServer(async (request, response) => {
       if(body.sourceId!==item.sourceId)throw new Error('Plan belongs to another source');
       const source=await loadSource(item.sourceId);validatePlan(body.plan,source);
       if(['gemini','muse'].includes(body.plan.providerUsed)&&!await externalHooksCurrent(body.plan,source,String(body.transcript||'')))throw new Error('External hooks are missing/stale; generate/import hook selections before queueing.');
-      item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
+      item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
       item.approved=true;item.needsAnalysis=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
       await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
     }
