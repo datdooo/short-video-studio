@@ -15,3 +15,4 @@ export function isStillSegment(segment: Segment): boolean;
 export function segmentDuration(segment: Segment): number;
 export function timelineDuration(segments: Segment[]): number;
 export function foregroundFilter(focus?: string): string;
+export function foregroundGeometry(width: number, height: number): { fittedWidth: number; fittedHeight: number; scaledWidth: number; scaledHeight: number; x: number; y: number; width: number; height: number };

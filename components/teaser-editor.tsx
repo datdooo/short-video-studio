@@ -8,6 +8,7 @@ import {customTimestampPart,parseCustomTeaser}from'@/lib/custom-teaser.mjs';
 import {formatSourceTimecode,sourceTimecodeValue,parseSourceTimecode}from'@/lib/source-timecode.mjs';
 import type{Teaser}from'@/lib/teaser-hooks.mjs';
 import {explainInVietnamese}from'@/lib/explanation-language.mjs';
+import {hookSpeechBoundaryWarning} from '@/lib/teaser-boundaries.mjs';
 import {PREVIEW_RATE}from'@/lib/preview-config.mjs';
 type Times={start:string;end:string;exactStart?:number;exactEnd?:number};
 const times=(start:number,end:number):Times=>({start:formatSourceTimecode(start),end:formatSourceTimecode(end),exactStart:start,exactEnd:end});
@@ -31,6 +32,7 @@ export function TeaserEditor({transition,onAuditionControl,children,suspended=fa
  const proposed=candidate?.key===identity?candidate.part:null,h=proposed?.teaser;
  const values=draft&&draft.key===identity?draft.times:baseline;
  const input=inputDraft?.key===identity?inputDraft.text:savedInput(part);
+ const boundaryWarning=useMemo(()=>{const value=proposed?.teaser??part.teaser;return value?.status==='selected'?hookSpeechBoundaryWarning(value,cues):'';},[proposed?.teaser,part.teaser,cues]);
  const {rangeError,previewSeconds}=useMemo(()=>{let rangeError='',previewSeconds:number|undefined;
  try{if(draft?.key===identity&&!values.start&&!values.end)throw Error('Nhập đủ mốc bắt đầu/kết thúc teaser.');if(values.start||values.end){const start=sourceTimecodeValue(values.start,values.exactStart),end=sourceTimecodeValue(values.end,values.exactEnd);previewSeconds=(end-start)/PREVIEW_RATE;customTimestampPart(part,`${start}–${end}`,cues);}}
  catch(e){rangeError=e instanceof Error?e.message:String(e);}
@@ -70,9 +72,10 @@ export function TeaserEditor({transition,onAuditionControl,children,suspended=fa
    <input aria-label={`Teaser Part ${part.id} ${boundary==='start'?'Bắt đầu':'Kết thúc'}`} aria-invalid={Boolean(rangeError)} placeholder="00:00:00:00" autoComplete="off" spellCheck={false} inputMode="text" className="studio-input mt-1 w-full min-w-0 px-2 font-mono text-xs" value={values[boundary]} onChange={e=>edit(boundary,e.target.value)}/>
   </label>)}</div>{transition}</div>
   <p className="studio-teaser-duration">Preview {PREVIEW_RATE}×: {previewSeconds!==undefined&&previewSeconds>0?`${previewSeconds.toFixed(2)} giây`:'—'} · tối đa {hookDurationLimits().maxSourceSeconds/PREVIEW_RATE} giây preview ({hookDurationLimits().maxRenderedSeconds} giây export)</p>
+  {boundaryWarning&&<p className="text-amber-200">{boundaryWarning}</p>}
   {rangeError&&<p role="alert" className="text-amber-200">{rangeError} Sửa hoặc bỏ mốc nháp trước khi xuất.</p>}
   {(part.teaserNeedsReselection||hookNeedsReselection(part))&&<p role="alert" className="text-amber-200">Main đã đổi hoặc teaser không còn đủ điều kiện. Cần chọn lại; không tự thay footage.</p>}
-  {part.teaser?.status==='unavailable'&&<p className="text-amber-200">Chưa có teaser hợp lệ. Chọn lại bằng AI hoặc nhập mốc nguồn trong Timeline.</p>}
+  {part.teaser?.status==='unavailable'&&<p role="alert" className="text-amber-200">Part {part.id}: {explainInVietnamese(part.teaser.reason,'Chưa có teaser hợp lệ. Chọn lại bằng AI hoặc nhập mốc nguồn trong Timeline.')}</p>}
   <label className="block min-w-0 text-zinc-400">Custom Teaser<textarea aria-label={`Custom Teaser Part ${part.id}`} className="studio-textarea mt-1 w-full min-w-0 border p-2 text-xs" rows={1} maxLength={1000} value={input} placeholder="Mô tả footage hoặc 00:01:00:00 → 00:01:10:00" onChange={e=>{request.current?.abort();setBusy(false);setError('');preview.current?.pause();setShowPreview(false);setCandidate(null);setInputDraft({key:identity,text:e.target.value});}}/></label>
   {children}
   <details className="text-zinc-500"><summary className="cursor-pointer">Trợ giúp teaser</summary><p className="mt-1">Mô tả hoặc để trống: ChatGPT chọn lại. Timestamp: dùng mốc nguồn, không gọi AI. Tối đa 9 giây sau 1.25×; loại 10 giây export đầu main (12.5 giây preview 1×). Giữ lần xuất hiện gốc trong main.</p></details>

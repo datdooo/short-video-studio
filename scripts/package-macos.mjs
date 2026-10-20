@@ -134,12 +134,29 @@ for (const name of ["ffmpeg", "ffprobe"]) {
   const executable = compatibleRuntime?.[name] || configured || run("/usr/bin/which", [name]).trim();
   await bundleBinary(executable, path.join(binRoot, name));
 }
-if (compatibleRuntime?.whisper) await bundleBinary(compatibleRuntime.whisper, path.join(binRoot, "whisper-cli"));
+// Normal DEV packages need the same actual ASR backend as compatible builds.
+// Models remain on-demand in DEV data, never copied into the application.
+const whisperExecutable = compatibleRuntime?.whisper || process.env.WHISPER_PATH || run("/usr/bin/which", ["whisper-cli"]).trim();
+await bundleBinary(whisperExecutable, path.join(binRoot, "whisper-cli"));
 if (compatibleRuntime?.whisper) {
   const ggml = compatibleRuntime.formulas.find((item) => item.name === "ggml");
   for (const file of await readdir(path.join(ggml.directory, "libexec"))) {
     if (/^libggml-.*\.so$/.test(file)) await bundleBinary(path.join(ggml.directory, "libexec", file), path.join(binRoot, file));
   }
+} else {
+  const whisperSource = realpathSync(whisperExecutable);
+  const ggmlDependency = dependencies(whisperSource).find(item => /\/libggml(?:\.\d+)*\.dylib$/.test(item));
+  if (!ggmlDependency) throw new Error("Whisper ggml runtime dependency not found; refusing an incomplete DEV package.");
+  const ggmlLibrary = realpathSync(resolveDependency(ggmlDependency, whisperSource));
+  const ggmlRoot = path.resolve(path.dirname(ggmlLibrary), "..");
+  // ggml dynamically loads CPU/Metal backends from the executable directory.
+  for (const name of await readdir(path.join(ggmlRoot, "libexec"))) {
+    if (/^libggml-.*\.so$/.test(name)) await bundleBinary(path.join(ggmlRoot, "libexec", name), path.join(binRoot, name));
+  }
+  const whisperLicenses = path.join(resources, "licenses", "whisper");
+  await mkdir(whisperLicenses, { recursive: true });
+  await copyFile(path.join(path.dirname(whisperSource), "..", "LICENSE"), path.join(whisperLicenses, "Whisper-LICENSE"));
+  await copyFile(path.join(ggmlRoot, "LICENSE"), path.join(whisperLicenses, "ggml-LICENSE"));
 }
 for (const binary of packagedBinaries.reverse()) run("/usr/bin/codesign", ["--force", "--sign", "-", binary]);
 run(path.join(binRoot, "node"), ["--version"]);

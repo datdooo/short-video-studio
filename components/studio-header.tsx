@@ -6,9 +6,9 @@ import type {ReactNode} from 'react';
 export type SaveState='idle'|'restoring'|'saving'|'saved'|'error';
 export function StudioHeader({workspace,onWorkspace,workerReady,providerLabel,providerReady,saveState,saveMessage,onNewSession,ready}:{workspace:'editor'|'batch'|'storage';onWorkspace:(value:'editor'|'batch'|'storage')=>void;workerReady:boolean;providerLabel:string;providerReady:boolean;saveState:SaveState;saveMessage:string;onNewSession:()=>void;ready:boolean}){
  const [confirmNew,setConfirmNew]=useState(false);
- const tabs:{id:'editor'|'batch'|'storage';label:string;icon:ReactNode}[]=[{id:'editor',label:'Editor',icon:<Film size={14}/>},{id:'batch',label:'Batch',icon:<LayoutGrid size={14}/>},{id:'storage',label:'Kho video',icon:<FolderOpen size={14}/>}];
+ const tabs:{id:'editor'|'batch'|'storage';label:string;icon:ReactNode}[]=[{id:'editor',label:'Editor',icon:<Film size={14}/>},{id:'batch',label:'Batch',icon:<LayoutGrid size={14}/>},{id:'storage',label:'Kho',icon:<FolderOpen size={14}/>}];
  return <header className="studio-header">
-  <strong className="studio-brand"><b aria-hidden="true">SC</b> ShortCut Studio <span>DEV M2</span></strong>
+  <strong className="studio-brand"><img src="/favicon.svg?v=play-3" width={32} height={32} alt="Logo ShortCut Studio" className="studio-brand-logo" /> ShortCut Studio <span>DEV M2</span></strong>
   <nav aria-label="Chế độ làm việc" className="studio-workspaces">{tabs.map(tab=><button type="button" key={tab.id} aria-current={workspace===tab.id?'page':undefined} onClick={()=>onWorkspace(tab.id)}>{tab.icon}{tab.label}</button>)}</nav>
   <div className="studio-header-status">
    <span role="status" title={workerReady?'Media worker đang kết nối':'Media worker chưa kết nối'} className={workerReady?'studio-connected':'studio-warning'}>{workerReady?<Cloud size={13}/>:<CloudOff size={13}/>}<span>{workerReady?'Worker OK':'Offline'}</span></span>

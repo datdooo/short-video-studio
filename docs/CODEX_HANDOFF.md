@@ -1,3 +1,123 @@
+# Source delivery checkpoint — 2026-10-21
+
+User authorized normal push of all current source on
+`recovery/visual-dev-reconstructed` to
+`https://github.com/datdooo/short-video-studio.git` (no merge/force).
+Before this checkpoint, local HEAD27625fe matched the fetched remote branch.
+This commit groups all preserved pending source: teaser candidate/repair and
+speech-boundary refinements, VAD-controlled ducking, Whisper small configuration/
+packaging, foreground fit/explicit125% preview zoom, source-panel/logo fixes,
+ZIP theme/shared control sizes and four real-data Kho tabs, with delivery docs.
+Latest DEV build succeeded: `/tmp/shortcut-dev-direct-125-preview-build-20261021.log`.
+No runtime/manual QA was run; user acceptance remains outstanding. Small model
+was not downloaded or loaded. Read the active delivery docs below; old QA does
+not establish verification of the new checkpoint. No tests/render/AI/build rerun
+for push. Current source tree scanned for credential patterns without printing
+values; no findings. Only source/docs/runtime declarations are staged; ignored
+media/music/exports/data/credentials/build/cache/QA payloads and bundles stay local.
+Both portable project skills already tracked. No local data deletion or app restart.
+Only available reconstructed history exists; missing original checkpoints were
+not recovered. Use `git log -1`, upstream refs and the final delivery message for
+this checkpoint SHA and verified push result (not a hard-coded self-referential SHA).
+
+---
+
+# Active update — direct foreground zoom (2026-10-21)
+
+Read `docs/preview-direct-125-zoom.md`. Both visible/standby decks now use explicit
+centered scale1.25 on a100% contain-fit video box, rather than measured-pixel sizing.
+No extra zoom, viewport/background/text scaling, timing or engine changes. User's
+reported missing zoom has NOT been reproduced with runtime QA. All previous dirty
+work retained. Node22 DEV package build succeeded once, exit0. App:
+`release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-direct-125-preview-build-20261021.log`. Only docs changed after
+build. No tests/browser/render/provider calls or app/worker restart. Reopen the new DEV app normally once jobs finish to load it.
+
+---
+
+# Active update — ZIP theme / Kho / shared sizes (2026-10-21)
+
+Same branch/base HEAD27625fe; inherited dirty implementation preserved. Read
+`docs/grok-theme-library-controls.md`. User's ZIP palette supersedes prior warm
+colors. Shared normal36/action40/Timeline32/icon32 controls applied to Editor,
+Batch and Kho. Kho now has 4 real-data tabs with shared search; original handlers,
+polling, job IDs and physical Part files retained. No mock/prototype logic imported.
+UI-only changes; previous render/AI/audio/Whisper/geometry work untouched.
+Combined Node22 `npm run package:mac:dev` succeeded once, exit0; app:
+`release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-grok-theme-kho-build-20261021.log`. Native packaging/signing
+completed; chunk-size advisory only. Only delivery docs changed afterward.
+Source/diff review and build only. NO tests/lint/typecheck,
+browser/smoke/render/AI/YouTube/ASR/listening. Do not use older QA/build evidence
+below as verification of this source. No restart, commit/push/merge or production/
+credentials/media/exports/backups changes. User performs manual acceptance.
+
+---
+
+# Active update — warm controls / fit-based zoom / complete speech (2026-10-21)
+
+Same branch/base HEAD27625fe; ALL inherited uncommitted work preserved. Read
+`docs/warm-controls-fit-zoom-speech-endings.md` first. New user styling supersedes
+the old Batch/Library palette instruction: warm black/brown/orange#FF5733 controls,
+same layout/hit areas/state. Actual foreground uses contain-fit baseline then125%
+image zoom, center clip; matching shared export spatial filter, no canvas/text/
+background zoom, clocks remain1× preview/1.25× export. Shared speech boundary gates
+and v7 prompt/cache require full spoken thought plus short tail; no timestamp
+auto-fix, duration-cap truncation or main mutation. Existing plans load; risky old
+hooks may need reselection. Cue/phoneme accuracy and semantic quality unverified.
+NO tests/lint/typecheck/browser/smoke/render/provider/ASR/listening verification.
+Final combined Node22 `npm run package:mac:dev` succeeded once, exit0. App:
+`release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-warm-fit-complete-speech-build-20261021.log`.
+Built-in packaging/signature audits completed, not functional QA. Read-only SHA256
+matches packaged render-config/teaser-boundaries to current source; only delivery
+docs changed afterward. App/worker were NOT restarted and jobs were NOT interrupted.
+No push/merge or production/credentials/media/exports/backups modifications.
+
+---
+
+# Active update — editor / teaser / ducking + Whisper small (2026-10-21)
+
+Same branch/base HEAD `27625fe78dc5177f88355a6c98613d6407d02f09`; inherited dirty
+logo source preserved. Read `docs/editor-teaser-ducking-refinement.md` and
+`docs/whisper-small.md` for exact findings, changes, reuse and manual acceptance.
+Source order/title/prompts, original theme reuse, decoded foreground geometry,
+independent AI-ranked choice validation + one bounded repair, fair bounded frame
+coverage, honest partial completion, VAD-controlled BGM sidechain/status/cache,
+and actual Whisper base→small/backend packaging are implemented in source.
+Policy9s export/first10s export-main, preview1×/zoom125%/export1.25×, main/manual
+locks, caption mapping, snapshots, autosave, sequential range rendering and quality
+caps are preserved. Small model NOT downloaded or loaded; old models/captions remain.
+No tests/lint/typecheck, runtime/browser/smoke/render/listening/ASR or AI/YouTube
+verification. Combined Node22 `npm run package:mac:dev` succeeded, exit0. First
+attempt stopped on sandbox-denied yt-dlp version-check semaphore; authorized
+retry completed packaging/signing. No YouTube extraction/download request.
+App: `release/dev/ShortCut Studio Dev.app`; final log:
+`/tmp/shortcut-dev-editor-teaser-whisper-small-build-20261021-retry.log`.
+Bundled whisper-cli/ggml backends/MIT notices exist; read-only hashes match packaged
+speech/teaser/config modules to source. Only delivery docs changed after build.
+This is packaging evidence, NOT functional/ASR/audio/AI qualification.
+No app/worker restart or job
+interruption, production/credentials/media/exports/backups changes, commit or push.
+Do not confuse historical QA below with verification of this new source.
+
+---
+
+# Active update — restore original Header logo (2026-10-21)
+
+Started clean on `recovery/visual-dev-reconstructed` at
+`27625fe78dc5177f88355a6c98613d6407d02f09`. Header had replaced the original
+brand asset with an `SC` text tile; `public/favicon.svg` itself was intact.
+`components/studio-header.tsx` now uses that original red/white SVG, with
+32×32 non-shrinking, aspect-preserving CSS in `app/globals.css`. Shared Header
+remains outside workspace/panel visibility conditions. Read-only SHA256 comparison
+matched the source SVG and the existing standalone/DEV package SVG: no missing
+packaged asset was found. No new asset, application state or engine changes.
+Source/diff review only; no tests, browser, render or provider calls. This logo
+fix is included in the combined build recorded above; appearance remains unverified.
+
+---
+
 # Git delivery checkpoint — 2026-10-21
 
 User authorized normal push of `recovery/visual-dev-reconstructed` to

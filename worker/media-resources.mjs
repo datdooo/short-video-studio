@@ -14,6 +14,7 @@ export function createMediaResources(){
   context.run(lease,async()=>{try{lease.controller.signal.throwIfAborted();task.resolve(await task.work(lease.controller.signal));}catch(error){task.reject(error);}finally{lease.live=false;task.signal?.removeEventListener('abort',abort);active=null;pump();}});
  }
  return{
+  ownsLease:()=>Boolean(context.getStore()?.live),
   pausePreviews(){if(active?.kind==='preview')active.controller.abort(new Error('Audio preview tạm dừng để ưu tiên export.'));for(let i=queue.length-1;i>=0;i--)if(queue[i].kind==='preview'){const [task]=queue.splice(i,1);task.remove();task.reject(new Error('Audio preview tạm dừng để ưu tiên export.'));}},
   state:()=>({active:active?.kind||null,waiting:queue.length,renderBusy:active?.kind==='render'||queue.some(t=>t.kind==='render'),profile:'balanced-m2-v1',decodeThreads:2,filterThreads:1,encodeThreads:2}),
   use(kind,work,signal){

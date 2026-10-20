@@ -46,7 +46,7 @@ export function CopyButton({ text, label = "Copy title + hashtag", ariaLabel, cl
       status === "error" && "bg-red-400/10 text-red-300 hover:bg-red-400/15",
     )}>
       {status === "done" ? <Check className="size-3.5 shrink-0" /> : status === "pending" ? <Loader2 className="size-3.5 shrink-0 animate-spin" /> : <Copy className="size-3.5 shrink-0" />}
-      <span aria-live="polite">{status === "done" ? "Đã copy!" : status === "pending" ? "Đang copy…" : status === "error" ? "Chưa copy được · thử lại" : label}</span>
+      <span className="studio-copy-label"><span aria-hidden="true" className="studio-copy-reserve">{label}</span><span aria-live="polite">{status === "done" ? "Đã copy!" : status === "pending" ? "Đang copy…" : status === "error" ? "Chưa copy được · thử lại" : label}</span></span>
     </button>
     {status === "error" && <span role="alert" className="text-xs leading-5 text-red-300">{errorMessage}</span>}
   </span>;

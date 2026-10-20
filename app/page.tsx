@@ -331,7 +331,8 @@ export default function Home() {
   const subtitleAutoKey = useRef("");
   const [subtitleBusy, setSubtitleBusy] = useState(false);
   const [subtitleNotice, setSubtitleNotice] = useState("");
-  const [speechModel, setSpeechModel] = useState<{ modelReady: boolean; installing: boolean; downloadedBytes?: number; totalBytes?: number } | null>(null);
+  const [speechModel, setSpeechModel] = useState<{ modelReady: boolean; installing: boolean; model?:string; backend?:string; modelId?:string; downloadedBytes?: number; totalBytes?: number } | null>(null);
+  const whisperSmallReady=speechModel?.modelId==='ggml-small.bin'&&speechModel.modelReady;
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const analysisRequests = useRef(createAnalysisRequestGuard());
@@ -604,15 +605,15 @@ export default function Home() {
   }, [titleFitInput, legacyTitlePair]);
   const { original: originalTitleFit, part: partTitleFit } = measuredTitlePair?.input === titleFitInput ? measuredTitlePair.pair : legacyTitlePair;
   const previewScale = previewWidth / 1080;
-  // Match FFmpeg's even-size scale before its foreground pad/crop.
-  const foregroundSourceWidth=preparedSource?.width||sourceSize.width,foregroundSourceHeight=preparedSource?.height||sourceSize.height;
-  const scaledForegroundWidth=Math.max(2,Math.trunc(foregroundSourceWidth*FOREGROUND_SCALE/2)*2);
-  const scaledForegroundHeight=Math.max(2,Math.round(foregroundSourceHeight*scaledForegroundWidth/foregroundSourceWidth/2)*2);
-  const titleShineStyle = { maskImage: 'linear-gradient(to right, transparent, #000 50%, transparent)', maskRepeat: 'no-repeat', maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`, maskPosition: `${((1080 - TITLE_SHINE_WIDTH) * (previewEffectTime % TITLE_SHINE_SECONDS) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0` };
   const previewVideoUrl = useMemo(
     () => (sourceMode === "local" && localVideoUrl) || (preparedSource ? `${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media` : ""),
     [localVideoUrl, preparedSource, sourceMode],
   );
+  // The visible video itself uses a 100% contain-fit box, then one centered
+  // FOREGROUND_SCALE transform. It must not depend on measured canvas pixels.
+  const decodedVideo=deckVideos.current.find(video=>!!video&&video.getAttribute('src')===previewVideoUrl&&video.readyState>=1&&video.videoWidth>0);
+  const foregroundSourceWidth=decodedVideo?.videoWidth||preparedSource?.width||sourceSize.width,foregroundSourceHeight=decodedVideo?.videoHeight||preparedSource?.height||sourceSize.height;
+  const titleShineStyle = { maskImage: 'linear-gradient(to right, transparent, #000 50%, transparent)', maskRepeat: 'no-repeat', maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`, maskPosition: `${((1080 - TITLE_SHINE_WIDTH) * (previewEffectTime % TITLE_SHINE_SECONDS) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0` };
 
   const previewSourceEpoch=sourceSelectionEpoch.current;
   const isCurrentPreviewVideo=(video:HTMLVideoElement)=>previewSourceEpoch===sourceSelectionEpoch.current&&video===previewVideoRef.current;
@@ -679,7 +680,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!previewElement) return;
-    const updateWidth = () => setPreviewWidth(previewElement.getBoundingClientRect().width);
+    const updateWidth = () => { const width=previewElement.clientWidth; if(width>0)setPreviewWidth(width); };
     updateWidth();
     const frame = window.requestAnimationFrame(updateWidth);
     const observer = new ResizeObserver(updateWidth);
@@ -1180,7 +1181,9 @@ export default function Home() {
       if(!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
       if(!response.ok||!data.plan)throw new Error(data.error||"Không tạo được Smart Auto Cut.");
       replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
-      setAnalysisNotice(data.plan.analysis?.method==='deterministic-fallback'?`Fallback xác định · ${explainInVietnamese(data.plan.analysis.fallbackReason,"AI chưa khả dụng; main dự phòng chưa được AI xác minh ngữ nghĩa.")}. Chưa kiểm chứng độ hấp dẫn/ngữ nghĩa bằng AI.`:"Đã chọn main + hook; kiểm tra lý do/tín hiệu và chỉnh từng part bên dưới.");
+      const missingTeasers=teaserReadiness(data.plan,source.duration);
+      const mainNotice=data.plan.analysis?.method==='deterministic-fallback'?`Main dự phòng · ${explainInVietnamese(data.plan.analysis.fallbackReason,"AI chưa khả dụng; main dự phòng chưa được AI xác minh ngữ nghĩa.")}. `:'';
+      setAnalysisNotice(mainNotice+(missingTeasers.length?`Main đã lưu; chưa hoàn tất teaser. ${missingTeasers.map(issue=>`Part ${issue.partId}: ${issue.reason}`).join(' ')} Chọn lại bằng AI hoặc Custom Teaser tại Timeline; chưa thể xuất.`:'Đã tạo main và teaser hợp lệ cho cả hai part. Có thể xem/chỉnh trong Timeline.'));
     }catch(caught){if(analysisRequests.current.isCurrent(ticket))setError(caught instanceof Error?caught.message:"Không tạo được Smart Auto Cut.");}
     finally{if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);}}
   }
@@ -1284,7 +1287,7 @@ export default function Home() {
     subtitleAutoKey.current = `${source.id}:${subtitleSettings.source || 'auto'}`;
     const currentRequest = () => isCurrentCaptionRequest({ sourceId: source.id, serial: requestId, selectionEpoch }, { sourceId: subtitleSourceRef.current, serial: subtitleRequestSerial.current, selectionEpoch: sourceSelectionEpoch.current });
     const controller=new AbortController();sourceRequests.current.add(controller);
-    setSubtitleBusy(true); setSubtitleNotice(install ? "Đang tải model Whisper base · 142 MB…" : "Đang tạo phụ đề…");
+    setSubtitleBusy(true); setSubtitleNotice(install ? "Đang tải model Whisper small · 465 MiB…" : "Đang tạo phụ đề…");
     try {
       if (install) {
         const response = await fetch(`${WORKER_ORIGIN}/api/speech/model`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
@@ -1313,7 +1316,7 @@ export default function Home() {
     if (!workerHealth?.ok || !subtitleSettings.enabled) return;
     let disposed = false;
     const refresh = async () => {
-      try { const data = await (await fetch(`${WORKER_ORIGIN}/api/speech/status`)).json() as { modelReady: boolean; installing: boolean; downloadedBytes?: number; totalBytes?: number }; if (!disposed) setSpeechModel(data); } catch { /* Worker health already reports connection errors. */ }
+      try { const data = await (await fetch(`${WORKER_ORIGIN}/api/speech/status`)).json() as { modelReady: boolean; installing: boolean; model?:string; backend?:string; modelId?:string; downloadedBytes?: number; totalBytes?: number }; if (!disposed) setSpeechModel(data); } catch { /* Worker health already reports connection errors. */ }
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), subtitleBusy ? 2000 : 15000);
@@ -1328,12 +1331,14 @@ export default function Home() {
   }
 
   async function installWhisperModel() {
-    setSubtitleBusy(true); setSubtitleNotice('Đang tải Whisper base · 142 MB…');
+    setSubtitleBusy(true); setSubtitleNotice('Đang tải Whisper small · 465 MiB…');
     try {
+      if(speechModel?.modelId!=='ggml-small.bin')throw new Error('Worker đang chạy chưa cấu hình Whisper small. Khi job kết thúc, mở lại bản DEV mới; không tải/nhận base là small.');
       const response = await fetch(`${WORKER_ORIGIN}/api/speech/model`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      const data = await response.json() as { modelReady: boolean; installing: boolean; downloadedBytes?: number; totalBytes?: number; error?: string };
+      const data = await response.json() as { modelReady: boolean; installing: boolean; model?:string; backend?:string; modelId?:string; downloadedBytes?: number; totalBytes?: number; error?: string };
       if (!response.ok) throw new Error(data.error || 'Không tải được model.');
-      setSpeechModel(data); setSubtitleNotice('Whisper base đã sẵn sàng.'); subtitleAutoKey.current = '';
+      if(data.modelId!=='ggml-small.bin')throw new Error('Worker trả model khác small; chưa xác nhận nâng model.');
+      setSpeechModel(data); setSubtitleNotice(data.modelReady?'Whisper small đã sẵn sàng.':'Model small chưa sẵn sàng; kiểm tra tải/checksum, không dùng base thay thế.'); subtitleAutoKey.current = '';
     } catch (caught) { setSubtitleNotice(caught instanceof Error ? caught.message : 'Không tải được model.'); }
     finally { setSubtitleBusy(false); }
   }
@@ -1655,8 +1660,10 @@ export default function Home() {
        {!!interruptedTasks.length&&<span className="studio-warning">Đã gián đoạn: {interruptedTasks.join(', ')}. Dùng nút tác vụ để tiếp tục; không tự gửi lại.</span>}
        {retainedSourceId&&!preparedSource&&<button type="button" onClick={()=>setSourceRestoreVersion(v=>v+1)}>Nối lại source</button>}
       </div>}
-      {workspace==='storage'&&<section className="studio-library-workspace">      <MediaLibraryPanel workerOrigin={WORKER_ORIGIN} ready={Boolean(workerHealth?.ok)} onMoved={libraryMoved} onRestored={libraryRestored} />      <EditorRenderList jobs={editorRenderJobs} stopping={stoppingRenderIds} deleting={deletingRenderIds} deletingAll={deletingAllRenders} error={editorRenderError} notice={editorRenderNotice} origin={WORKER_ORIGIN} onStop={(job) => void stopRender(job)} onDelete={(job) => void deleteEditorRender(job)} onDeleteAll={() => void deleteAllEditorRenders()} /></section>}
-      {workspace === "batch" && <section className="mx-auto max-w-6xl px-5 py-6">
+      {workspace==='storage'&&<section className="studio-library-workspace">
+        <MediaLibraryPanel workerOrigin={WORKER_ORIGIN} ready={Boolean(workerHealth?.ok)} onMoved={libraryMoved} onRestored={libraryRestored} renderCount={editorRenderJobs.length} renderList={(query) => <EditorRenderList query={query} jobs={editorRenderJobs} stopping={stoppingRenderIds} deleting={deletingRenderIds} deletingAll={deletingAllRenders} error={editorRenderError} notice={editorRenderNotice} origin={WORKER_ORIGIN} onStop={(job) => void stopRender(job)} onDelete={(job) => void deleteEditorRender(job)} onDeleteAll={() => void deleteAllEditorRenders()} />} />
+      </section>}
+      {workspace === "batch" && <section className="studio-batch-workspace mx-auto max-w-6xl px-5 py-6">
         <h1 className="text-2xl font-semibold">Xử lý hàng loạt</h1>
         <p className="mt-2 text-sm text-zinc-400">Nhập nhiều link. App tự lấy transcript, chia part, tạo title/hashtag và render.</p>
         <div className="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_240px]">
@@ -1682,7 +1689,7 @@ export default function Home() {
             <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {isWebAi ? `${webAiName} · chuẩn bị + import từng item` : "ChatGPT Auto"}</label>
             <Textarea id="batch-urls" value={batchUrls} onChange={(event) => setBatchUrls(event.target.value)} placeholder={"https://www.youtube.com/watch?v=...\nhttps://youtu.be/..."} className="studio-textarea mt-2 min-h-[100px] text-xs leading-6" />
             <p className="mt-2 text-[11px] leading-5 text-zinc-500">Tối đa 20 link mỗi lần thêm, mỗi dòng một link. Ô link tự xoá khi thêm thành công. Có thể thêm link vào cuối hàng đợi đang chạy; chuẩn bị video tiếp theo trong lúc render video trước, chỉ render một video mỗi lần.</p>
-            <Button onClick={() => void startBatch()} disabled={!["chatgpt","gemini","muse"].includes(provider) || isStartingBatch || isStoppingBatch || !batchUrls.trim() || !workerHealth?.ok || (provider==="chatgpt"&&!chatGPTSession?.sharing)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
+            <Button size="action" onClick={() => void startBatch()} disabled={!["chatgpt","gemini","muse"].includes(provider) || isStartingBatch || isStoppingBatch || !batchUrls.trim() || !workerHealth?.ok || (provider==="chatgpt"&&!chatGPTSession?.sharing)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
               {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />} {isStartingBatch ? "Đang thêm link…" : batch && !batch.finished ? "Thêm vào hàng đợi đang chạy" : isWebAi?"Chuẩn bị nguồn · chờ import thủ công":"Chạy hàng đợi tự động"}
             </Button>
             <Button variant="outline" onClick={() => void stopBatch()} disabled={!batch || batch.finished || isStoppingBatch || isStartingBatch} className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10">
@@ -1702,14 +1709,14 @@ export default function Home() {
               {[...(batch ? [batch] : []), ...pastBatches.filter((group) => group.id !== batch?.id)].map((group) => <div key={group.id} className="space-y-3">
               <p className="text-[10px] uppercase tracking-wider text-zinc-500">{group.id === batch?.id ? "Hàng đợi hiện tại" : "Video đã xử lý trước đó"}</p>
               {group.items.filter((item) => !deletedBatchItems.current.has(item.id)).map((item, index) => (
-                <div key={item.id || item.url} className="rounded-xl border border-white/8 p-3">
+                <div key={item.id || item.url} data-batch-state={item.state} className="rounded-xl border border-white/8 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="min-w-0 break-words text-xs font-semibold leading-5">{index + 1}. {item.title || item.url}</p>
                     <Button variant="outline" size="sm" onClick={() => void deleteBatchVideo(group, item)} disabled={!item.id || !["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) || deletingBatchItems.includes(item.id)} title={["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) ? "Xoá video và file render" : "Dừng hoặc chờ xử lý xong trước khi xoá"} className="h-8 shrink-0 rounded-lg border-red-400/20 bg-transparent text-xs text-red-300 hover:bg-red-400/10">
                       {deletingBatchItems.includes(item.id) ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />} Xoá
                     </Button>
                   </div>
-                  <p className="mt-1 text-[11px] text-[#ff806a]">{{ paused:"Tạm dừng · có thể tiếp tục", "awaiting-import":"Chờ prompt/import thủ công trong editor", "review-required":"Fallback · cần xem và duyệt trong editor", "render-ready":"Plan đã lưu · chuẩn bị render", submitting:"Đang ghi render submission", pending: "Đang chờ", downloading: "Đang tải video + transcript", analyzing: "AI đang chia part + tạo hashtag", queued: "Đang chờ render", rendering: `Đang render ${item.job?.progress || 0}%`, done: "Hoàn tất", error: "Lỗi", cancelled: "Đã dừng" }[item.state]}</p>
+                  <p className="studio-job-status mt-1 text-[11px] text-[#ff806a]">{{ paused:"Tạm dừng · có thể tiếp tục", "awaiting-import":"Chờ prompt/import thủ công trong editor", "review-required":"Fallback · cần xem và duyệt trong editor", "render-ready":"Plan đã lưu · chuẩn bị render", submitting:"Đang ghi render submission", pending: "Đang chờ", downloading: "Đang tải video + transcript", analyzing: "AI đang chia part + tạo hashtag", queued: "Đang chờ render", rendering: `Đang render ${item.job?.progress || 0}%`, done: "Hoàn tất", error: "Lỗi", cancelled: "Đã dừng" }[item.state]}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {item.sourceId&&<Button variant="outline" size="sm" onClick={()=>void openBatchItem(group,item)} className="h-8 text-xs">{["awaiting-import","review-required"].includes(item.state)?"Mở editor · chọn/import/duyệt":"Mở bản sao trong editor"}</Button>}
                     {["error","cancelled","paused","render-ready"].includes(item.state)&&<Button variant="outline" size="sm" onClick={()=>void resumeBatchItem(group,item)} className="h-8 text-xs">Tiếp tục / thử lại item</Button>}
@@ -1723,7 +1730,7 @@ export default function Home() {
                   </div>)}
                   {item.job?.outputs.map((output) => <div key={output.part} className="mt-2 flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={() => { setSelectedBatchPreviewKey(`${group.id}:${item.id}:${output.part}`); setBatchPreviewError(""); }} className={`h-9 rounded-xl border-white/15 text-xs ${batchPreviewOutput?.key === `${group.id}:${item.id}:${output.part}` ? "bg-white/10 text-white" : "bg-transparent text-zinc-300"}`}><Play className="size-3.5" /> Xem Part {output.part}</Button>
-                    <a href={`${WORKER_ORIGIN}${output.url}`} download={output.filename} className="flex min-w-0 flex-1 items-start gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-xs leading-5 text-emerald-300 hover:bg-emerald-400/10"><Download className="mt-0.5 size-4 shrink-0" /><span className="break-all">Tải lại Part {output.part} · {output.filename}</span></a>
+                    <a href={`${WORKER_ORIGIN}${output.url}`} download={output.filename} className="studio-control studio-download flex min-w-0 flex-1 items-start gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-xs leading-5 text-emerald-300 hover:bg-emerald-400/10"><Download className="mt-0.5 size-4 shrink-0" /><span className="break-all">Tải lại Part {output.part} · {output.filename}</span></a>
                   </div>)}
                 </div>
               ))}
@@ -1775,14 +1782,7 @@ export default function Home() {
           </Tabs>
           <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className="studio-primary w-full">{isPreparingSource?<><Loader2 size={14} className="animate-spin"/>Đang chuẩn bị…</>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
           {preparedSource?<div className="studio-source-status"><strong>{preparedSource.title}</strong><span>{formatTime(preparedSource.duration)} · {preparedSource.width}×{preparedSource.height}</span></div>:<p className="studio-muted text-xs">{isPreparingSource?'Đang download/import nguồn…':localFileName||'Chưa có nguồn'}</p>}
-          <label className="studio-field-label mt-3" htmlFor="ai-instruction-primary">Yêu cầu AI</label>
-          <Textarea id="ai-instruction-primary" rows={3} value={instruction} onChange={event=>{invalidateAnalysis();setInstruction(event.target.value);}} placeholder="Ưu tiên khoảnh khắc… bỏ quảng cáo…" className="studio-textarea min-h-[64px] resize-y"/>
-          <button type="button" className="studio-primary w-full" disabled={isAnalyzing||isPreparingSource||!workerHealth?.ok||!preparedSource||(editMode==='manual'&&hasEditPlan)} onClick={()=>{if(editMode==='manual')applyManualPlan();else if(isWebAi)void createWebAiPrompt();else void analyze();}}>{isAnalyzing?<Loader2 size={14} className="animate-spin"/>:<WandSparkles size={14}/>} {isAnalyzing?'Đang phân tích…':editMode==='manual'?'Áp dụng main thủ công':isWebAi?`Tạo prompt ${webAiName}`:'Generate'}</button>
-          {isAnalyzing&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice('Đã dừng phân tích; giữ plan hiện tại.');}}>Dừng phân tích</Button>}
-          {error && <p role="alert" className="studio-inline-error">{error}</p>}
-          {analysisNotice&&<p role="status" className="studio-inline-notice">{analysisNotice}</p>}
-          <details open={sourceAdvancedOpen} onToggle={event=>setSourceAdvancedOpen(event.currentTarget.open)} className="studio-advanced"><summary>Nâng cao</summary>
-          <div className="mt-5">
+          <div className="mt-1">
             <div className="flex items-center justify-between">
               <label htmlFor="source-title" className="field-label">Original title</label>
               {sourceMode === "youtube" && (
@@ -1800,6 +1800,18 @@ export default function Home() {
               className="studio-input mt-2 read-only:cursor-default read-only:text-zinc-400"
             />
           </div>
+
+          <div>
+            <label htmlFor="extra-prompt" className="field-label">Yêu cầu bổ sung</label>
+            <Textarea id="extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Ví dụ: Bỏ đoạn đầu, tập trung cảnh sửa xe, Part 2 ưu tiên cảnh chạy thử." />
+          </div>
+          <button type="button" className="studio-primary w-full" disabled={isAnalyzing||isPreparingSource||!workerHealth?.ok||!preparedSource||(editMode==='manual'&&hasEditPlan)} onClick={()=>{if(editMode==='manual')applyManualPlan();else if(isWebAi)void createWebAiPrompt();else void analyze();}}>{isAnalyzing?<Loader2 size={14} className="animate-spin"/>:<WandSparkles size={14}/>} {isAnalyzing?'Đang phân tích…':editMode==='manual'?'Áp dụng main thủ công':isWebAi?`Tạo prompt ${webAiName}`:'Phân tích'}</button>
+          {isAnalyzing&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice('Đã dừng phân tích; giữ plan hiện tại.');}}>Dừng phân tích</Button>}
+          {error && <p role="alert" className="studio-inline-error">{error}</p>}
+          {analysisNotice&&<p role="status" className="studio-inline-notice">{analysisNotice}</p>}
+          <details open={sourceAdvancedOpen} onToggle={event=>setSourceAdvancedOpen(event.currentTarget.open)} className="studio-advanced"><summary>Nâng cao</summary>
+          <label className="studio-field-label mt-3" htmlFor="ai-instruction-primary">Yêu cầu AI</label>
+          <Textarea id="ai-instruction-primary" rows={3} value={instruction} onChange={event=>{invalidateAnalysis();setInstruction(event.target.value);}} placeholder="Ưu tiên khoảnh khắc… bỏ quảng cáo…" className="studio-textarea min-h-[64px] resize-y"/>
 
           <Tabs value={editMode} onValueChange={(value) => { setEditMode(value as "ai" | "manual"); setError(""); }} className="mt-5">
             <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
@@ -1864,10 +1876,6 @@ export default function Home() {
                 <p className="mt-2 text-xs leading-5 text-zinc-500">{transcriptStatus}</p>
               </details>
 
-              <details className="rounded-xl border border-white/8 p-3"><summary className="cursor-pointer text-xs font-semibold">Yêu cầu bổ sung</summary>
-                <label htmlFor="extra-prompt" className="field-label">Prompt bổ sung (không bắt buộc)</label>
-                <Textarea id="extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Ví dụ: Bỏ đoạn đầu, tập trung cảnh sửa xe, Part 2 ưu tiên cảnh chạy thử." />
-              </details>
               {isWebAi ? <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[.025] p-3">
                 <p className="text-sm font-semibold">{webAiName} bán tự động</p>
                 <p className="text-xs leading-5 text-zinc-400">Tạo prompt → copy và gửi trong {webAiName} → dán JSON bên dưới. Không API key, không kết nối CLI; app không đọc token hay tài khoản {webAiName}.</p>
@@ -1941,10 +1949,10 @@ export default function Home() {
               {previewVideoUrl ? (
                 <>{[0,1].map(slot=><video key={`${previewVideoUrl}:${slot}`}
                   ref={slot===0?bindDeckA:bindDeckB}
-                  data-preview-deck={slot} data-preview-active={visibleDeck===slot}
+                  data-preview-deck={slot} data-preview-active={visibleDeck===slot} data-visual-scale={FOREGROUND_SCALE}
                   crossOrigin="anonymous"
                   className="native-preview-video cursor-pointer"
-                  style={{ width: `${scaledForegroundWidth*previewScale}px`, height: `${scaledForegroundHeight*previewScale}px`, filter: videoColorFilter, visibility:visibleDeck===slot?'visible':'hidden' }}
+                  style={{ width:'100%', height:'100%', maxWidth:'none', maxHeight:'none', objectFit:'contain', objectPosition:'center', transform:`translate(-50%, -50%) scale(${FOREGROUND_SCALE})`, transformOrigin:'center center', filter:videoColorFilter, visibility:visibleDeck===slot?'visible':'hidden' }}
                   src={previewVideoUrl}
                   preload="metadata"
                   playsInline
@@ -1966,7 +1974,7 @@ export default function Home() {
               ) : (
                 <div className="absolute inset-0 bg-[linear-gradient(125deg,#111_0%,#572317_42%,#ef6b32_43%,#241716_47%,#0b0c0f_100%)]" />
               )}
-              <ForegroundTransition value={previewVisualStyle.cutTransition} windows={transitionWindows} time={previewEffectTime} width={preparedSource?.width || sourceSize.width} height={preparedSource?.height || sourceSize.height} />
+              <ForegroundTransition value={previewVisualStyle.cutTransition} windows={transitionWindows} time={previewEffectTime} width={foregroundSourceWidth} height={foregroundSourceHeight} />
               {previewVideoUrl && !isPreviewPlaying && <button type="button" onClick={() => void togglePreview()} aria-label="Play preview" style={{ zIndex: transitionWindows.length ? 30 : undefined }} className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"><Play className="ml-0.5 size-5 fill-white" /></button>}
             </div>
             <SceneOverlays overlays={previewVisualStyle.overlays} />
@@ -2097,7 +2105,7 @@ export default function Home() {
                 <button type="button" aria-pressed={subtitleSettings.source !== 'whisper'} disabled={subtitleBusy} onClick={() => chooseSubtitleSource('youtube')} className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source !== 'whisper' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-white/10 text-zinc-400'}`}>Dùng phụ đề YouTube</button>
                 <button type="button" aria-pressed={subtitleSettings.source === 'whisper'} disabled={subtitleBusy} onClick={() => chooseSubtitleSource('whisper')} className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source === 'whisper' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-white/10 text-zinc-400'}`}>Dùng phụ đề Whisper</button>
               </div>
-              <p className="text-[11px] leading-5 text-zinc-500">Whisper base đa ngôn ngữ · 142 MB · xử lý trên máy. {speechModel?.modelReady ? 'Model đã sẵn sàng.' : speechModel?.installing ? `Đang tải ${Math.round((speechModel.downloadedBytes || 0) / (speechModel.totalBytes || 1) * 100)}%.` : 'Cần tải model một lần.'}</p>
+              <p className="text-[11px] leading-5 text-zinc-500">{speechModel?.model||'Whisper small đa ngôn ngữ · 465 MiB'} · xử lý trên máy. {whisperSmallReady ? 'Model small đã sẵn sàng.' : speechModel?.installing ? `Đang tải ${Math.round((speechModel.downloadedBytes || 0) / (speechModel.totalBytes || 1) * 100)}%.` : 'Cần tải model một lần.'}</p>
               <p className="text-[11px] leading-5 text-zinc-500">Vị trí dưới chừa 420 px vùng giao diện TikTok. Mô tả mở rộng vẫn có thể che video; kiểm tra màn hình đăng trước khi xuất bản.</p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <label>Font<select aria-label="Font phụ đề" value={subtitleSettings.font} onChange={(event) => setSubtitleSettings((current) => ({ ...current, font: event.target.value }))} className="studio-input mt-1 w-full">{listFonts().map((font) => <option key={font.id} value={font.id}>{font.label}</option>)}</select></label>
@@ -2108,7 +2116,7 @@ export default function Home() {
                 <label>Màu viền<Input aria-label="Màu viền phụ đề" type="color" value={subtitleSettings.outlineColor} onChange={(event) => setSubtitleSettings((current) => ({ ...current, outlineColor: event.target.value }))} className="studio-input mt-1 w-full" /></label>
               </div>
               <Button onClick={() => void loadSubtitles(false, true)} disabled={subtitleBusy || !preparedSource} variant="outline" className="w-full text-xs">{subtitleBusy && <Loader2 className="animate-spin" />} Tạo lại / lấy phụ đề</Button>
-              <Button onClick={() => void installWhisperModel()} disabled={subtitleBusy || speechModel?.modelReady || !workerHealth?.ok} variant="outline" className="w-full text-xs">{speechModel?.modelReady ? 'Whisper base đã tải' : 'Tải model Whisper base · 142 MB'}</Button>
+              <Button onClick={() => void installWhisperModel()} disabled={subtitleBusy || whisperSmallReady || !speechModel || !workerHealth?.ok} variant="outline" className="w-full text-xs">{whisperSmallReady ? 'Whisper small đã tải' : 'Tải model Whisper small · 465 MiB'}</Button>
               {subtitleNotice && <p role="status" className="text-[11px] leading-5 text-zinc-400">{subtitleNotice}</p>}
               {subtitleCues.length > 0 && <details><summary className="cursor-pointer text-xs text-zinc-400">Xem / sửa phụ đề · {subtitleCues.length} câu</summary><div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
                 {subtitleCues.map((cue, index) => <label key={index} className="block text-[10px] text-zinc-500">{formatTime(cue.start)} – {formatTime(cue.end)}<Textarea aria-label={`Câu phụ đề ${index + 1}`} value={cue.text} onChange={(event) => {

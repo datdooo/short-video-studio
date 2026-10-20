@@ -24,7 +24,14 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
     for(const part of plan.parts){const previous=body.currentPlan?.parts?.find(p=>p.id===part.id);if(previous?.customTeaser){part.customTeaser=structuredClone(previous.customTeaser);part.teaser=hookRangeKey(previous)===hookRangeKey(part)?structuredClone(previous.teaser):unavailableHook(part,'Main đã đổi; Custom Teaser cần kiểm tra lại. Không tự chọn đoạn thay thế.');}}
     if(plan.analysis?.method==='deterministic-fallback'&&/provider-/.test(plan.analysis.fallbackReason||'')){
       plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"vr-light-leak-v2"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>({...p,teaser:(p.customTeaser||p.manualLocked)&&p.teaser?p.teaser:unavailableHook(p,'Chưa chọn được teaser bằng ChatGPT: AI chưa đánh giá được sức hấp dẫn/bằng chứng. Dùng Custom Teaser hoặc chọn lại; không tự lấy một đoạn chung chung.')}))};
-    }else plan=await selectHooks(plan,{...source,sourceContext:context},signal,body.transcript);
+    }else try{
+      plan=await selectHooks(plan,{...source,sourceContext:context},signal,body.transcript);
+    }catch{
+      signal?.throwIfAborted();
+      // A failure preparing optional teaser context must not discard new main
+      // ranges or rerun main selection. Export still requires both valid hooks.
+      plan={...plan,teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>({...p,teaser:p.customTeaser&&p.teaser?p.teaser:unavailableHook(p,'Chưa chọn được teaser bằng ChatGPT: bước chuẩn bị/chọn teaser bị lỗi. Main và khóa được giữ; chọn lại bằng AI hoặc Custom Teaser tại Timeline.')}))};
+    }
     plan=captureAiMainRanges(plan,body.currentPlan);validatePlan(plan,source);assertMainLocks(plan,body.currentPlan);signal?.throwIfAborted();return{plan};
   };
 }

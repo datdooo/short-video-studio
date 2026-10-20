@@ -251,7 +251,7 @@ function resolveBinary(environmentName, name, fallbacks = []) {
 const ffmpeg = resolveBinary("FFMPEG_PATH", "ffmpeg", ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]);
 const ffprobe = resolveBinary("FFPROBE_PATH", "ffprobe", ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"]);
 const whisper = resolveBinary("WHISPER_PATH", "whisper-cli", ["/opt/homebrew/bin/whisper-cli"]);
-const speech = createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, run });
+const speech = createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, run, resources:mediaResources });
 const ytDlp = resolveBinary("YT_DLP_PATH", "yt-dlp", [
   path.join(projectRoot, ".local-tools", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
 ]);
@@ -733,7 +733,7 @@ async function hookFrames(part, source, signal, candidateTimes) {
       const bytes = await readFile(file);
       if (bytes.length > 300_000) throw new Error("Hook frame exceeds budget");
       frames.push({ time, ...(boundedTimes?.[i]?.candidateId?{candidateId:boundedTimes[i].candidateId}:{}), data: bytes.toString("base64") });
-    } catch { signal?.throwIfAborted();break; }
+    } catch { signal?.throwIfAborted();if(frameSignal.aborted)break; }
     finally { await rm(file, { force: true }); }
   }
   return frames;
@@ -783,7 +783,7 @@ async function mainAnalysisInputs(source, body, signal) {
   try { await saveSourceContext(source.directory, context); } catch { signal?.throwIfAborted(); }
   let cues = source.captions || [];
   if (!cues.length) {
-    try { cues = sourceCaptionTrack(JSON.parse(await readFile(path.join(source.directory, "speech-captions.json"), "utf8")), source).cues; } catch { /* Missing cached speech is normal. */ }
+    try { cues = (await speech.cachedCaptions(source))?.cues || []; } catch { /* Missing cached speech is normal. */ }
   }
   if (!cues.length && !body.transcript?.trim() && source.hasAudio && source.duration <= 1800) {
     try {
@@ -808,7 +808,7 @@ async function planTeasers(plan, source, signal, transcript, selectionOptions = 
   let cues = Array.isArray(source.captions) ? source.captions : [];
   if (plan.captionCues) cues = sourceCaptionTrack(plan.captionCues, source).cues;
   else {
-    try { const cached = JSON.parse(await readFile(path.join(source.directory, "speech-captions.json"), "utf8")); cues = sourceCaptionTrack(cached, source).cues; } catch { /* No ASR download/recognition is triggered for selection. */ }
+    try { cues = (await speech.cachedCaptions(source))?.cues || []; } catch { /* No ASR download/recognition is triggered for selection. */ }
   }
   const sourceBoundaryCues = cues;
   const sourceInput = typeof transcript === "string" ? { ...source, transcript: transcript.slice(0, 100_000) } : source;
@@ -1853,7 +1853,7 @@ const server = createServer(async (request, response) => {
           if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 100_000)) throw new Error("Invalid hook transcript.");
           if(body.partId!==undefined&&!body.plan.parts.some(p=>p.id===body.partId))throw Error("Invalid hook part ID.");
           if(body.customInstruction!==undefined&&(body.partId===undefined||parseCustomTeaser(body.customInstruction).mode!=='description'))throw Error('Custom description cần part cụ thể và mô tả hợp lệ; timestamp không gọi AI.');
-          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction});
+          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction,forceRefresh:true});
           validatePlan(next, source); sendJson(request, response, 200, { plan: next });
         } finally { response.removeListener("close", abort); }
         return;

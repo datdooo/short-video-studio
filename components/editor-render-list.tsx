@@ -19,7 +19,8 @@ export type EditorRenderJob = {
   stopping?: boolean;
 };
 
-export function EditorRenderList({ jobs, stopping, deleting, deletingAll, error, notice, origin, onStop, onDelete, onDeleteAll }: {
+export function EditorRenderList({ query = "", jobs, stopping, deleting, deletingAll, error, notice, origin, onStop, onDelete, onDeleteAll }: {
+  query?: string;
   jobs: EditorRenderJob[];
   stopping: string[];
   deleting: string[];
@@ -31,7 +32,9 @@ export function EditorRenderList({ jobs, stopping, deleting, deletingAll, error,
   onDelete: (job: EditorRenderJob) => void;
   onDeleteAll: () => void;
 }) {
-  return <section className="border-t border-white/8 bg-[#0d0e11] p-5 lg:p-6" aria-label="Danh sách render từng video">
+  const filter = query.trim().toLocaleLowerCase();
+  const visibleJobs = jobs.filter((job) => [job.id, job.plan?.originalTitle, ...job.outputs.map((output) => output.filename), ...(job.plan?.parts.map((part) => part.title) || [])].join(" ").toLocaleLowerCase().includes(filter));
+  return <section className="studio-render-list border border-border bg-card rounded-xl p-5 lg:p-6" aria-label="Danh sách render từng video">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-base font-semibold">Danh sách render <span className="text-zinc-500">· {jobs.length}</span></h2>
       <div className="flex flex-wrap items-center gap-3">
@@ -43,17 +46,18 @@ export function EditorRenderList({ jobs, stopping, deleting, deletingAll, error,
     {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}
     {notice && <p role="status" className="mt-3 text-xs text-emerald-300">{notice}</p>}
     {!jobs.length && <p className="mt-4 text-sm text-zinc-500">Chưa có tác vụ render. Title sau cùng, hashtag và file tải về sẽ được giữ tại đây.</p>}
+    {!!jobs.length && !visibleJobs.length && <p className="studio-empty-state mt-4 text-sm text-muted-foreground">Không có tác vụ khớp tìm kiếm.</p>}
     <div className="mt-4 max-h-[640px] space-y-4 overflow-y-auto overscroll-contain pr-1">
-      {jobs.map((job) => {
+      {visibleJobs.map((job) => {
         const active = ["queued", "rendering"].includes(job.state);
         const cancelling = stopping.includes(job.id) || Boolean(job.stopping);
         const removing = deleting.includes(job.id) || deletingAll;
         const status = { queued: "Chờ render", rendering: `Đang render Part ${job.currentPart || 1}`, done: "Hoàn tất", error: "Render lỗi", cancelled: "Đã dừng" }[job.state];
-        return <article key={job.id} className="rounded-xl border border-white/10 bg-white/[.025] p-4">
+        return <article data-render-state={job.state} key={job.id} className="rounded-xl border border-white/10 bg-white/[.025] p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="break-words text-sm font-semibold">{job.plan?.originalTitle || "Video đã render"}</h3>
-              <p className="mt-1 text-xs text-[#ff806a]">{job.stopping ? "Đang huỷ render…" : status} · {job.progress}%</p>
+              <p className="studio-job-status mt-1 text-xs">{job.stopping ? "Đang huỷ render…" : status} · {job.progress}%</p>
             </div>
             <div className="flex shrink-0 flex-wrap justify-end gap-2">
               {(active || cancelling) && <button aria-label={`Huỷ render ${job.plan?.originalTitle || job.id}`} onClick={() => onStop(job)} disabled={cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 active:scale-95 disabled:opacity-50">{cancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />} {cancelling ? "Đang huỷ…" : "Huỷ render"}</button>}
@@ -73,7 +77,7 @@ export function EditorRenderList({ jobs, stopping, deleting, deletingAll, error,
                 <p className="mt-2 select-text text-xs leading-6 text-zinc-400 [overflow-wrap:anywhere]">{hashtags || "Chưa có hashtag (chỉnh tay)."}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <CopyButton text={`${title}\n\n${hashtags}`} ariaLabel={`Copy title và hashtag Part ${part.id} của ${job.plan!.originalTitle}`} />
-                  {output && <a href={`${origin}${output.url}`} className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"><Download className="size-3" /> Tải Part {part.id} · {(output.size / 1024 / 1024).toFixed(1)} MB</a>}
+                  {output && <a href={`${origin}${output.url}`} className="studio-control studio-download flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"><Download className="size-3" /> Tải Part {part.id} · {(output.size / 1024 / 1024).toFixed(1)} MB</a>}
                 </div>
               </div>;
             })}
