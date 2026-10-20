@@ -65,13 +65,13 @@ export function createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, ru
       try {
         await run(ffmpeg, ["-y", "-i", source.mediaPath, "-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav], { signal });
         // Short, word-split timed cues reduce estimated splitting of long sentences.
-        await run(whisper, ["-m", model, "-f", wav, "-l", "auto", "-osrt", "-of", output, "-ml", "24", "-sow", "-sns"], { signal });
+        await run(whisper, ["-t","2","-m", model, "-f", wav, "-l", "auto", "-osrt", "-of", output, "-ml", "24", "-sow", "-sns"], { signal });
         const result = sourceCaptionTrack({ sourceId: source.id, cues: parseCaptions(await readFile(`${output}.srt`, "utf8")), origin: "whisper-local" }, source);
         await writeFile(temporaryCache, JSON.stringify(result)); await rename(temporaryCache, cached); return result;
       } finally { await unlink(wav).catch(() => {}); await unlink(`${output}.srt`).catch(() => {}); await unlink(temporaryCache).catch(() => {}); }
     });
   }
-  async function boundaries(source) {
+  async function boundaries(source,signal) {
     return once(source, "boundaries", async () => {
       const cache = path.join(sourcesRoot, source.id, "speech-boundaries.json");
       const captionCache = path.join(sourcesRoot, source.id, "speech-captions.json");
@@ -80,7 +80,7 @@ export function createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, ru
       if (existsSync(cache)) return { ...JSON.parse(await readFile(cache, "utf8")), cues };
       if (!source.hasAudio) return { cues, silences: [] };
       let log = "";
-      await run(ffmpeg, ["-hide_banner", "-i", source.mediaPath, "-vn", "-af", "silencedetect=noise=-35dB:d=0.18", "-f", "null", "-"], { onStderr: (chunk) => { log += chunk; } });
+      await run(ffmpeg, ["-hide_banner", "-i", source.mediaPath, "-vn", "-af", "silencedetect=noise=-35dB:d=0.18", "-f", "null", "-"], {signal,onStderr: (chunk) => { log = (log + chunk).slice(-100000); } });
       const silences = []; let start;
       for (const match of log.matchAll(/silence_(start|end):\s*([\d.]+)/g)) {
         if (match[1] === "start") start = Number(match[2]);

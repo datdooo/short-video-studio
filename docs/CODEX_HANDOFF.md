@@ -1,3 +1,77 @@
+# Git delivery checkpoint — 2026-10-21
+
+User authorized normal push of `recovery/visual-dev-reconstructed` to
+`https://github.com/datdooo/short-video-studio.git`. Previous base13f3c90 matched
+remote at inspection. This source checkpoint groups bounded render/resource work,
+fixed260/300px columns +55/45 center, TSX black/orange UI, preview1× with zoom125%,
+export1.25× and related docs/runtime manifest. Prior DEV build succeeded; functional
+QA/performance/manual acceptance remain unverified. No tests/render/AI/build rerun
+for this delivery. Source/index reviewed; secret/path scan found no matches in489
+unique blobs before this documentation note. No media/music/credentials/build/cache
+or recovery bundles staged. Available reconstructed history only; missing original
+local checkpoints are not recovered. Use `git log -1` and remote refs for exact
+checkpoint/push state; older sections below describe their original delivery time.
+
+---
+
+# Active update — fixed columns, unchanged speed/zoom (2026-10-20)
+
+Read `docs/fixed-editor-layout.md` first. Source260px / Inspector300px, flexible
+center; no resize handles or persisted panel dimensions. Narrow≤1050px uses
+in-place drawers; footer stays outside overlay; mounted editor state preserved.
+Preview RATE1, foreground VISUAL SCALE1.25, export RATE1.25 remain separate and
+unchanged. No render/worker/plan edits in this layout turn. Same branch/base
+HEAD13f3c90 with all dirty work preserved. Center now55% Preview /45% Timeline; source zoom125% unaffected. Source/diff
+review only; no tests/QA/render/provider. Fixed-column build succeeded once before
+incoming55/45 adjustment; final ratio build then succeeded, exit0. Current app:
+`release/dev/ShortCut Studio Dev.app`; final log:
+`/tmp/shortcut-dev-fixed-55-45-build-20261020.log`. Only delivery docs edited after
+build; native packaging audits completed, no runtime QA. Prior fixed-column log:
+`/tmp/shortcut-dev-fixed-columns-build-20261020.log` (superseded).
+No app/worker shutdown or restart, no commit/push/merge.
+
+---
+
+# Active update — TSX black/orange UI + Preview1× (2026-10-20)
+
+Same branch/base HEAD13f3c90, inherited dirty source preserved. New primary design:
+`shortcut_studio_dev_ui_prototype_codex_handoff.tsx` from user Downloads, replacing
+ZIP design. Read `docs/preview-1x-ui.md` first. Preview video/audition/playhead/
+durations/music+ducking now1×, source timecodes unchanged; export/policy1.25×
+unchanged. Existing effect clock adapter aligns phases to the same footage.
+UI token theme black/charcoal/orange; existing real callbacks, drafts and jobs.
+Only worker/music-preview.mjs and optional speed argument in music-audio changed
+for preview. server/range-input/media-resources and render-lag fix unchanged from
+turn start. Cache and draft clock versions prevent old1.25× mixes/playheads being
+silently reused under new labels. New runtime config added to package manifest.
+NO tests/QA/render/provider/YouTube. One combined Node22 `npm run package:mac:dev`
+build succeeded, exit0. App: `release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-tsx-preview-1x-build-20261020.log`. Current implementation is
+packaged; only delivery docs edited afterward. No app/worker restart, commit,
+push or merge. Old build records below are historical.
+
+---
+
+# Active update — approved prototype UI integration (2026-10-20)
+
+Branch `recovery/visual-dev-reconstructed`, base HEAD
+`13f3c90f28afb30a3e6e53c87d40695197914712`; inherited dirty render-resource/UI work
+preserved. Read `docs/prototype-ui-integration.md` and
+`docs/editor-workspace-layout.md` for current UI; `docs/render-resource-fix.md`
+for the separately inherited UNMEASURED render fix. All66 worker modules match
+pre-UI hashes; this UI turn does not edit worker/engine/FFmpeg/selection algorithms.
+Header/workspace, real source/Generate, existing preview, active-part Timeline,
+Inspector tabs and actual render status are wired without prototype mocks/types.
+No tests, browser/smoke/render or provider/YouTube calls; user tests manually.
+One combined Node22 `npm run package:mac:dev` succeeded, exit0. Current app:
+`release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-prototype-ui-build-20261020.log`. It contains current implementation
+including preserved render changes; only delivery docs updated afterward. Native
+packager audits/signing completed, no app/worker restart, runtime QA or commit/push.
+Keep historical build/QA records below distinct from this unverified new source.
+
+---
+
 # Active update — editor autosave / restore (2026-10-20)
 
 Started clean at `9da73bed886f340f5e346e476f89b3ffa6a147f8` on

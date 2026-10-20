@@ -12,7 +12,7 @@ import { getTitleAnimation } from "@/lib/visual-style/animations.mjs";
 import { getCutTransition } from "@/lib/visual-style/cut-transitions.mjs";
 
 type Control = "text" | "font" | "filter" | "background" | "overlay" | "animation" | "transition";
-export function VisualCustomizePanel({ style, controls }: { style: VisualStyle; controls: Record<Control, ReactNode> }) {
+export function VisualCustomizePanel({ style, controls,include }: { style: VisualStyle; controls: Record<Control, ReactNode>;include?:Control[] }) {
   const filter = getFilterPreset(style.filter.presetId || "current");
   const rows: { id: Control; label: string; value: string }[] = [
     { id: "text", label: "Text Style", value: getTextPreset(style.textPresetId || "current").label },
@@ -28,7 +28,7 @@ export function VisualCustomizePanel({ style, controls }: { style: VisualStyle; 
       Customize<ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform" />
     </summary>
     <div className="divide-y divide-white/8 border-t border-white/8 px-3">
-      {rows.map(({ id, label, value }) => <details key={id} data-customize-row={id} className="min-w-0">
+      {rows.filter(row=>!include||include.includes(row.id)).map(({ id, label, value }) => <details key={id} data-customize-row={id} className="min-w-0">
         <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_16px] items-center gap-3 rounded-lg py-3 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
           <span className="font-medium text-zinc-300">{label}</span><span className="truncate text-right text-zinc-400" title={value}>{value}</span><ChevronDown aria-hidden="true" className="size-4 shrink-0 text-zinc-500 transition-transform" />
         </summary>

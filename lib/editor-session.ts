@@ -1,3 +1,5 @@
+import {PREVIEW_TIMEBASE} from './preview-config.mjs';
+import {PLAYBACK_RATE} from './render-config.mjs';
 // Browser-only draft data. No worker payload, credential, File, blob URL or media.
 import type {EditPlan} from './edit-plan';
 import {RENDER_PRESET,isChronological} from './edit-plan';
@@ -12,8 +14,8 @@ export const SESSION_LIMIT=4*1024*1024; // UTF-16 upper bound, one atomic localS
 export type Controls=Record<string,unknown>;
 export type EditorSession={
  sourceMode:'youtube'|'local';sourceUrl:string;sourceId:string;localFileName:string;sourceTitle:string;transcript:string;
- editMode:'ai'|'manual';provider:import('./edit-plan').AiProvider;instruction:string;supplementalPrompt:string;
- plan?:EditPlan;hasEditPlan:boolean;sourceCaptions?:CaptionTrack|null;activePartIndex:number;workspace:'editor'|'batch'|'storage';previewTime:number;
+ sourceAdvancedOpen?:boolean;inspectorTab?:'appearance'|'text'|'music';editMode:'ai'|'manual';provider:import('./edit-plan').AiProvider;instruction:string;supplementalPrompt:string;
+ plan?:EditPlan;hasEditPlan:boolean;sourceCaptions?:CaptionTrack|null;activePartIndex:number;workspace:'editor'|'batch'|'storage';previewTime:number;previewTimebase?:typeof PREVIEW_TIMEBASE;
  batchId:string;renderJobId:string;batchEditing?:{batchId:string;itemId:string;sourceId:string}|null;selectedBatchPreviewKey:string;batchUrls:string;
  manualPart1Title:string;manualPart2Title:string;manualPart1Ranges:string;manualPart2Ranges:string;
  webAiPrompt:string;webAiResult:string;webAiContext?:{sourceId:string;transcript:string;instruction:string;provider:import('./edit-plan').AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string}|null;
@@ -69,10 +71,16 @@ export function readEditorSession():{draft?:Partial<EditorSession>;notice?:strin
   for(const key of ['sourceUrl','localFileName','sourceTitle','transcript','instruction','supplementalPrompt','batchUrls','manualPart1Title','manualPart2Title','manualPart1Ranges','manualPart2Ranges','webAiPrompt','webAiResult'] as const)if(typeof r[key]==='string')d[key]=r[key] as string;
   d.sourceId=managedId(r.sourceId);d.batchId=managedId(r.batchId);d.renderJobId=managedId(r.renderJobId);
   d.selectedBatchPreviewKey=text(r.selectedBatchPreviewKey,500);
+  d.sourceAdvancedOpen=r.sourceAdvancedOpen===true;
+  d.inspectorTab=r.inspectorTab==='text'||r.inspectorTab==='music'?r.inspectorTab:'appearance';
   d.sourceMode=r.sourceMode==='local'?'local':'youtube';d.editMode=r.editMode==='manual'?'manual':'ai';
   if(['mock','chatgpt','gemini','muse','openai','qwen'].includes(String(r.provider)))d.provider=r.provider as EditorSession['provider'];
   d.workspace=r.workspace==='batch'||r.workspace==='storage'?r.workspace:'editor';d.activePartIndex=r.activePartIndex===1?1:0;d.previewTime=finite(r.previewTime)?Number(r.previewTime):0;
   d.plan=readPlan(r.plan);d.hasEditPlan=!!d.plan&&r.hasEditPlan===true;
+  // Legacy editor drafts stored the export clock. Migrate only the UI playhead,
+  // never source timecodes/plan/job snapshots; future reads see an explicit marker.
+  if(r.previewTimebase!==PREVIEW_TIMEBASE&&d.hasEditPlan)d.previewTime=Number(d.previewTime)*PLAYBACK_RATE;
+  d.previewTimebase=PREVIEW_TIMEBASE;
   d.sourceCaptions=readCaptions(r.sourceCaptions);
   if(object(r.batchEditing)&&managedId(r.batchEditing.batchId)&&managedId(r.batchEditing.itemId)&&r.batchEditing.sourceId===d.sourceId)d.batchEditing=r.batchEditing as EditorSession['batchEditing'];
   if(object(r.webAiContext)&&r.webAiContext.sourceId===d.sourceId&&managedId(r.webAiContext.requestId)){
@@ -84,7 +92,7 @@ export function readEditorSession():{draft?:Partial<EditorSession>;notice?:strin
 }
 export function writeEditorSession(data:EditorSession):string{
  try{
-  const safe={...data,sourceUrl:/^(?:data|blob):/i.test(data.sourceUrl)?'':data.sourceUrl,interrupted:[...new Set(data.interrupted)].slice(0,12)};
+  const safe={...data,previewTimebase:PREVIEW_TIMEBASE,sourceUrl:/^(?:data|blob):/i.test(data.sourceUrl)?'':data.sourceUrl,interrupted:[...new Set(data.interrupted)].slice(0,12)};
   const json=JSON.stringify({version:1,savedAt:new Date().toISOString(),data:safe});
   if(json.length*2>SESSION_LIMIT)return'Bản nháp vượt 4 MiB; bản lưu trước vẫn được giữ. Rút gọn transcript/JSON nhập để lưu tiếp.';
   localStorage.setItem(SESSION_KEY,json);return'';

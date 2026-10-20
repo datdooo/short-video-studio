@@ -1,3 +1,5 @@
+import {createMediaResources,balancedFfmpegArgs} from './media-resources.mjs';
+import {prepareRangeInput} from './range-input.mjs';
 import{parseCustomTeaser}from"../lib/custom-teaser.mjs";
 import {TRANSITION_SPRITE} from '../lib/visual-style/foreground-transitions.mjs';
 import {createMusicPreview} from './music-preview.mjs';
@@ -33,7 +35,7 @@ import {
 } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { homedir } from "node:os";
+import { homedir,setPriority } from "node:os";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import { cutTransitionFilters } from './cut-transition.mjs';
@@ -76,6 +78,8 @@ import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHIN
 import { originalCutPlan } from '../lib/legacy-plan.mjs';
 import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack, transcriptCues } from "../lib/subtitles.mjs";
 
+sharp.concurrency(2);sharp.cache({memory:32,files:8,items:32});
+
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
 const sourcesRoot = path.join(dataRoot, "sources");
@@ -87,6 +91,10 @@ const batches = new Map();
 const batchControllers = new Map();
 const renderControllers = new Map();
 const commandLifecycle = createCommandLifecycle();
+const mediaResources=createMediaResources();
+const pendingRenderSubmissions=new Map();
+let renderQueue=Promise.resolve();
+const exportBusy=()=>pendingRenderSubmissions.size>0||[...jobs.values()].some(j=>["queued","rendering"].includes(j.state)&&renderControllers.has(j.id));
 const batchHistoryPath = path.join(dataRoot, "batch-history.json");
 let historyWriteQueue = Promise.resolve();
 function persistBatchHistory({strict=false}={}) {
@@ -158,7 +166,7 @@ async function importLegacyRenderHistory() {
     await persistBatchHistory();
   }
 }
-let renderQueue = Promise.resolve();
+
 const batchPreparationQueue = createBatchSubmissionQueue({
   batches, controllers: batchControllers, prepare: prepareBatch, onChange: persistBatchHistory,
 });
@@ -261,8 +269,7 @@ function supportsEncoder(binary, encoder) {
 }
 
 const videoToolboxAvailable = process.platform === "darwin" && supportsEncoder(ffmpeg, "h264_videotoolbox");
-const preferredVideoEncoder = process.env.FFMPEG_VIDEO_ENCODER
-  || (videoToolboxAvailable ? "h264_videotoolbox" : "libx264");
+const preferredVideoEncoder = videoToolboxAvailable ? "h264_videotoolbox" : "libx264";
 const { contrast: renderContrast, saturation: renderSaturation } = currentFilterEnvironment(process.env);
 const hardwareDecodeCodecs = new Set(["h264", "hevc", "prores"]);
 
@@ -744,8 +751,8 @@ async function resolveEditingProvider(signal) {
 }
 const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
 const musicLibrary=createMusicLibrary({root:path.join(dataRoot,"music"),ffmpeg,ffprobe,run});
-const musicSpeech=createMusicSpeech({root:path.join(dataRoot,"cache","music-speech"),ffmpeg,run,fingerprint:hookSourceFingerprint,protectedKeys:protectedAnalysisKeys});
-const musicPreview=createMusicPreview({root:path.join(dataRoot,"cache","music-preview"),ffmpeg,run,musicLibrary,musicSpeech,fingerprint:hookSourceFingerprint});
+const musicSpeech=createMusicSpeech({root:path.join(dataRoot,"cache","music-speech"),ffmpeg,run,fingerprint:hookSourceFingerprint,protectedKeys:protectedAnalysisKeys,resources:mediaResources});
+const musicPreview=createMusicPreview({root:path.join(dataRoot,"cache","music-preview"),ffmpeg,run,musicLibrary,musicSpeech,fingerprint:hookSourceFingerprint,isExporting:exportBusy,resources:mediaResources});
 const localSignals = createLocalSignalAnalyzer({ ffmpeg, run, fingerprint: hookSourceFingerprint, cacheRoot:path.join(dataRoot,"cache","local-signals"), protectedKeys:protectedAnalysisKeys });
 const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider, protectedKeys:protectedAnalysisKeys });
 
@@ -826,7 +833,12 @@ function assertId(value) {
   return value;
 }
 
-async function run(binary, args, options = {}) {
+async function run(binary,args,options={}){
+  const heavy=binary===ffmpeg||binary===ffprobe||binary===whisper;
+  if(heavy)return mediaResources.use('analysis',signal=>runCommand(binary,binary===ffmpeg?balancedFfmpegArgs(args):args,{...options,signal,lowerPriority:true}),options.signal);
+  return runCommand(binary,args,options);
+}
+async function runCommand(binary, args, options = {}) {
   commandLifecycle.assertRunning();
   options.signal?.throwIfAborted();
   if (!binary) throw new Error(options.missingMessage || "Thiếu binary cần thiết.");
@@ -839,8 +851,10 @@ async function run(binary, args, options = {}) {
       windowsHide: true,
     });
     commandLifecycle.track(child, Boolean(options.signal) && process.platform !== "win32");
+    if(options.lowerPriority&&Number.isInteger(child.pid)){try{setPriority(child.pid,10);}catch{/* OS may not support priority adjustment; thread limits still apply. */}}
     let killTimer;
     const kill = (signal) => {
+      if(!Number.isInteger(child.pid)||child.pid<=0)return;
       try {
         if (options.signal && process.platform !== "win32") process.kill(-child.pid, signal);
         else child.kill(signal);
@@ -1230,7 +1244,7 @@ async function subtitleFrames(source, plan, part, directory, signal) {
 }
 
 
-async function renderPart({ source, plan, part, totalParts, outputPath, backgroundAsset, sceneAsset, onProgress, signal }) {
+async function renderPart({ source, plan, part, totalParts, outputPath, backgroundAsset, sceneAsset, onProgress, onEncoder=()=>{}, signal }) {
   signal?.throwIfAborted();
   if (!ffmpeg) throw new Error("Không tìm thấy FFmpeg. macOS: brew install ffmpeg");
   const workDirectory = path.dirname(outputPath);
@@ -1261,14 +1275,11 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     titleInputPath = path.join(workDirectory, `part-${part.id}-scene-titles.png`);
     await sharp(sceneAsset).composite([{ input: titleOverlayPath }]).png().toFile(titleInputPath);
   }
-  const audioInput = source.hasAudio ? "0:a" : "1:a";
+
   const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
-  let elapsed=0;
-  const segmentFilters=segments.flatMap((segment,index)=>{const offset=elapsed;elapsed+=segment.end-segment.start;return[
-    `[0:v]trim=start=${segment.start}:end=${segment.end},setpts=PTS-${segment.start}/TB+${offset}/TB,setsar=1[v${index}]`,
-    `[${audioInput}]atrim=start=${segment.start}:end=${segment.end},asetpts=PTS-STARTPTS,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a${index}]`,
-  ];});
-  const overlayInput = source.hasAudio ? 1 : 2;
+  const rangeInput=await prepareRangeInput({source,segments,directory:workDirectory,ffmpeg,run,signal});
+  try {
+  const overlayInput=2; // sequential source video + finite, sample-trimmed PCM
   const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t,${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
   // Keep the existing Rec.709 limited output contract after composition.
   const background = assertRenderableBackground(plan.visualStyle?.background);
@@ -1279,9 +1290,8 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   const vrInput=overlayInput+2+(subtitlesPath?1:0)+(backgroundAsset?1:0)+(animatedSceneInput!==undefined?1:0);
   const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput: overlayInput + 1, sceneInput: animatedSceneInput, overlayFormat, clockRate:1 });
   const filters = [
-    ...segmentFilters,
-    `${segments.map((_,i)=>`[v${i}]`).join("")}${segments.length>1?`interleave=nb_inputs=${segments.length}:duration=longest`:"null"},settb=AVTB,setpts=PTS/${PLAYBACK_RATE},fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
-    `${segments.map((_,i)=>`[a${i}]`).join("")}concat=n=${segments.length}:v=0:a=1[cuta]`,
+    `[0:v]select=concatdec_select,settb=AVTB,setpts=PTS/${PLAYBACK_RATE},setsar=1,fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
+    '[1:a]asetpts=N/SR/TB[cuta]',
     `[cutv]${ffmpegFilterExpression(plan.visualStyle?.filter, { contrast: renderContrast, saturation: renderSaturation })}[graded]`,
     ...(background.mode === "source-blur" ? [
       `[graded]split=2[bgsrc][mainsrc]`,
@@ -1308,12 +1318,12 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
 
   const buildArgs = (videoEncoder) => {
     const hardwareRender = videoEncoder === "h264_videotoolbox";
-    const args = ["-y"];
+    const args = ["-y","-copyts"];
     if (hardwareRender && hardwareDecodeCodecs.has(source.videoCodec)) {
       args.push("-hwaccel", "videotoolbox");
     }
-    args.push("-i", source.mediaPath);
-    if (!source.hasAudio) args.push("-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo");
+    args.push('-an','-sn','-dn','-f','concat','-safe','0','-segment_time_metadata','1','-i',rangeInput.list);
+    args.push('-f','f32le','-ar','48000','-ac','2','-i',rangeInput.audio);
     args.push("-loop", "1", "-framerate", "30", "-i", titleInputPath);
     args.push("-loop", "1", "-framerate", "30", "-i", titleShinePath);
     if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
@@ -1353,9 +1363,11 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
         "-c:v", videoEncoder,
         "-preset", process.env.FFMPEG_PRESET || "medium",
         "-crf", process.env.FFMPEG_CRF || "17",
+        "-x264-params","threads=2:lookahead-threads=1",
       );
     }
     args.push(
+      "-threads:v","2","-threads:a","1","-max_muxing_queue_size","128",
       "-tag:v", "avc1",
       "-c:a", "aac",
       "-b:a", "192k",
@@ -1384,18 +1396,19 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
       }
     },
   };
-  let encoderUsed = preferredVideoEncoder;
+  let encoderUsed = preferredVideoEncoder;onEncoder(encoderUsed,false);
   try {
     await run(ffmpeg, buildArgs(encoderUsed), renderOptions);
   } catch (error) {
     signal?.throwIfAborted();
     if (encoderUsed !== "h264_videotoolbox") throw error;
-    encoderUsed = "libx264";
+    encoderUsed = "libx264";onEncoder(encoderUsed,true);
     progressBuffer = "";
     await run(ffmpeg, buildArgs(encoderUsed), renderOptions);
   }
   onProgress(1);
   return encoderUsed;
+  } finally {await rangeInput.dispose();}
 }
 
 function exportPrefixFor(plan, source) {
@@ -1416,7 +1429,7 @@ async function executeRender(job, source, plan, signal) {
   try {
     signal?.throwIfAborted();
     requireCurrentExportPolicy(job);
-    validateRenderPlan(plan,source);
+    validateRenderPlan(plan,source);job.plan=structuredClone(plan);
     job.state = "rendering";
     job.startedAt = new Date().toISOString();
     const outputDirectory = path.join(source.directory, "outputs", job.id);
@@ -1462,6 +1475,7 @@ async function executeRender(job, source, plan, signal) {
         sceneAsset,
         outputPath,
         signal,
+        onEncoder:(encoder,fallback)=>{job.encoder=encoder;job.encoderFallback=fallback;job.resourceNotice=encoder==='libx264'?(fallback?'VideoToolbox lỗi; chuyển CPU · giới hạn 2 luồng.':'CPU · giới hạn 2 luồng (VideoToolbox chưa khả dụng).'):'Apple VideoToolbox · Balanced M2';void persistBatchHistory();},
         onProgress: (partProgress) => {
           job.progress = Math.round(((index + partProgress) / plan.parts.length) * 100);
         },
@@ -1486,23 +1500,29 @@ async function executeRender(job, source, plan, signal) {
   }
 }
 
-async function startRender(body, parentSignal) {
+function startRender(body,parentSignal){
+  // Pending HTTP calls and already queued/running editor jobs share this key.
+  const fingerprint=createHash('sha256').update(JSON.stringify([body.sourceId,body.plan],(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
+  const key=body.submissionId?`id:${assertId(body.submissionId)}`:`editor:${fingerprint}`;
+  if(pendingRenderSubmissions.has(key)){const pending=pendingRenderSubmissions.get(key);if(pending.sourceId!==body.sourceId)throw Object.assign(new Error('Submission belongs to another source'),{status:409});return pending.promise;}
+  if(!body.submissionId){const active=[...jobs.values()].find(j=>j.origin==='editor'&&j.submissionFingerprint===fingerprint&&['queued','rendering'].includes(j.state)&&!j.deleted);if(active)return Promise.resolve(active);}
+  mediaResources.pausePreviews();
+  const task=prepareRenderSubmission(body,parentSignal,fingerprint).finally(()=>{if(pendingRenderSubmissions.get(key)?.promise===task)pendingRenderSubmissions.delete(key);});pendingRenderSubmissions.set(key,{sourceId:body.sourceId,promise:task});return task;
+}
+async function prepareRenderSubmission(body, parentSignal, fingerprint) {
   if (mediaLibrary.isLocked(body.sourceId)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
   const source = await loadSource(body.sourceId);
   parentSignal?.throwIfAborted();
   body.plan = originalCutPlan(body.plan, source.id);
   validateRenderPlan(body.plan, source);
   let originalPlan = structuredClone({ ...body.plan, originalTitle: source.title, parts: body.plan.parts.map(trimPartStart) });
-  if (!["manual", "mock"].includes(originalPlan.providerUsed) && originalPlan.parts.some((part) => !part.smartCutApplied)) {
-    originalPlan = smartCutPlan(originalPlan, await speech.boundaries(source), source.duration);
-  }
   // Rendering never selects/fills hooks. Explicit selection must finish first.
   validateRenderPlan(originalPlan,source);
   originalPlan = snapshotPlanVisualStyle(originalPlan);
   if (originalPlan.subtitles.enabled && originalPlan.captionCues) originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
   originalPlan.music=normalizeMusic(originalPlan.music);
   if(originalPlan.music.enabled){for(const part of originalPlan.parts){const m=effectiveMusic(originalPlan.music,part.id);if(m.enabled)await musicLibrary.resolve(m.assetId);}
-    if(originalPlan.music.ducking)originalPlan.musicSpeech=await musicSpeech.detect(source,parentSignal);
+
   }
   const renderPlan = originalPlan;
   validateRenderPlan(renderPlan, source);
@@ -1514,6 +1534,7 @@ async function startRender(body, parentSignal) {
     sourceId: source.id,
     origin: parentSignal ? "batch" : "editor",
     metadataPolicy: EXPORT_METADATA_POLICY,
+    submissionFingerprint:fingerprint,resourceProfile:"balanced-m2-v1",
     plan: originalPlan,
     startTrimSeconds: 1,
     state: "queued",
@@ -1536,14 +1557,24 @@ function enqueueRender(job,source,renderPlan,parentSignal){
   const abort = () => cancelRender(job);
   parentSignal?.addEventListener("abort", abort, { once: true });
   if (parentSignal?.aborted) abort();
-  renderQueue = renderQueue.then(() => executeRender(job, source, renderPlan, controller.signal)).catch((error) => {
-    job.state = "error";
-    job.error = error instanceof Error ? error.message : String(error);
+  mediaResources.pausePreviews();
+  const task=renderQueue.then(async()=>{
+    const signal=controller.signal;signal.throwIfAborted();job.phase='preparing';
+    let prepared=structuredClone(renderPlan);
+    if(!['manual','mock'].includes(prepared.providerUsed)&&prepared.parts.some(p=>!p.smartCutApplied))prepared=smartCutPlan(prepared,await speech.boundaries(source,signal),source.duration);
+    if(prepared.music?.enabled&&prepared.music.ducking)prepared.musicSpeech=await musicSpeech.detect(source,signal);
+    if(prepared.subtitles?.enabled&&!prepared.captionCues)prepared.captionCues=await speech.captions(source,signal,{provider:prepared.subtitles.source});
+    signal.throwIfAborted();validateRenderPlan(prepared,source);job.plan=structuredClone(prepared);job.phase='rendering';
+    await mediaResources.use('render',active=>executeRender(job,source,prepared,active),signal);
+  }).catch((error) => {
+    job.state = controller.signal.aborted?"cancelled":"error";
+    job.error = controller.signal.aborted?null:error instanceof Error ? error.message : String(error);job.finishedAt=new Date().toISOString();
   }).finally(() => {
-    renderControllers.delete(job.id);
+    renderControllers.delete(job.id);job.phase=null;
     parentSignal?.removeEventListener("abort", abort);
     void persistBatchHistory();
   });
+  renderQueue=task.catch(()=>{});
 }
 async function resumeRender(job,parentSignal){
   requireCurrentExportPolicy(job);
@@ -1690,7 +1721,7 @@ const server = createServer(async (request, response) => {
           encoder: preferredVideoEncoder,
           hardwareAccelerated: preferredVideoEncoder === "h264_videotoolbox",
           label: preferredVideoEncoder === "h264_videotoolbox" ? "Apple VideoToolbox" : preferredVideoEncoder,
-          colorSpace: "Rec.709",
+          colorSpace: "Rec.709",resources:{...mediaResources.state(),renderBusy:exportBusy()},
         },
         dataRoot,
       });
@@ -1770,6 +1801,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if(request.method==='POST'&&requestUrl.pathname==='/api/music/preview'){
+      if(exportBusy())throw Object.assign(new Error('Đang xuất video; audio preview tạm dừng. Bấm Play sau khi xuất để chuẩn bị lại.'),{status:409});
       const body=await readJson(request),source=await loadSource(body.sourceId);if(mediaLibrary.isLocked(source.id))throw Error('Source is busy in Trash.');validatePlan(body.plan,source);const controller=new AbortController(),abort=()=>controller.abort(new Error('Audio preview cancelled'));response.once('close',abort);try{sendJson(request,response,200,await musicPreview.prepare(source,body.plan,body.partId,body.sessionId,controller.signal));}finally{response.removeListener('close',abort);}return;
     }
     const musicPreviewFile=requestUrl.pathname.match(/^\/api\/music\/preview\/([a-f0-9]{64})\/media$/);
