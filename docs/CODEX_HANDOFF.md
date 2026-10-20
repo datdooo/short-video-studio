@@ -1,3 +1,25 @@
+# Active update — editor autosave / restore (2026-10-20)
+
+Started clean at `9da73bed886f340f5e346e476f89b3ffa6a147f8` on
+`recovery/visual-dev-reconstructed`. Current scope: `docs/editor-autosave.md`.
+Versioned/bounded local editor draft, separate partial Timeline/teaser fields,
+managed-source read-only restore, paused playhead, read-only job/batch reconnect,
+interrupted browser-task notices, explicit “Phiên mới”. Passive restore guards
+prevent automatic extraction/AI/render/subtitle/music preparation. Existing
+source/plan/media/credentials and qualified previous implementations preserved.
+No push, production changes or backups. NO tests/lint/typecheck, runtime QA,
+render, browser automation or live AI/YouTube calls; user accepts manually.
+Combined DEV build succeeded once: Node22 `npm run package:mac:dev`, exit0.
+App: `release/dev/ShortCut Studio Dev.app`; build includes the current source
+(only delivery docs updated afterward). Log:
+`/tmp/shortcut-dev-autosave-build-20261020.log`. Native build/signature audits
+completed as part of packaging; no launch or functional verification. Existing
+running app was untouched. User first checks reload with partial inputs, paused
+playhead, job/batch reconnect, missing/local source and “Phiên mới”.
+No push. Use `git log -1` for the final commit SHA.
+
+---
+
 # Active update — consolidated source-timecode Timeline (2026-10-20)
 
 Started clean on `recovery/visual-dev-reconstructed` at

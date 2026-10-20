@@ -4,9 +4,11 @@ import {explainInVietnamese} from "@/lib/explanation-language.mjs";
 import {hookNeedsReselection,validateTeaser,hookRangeKey,teaserReadiness,requireBothTeasers} from "@/lib/teaser-hooks.mjs";
 import {createPreviewDecks} from "@/lib/preview-decks.mjs";
 import {PreviewBackground} from "@/components/preview-background";
+import {EditorDraftContext} from '@/components/editor-draft-context';
+import {SESSION_KEY,readEditorSession,writeEditorSession,managedId,type EditorSession,type Controls} from '@/lib/editor-session';
 import {MusicPanel} from '@/components/music-panel';
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ArrowLeft,
@@ -403,6 +405,7 @@ export default function Home() {
   const registerMusicPlayback = useCallback((handle:{play:()=>void;pause:()=>void}|null)=>{musicPlaybackControl.current=handle;},[]);
   // Called synchronously before source state/ref changes, not after unmount.
   function resetSourceSelection(){
+    jobRestoreEpoch.current++;setRestorePassive(false);setMusicIntent(false);setRetainedSourceId('');setRestoredJobId('');setControls({});setInterruptedTasks([]);setSourceRestoreNotice('');restoringSource.current=false;pendingPreviewRestore.current=null;
     sourceSelectionEpoch.current++; previewEpoch.current++; invalidateAnalysis();
     for(const request of sourceRequests.current)request.abort();
     sourceRequests.current.clear(); sourcePreparation.current=null;
@@ -424,6 +427,93 @@ export default function Home() {
     setWorkspace(next);
   }
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
+
+  const [previewSaveVersion,setPreviewSaveVersion]=useState(0);
+  const [sessionReady,setSessionReady]=useState(false),[saveEnabled,setSaveEnabled]=useState(false);
+  const [sessionNotice,setSessionNotice]=useState(''),[saveError,setSaveError]=useState('');
+  const [interruptedTasks,setInterruptedTasks]=useState<string[]>([]);
+  const [restorePassive,setRestorePassive]=useState(false),[musicIntent,setMusicIntent]=useState(false);
+  const [retainedSourceId,setRetainedSourceId]=useState(''),[restoredJobId,setRestoredJobId]=useState('');
+  const jobRestoreEpoch=useRef(0);
+  const [sourceRestoreNotice,setSourceRestoreNotice]=useState(''),[sourceRestoreVersion,setSourceRestoreVersion]=useState(0);
+  const [controls,setControls]=useState<Controls>({}),[draftActivities,setDraftActivities]=useState<Record<string,boolean>>({});
+  const reportDraftActivity=useCallback((key:string,busy:boolean)=>setDraftActivities(current=>current[key]===busy?current:{...current,[key]:busy}),[]);
+  const pendingPreviewRestore=useRef<number|null>(null),restoringSource=useRef(false);
+  const saveGeneration=useRef(0),hydrated=useRef(false),sessionEpoch=useRef(0);
+  const sessionScope=JSON.stringify([sourceMode,sourceMode==='youtube'?sourceUrl:localFileName]);
+  const draftContext=useMemo(()=>({controls,setControls,scope:sessionScope,activity:reportDraftActivity}),[controls,sessionScope,reportDraftActivity]);
+  useEffect(()=>{
+    if(hydrated.current)return;hydrated.current=true;
+    const result=readEditorSession(),d=result.draft;
+    if(result.notice)setSessionNotice(result.notice);
+    if(d){
+      setRestorePassive(true);setMusicIntent(false);setSaveEnabled(!result.blocked);
+      setSourceMode(d.sourceMode||'youtube');setSourceUrl(d.sourceUrl||'');setLocalFileName(d.localFileName||'');
+      setSourceTitle(d.sourceTitle||'');setTranscript(d.transcript||'');setInstruction(d.instruction||'');setSupplementalPrompt(d.supplementalPrompt||'');
+      setEditMode(d.editMode||'ai');setProvider(d.provider||'chatgpt');if(d.plan)setPlan(d.plan);setHasEditPlan(!!d.hasEditPlan);
+      setActivePartIndex(d.activePartIndex||0);setWorkspace(d.workspace||'editor');
+      setSourceCaptions(d.sourceCaptions||null);setControls(d.controls||{});
+      setBatchId(d.batchId||'');setRestoredJobId(d.renderJobId||'');setBatchEditing(d.batchEditing||null);setSelectedBatchPreviewKey(d.selectedBatchPreviewKey||'');setBatchUrls(d.batchUrls||'');
+      setManualPart1Title(d.manualPart1Title??'');setManualPart2Title(d.manualPart2Title??'');setManualPart1Ranges(d.manualPart1Ranges??'');setManualPart2Ranges(d.manualPart2Ranges??'');
+      setWebAiPrompt(d.webAiPrompt||'');setWebAiResult(d.webAiResult||'');setWebAiContext(d.webAiContext||null);
+      pendingPreviewRestore.current=d.previewTime||0;setPreviewCurrentTime(d.previewTime||0);
+      restoringSource.current=!!d.sourceId;setRetainedSourceId(d.sourceId||'');
+      if(d.interrupted?.length){setInterruptedTasks(d.interrupted);setAnalysisNotice('Tác vụ do trang quản lý đã gián đoạn: '+d.interrupted.join(', ')+'. Không tự gửi lại. Dùng nút Chuẩn bị nguồn / Phân tích / Tạo teaser tương ứng để thử lại; job đã gửi chỉ được theo dõi.');}
+      if(d.sourceMode==='local'&&!d.sourceId)setSourceRestoreNotice('File local chưa import: chọn lại file để nối vào bản nháp; plan và các ô nhập vẫn được giữ.');
+      if(d.sourceMode==='youtube')setYoutubeState(d.sourceId?'ready':'idle');
+    }else if(!result.blocked){try{setBatchId(managedId(localStorage.getItem('shortcut-batch-id')));setRestorePassive(true);}catch{/* Storage is optional. */}}
+    setSessionReady(true);
+  },[]);
+  // A saved managed source is reopened read-only; never fall back to download.
+  useEffect(()=>{
+    if(!sessionReady||!retainedSourceId||preparedSource?.id===retainedSourceId||!workerHealth?.ok)return;
+    const controller=new AbortController(),epoch=sourceSelectionEpoch.current;
+    sourceRequests.current.add(controller);
+    void fetch(`${WORKER_ORIGIN}/api/sources/${retainedSourceId}`,{cache:'no-store',signal:controller.signal}).then(async r=>{
+      const data=await r.json() as {source?:WorkerSource;error?:string};
+      if(!r.ok||data.source?.id!==retainedSourceId||!Number.isFinite(data.source.duration)||data.source.duration<=0||!Number.isFinite(data.source.width)||!Number.isFinite(data.source.height))throw Error('Không mở được source đã lưu. Bản nháp được giữ; không tự tải lại.');
+      if(controller.signal.aborted||epoch!==sourceSelectionEpoch.current)return;
+      setPreparedSource(data.source);setSourceSize({width:data.source.width,height:data.source.height});setSourceRestoreNotice('');
+    }).catch(()=>{if(!controller.signal.aborted&&epoch===sourceSelectionEpoch.current)setSourceRestoreNotice('Source đã lưu chưa khả dụng hoặc đã mất. Bản nháp vẫn được giữ; kết nối lại worker hoặc chủ động chuẩn bị/chọn lại nguồn.');}).finally(()=>sourceRequests.current.delete(controller));
+    return()=>{controller.abort();sourceRequests.current.delete(controller);};
+  },[sessionReady,retainedSourceId,preparedSource?.id,workerHealth?.ok,sourceRestoreVersion]);
+  // Only subscribe to a submitted job; never resubmit/restart it on hydration.
+  useEffect(()=>{
+    if(!sessionReady||!restoredJobId||!workerHealth?.ok)return;
+    const controller=new AbortController(),epoch=jobRestoreEpoch.current;let timer:ReturnType<typeof setTimeout>;
+    const poll=async()=>{try{
+      const response=await fetch(`${WORKER_ORIGIN}/api/jobs/${restoredJobId}`,{cache:'no-store',signal:controller.signal});
+      const data=await response.json() as {job?:RenderJob;error?:string};
+      if(!response.ok||data.job?.id!==restoredJobId)throw Error(data.error||'Chưa tìm thấy job đã lưu.');
+      if(controller.signal.aborted||epoch!==jobRestoreEpoch.current)return;setRenderJob(data.job);
+      if(['queued','rendering'].includes(data.job.state))timer=setTimeout(()=>void poll(),1500);
+    }catch{if(!controller.signal.aborted&&epoch===jobRestoreEpoch.current){setEditorRenderNotice('Job đã theo dõi chưa khả dụng; không gửi render lại. Đang chờ worker.');timer=setTimeout(()=>void poll(),5000);}}};
+    void poll();return()=>{controller.abort();clearTimeout(timer);};
+  },[sessionReady,restoredJobId,workerHealth?.ok]);
+  const sessionSnapshot=useMemo<Omit<EditorSession,'previewTime'>>(()=>({
+    sourceMode,sourceUrl,sourceId:preparedSource?.id||retainedSourceId,localFileName,sourceTitle,transcript,editMode,provider,instruction,supplementalPrompt,plan,hasEditPlan,sourceCaptions,activePartIndex,workspace,
+    batchId,renderJobId:renderJob?.id||restoredJobId,batchEditing,selectedBatchPreviewKey,batchUrls,manualPart1Title,manualPart2Title,manualPart1Ranges,manualPart2Ranges,webAiPrompt,webAiResult,webAiContext,controls,
+    interrupted:[...interruptedTasks,...(isAnalyzing?['phân tích AI']:[]),...(isPreparingSource?['chuẩn bị nguồn']:[]),...(subtitleBusy?['tạo phụ đề']:[]),...(youtubeState==='loading'?['metadata nguồn']:[]),...(transcriptStatus.startsWith('Đang tự')?['lấy transcript']:[]),...(isStartingRender?['gửi render (kiểm tra danh sách worker trước khi thử lại)']:[]),...(isStartingBatch?['gửi batch (kiểm tra lịch sử trước khi thử lại)']:[]),...Object.entries(draftActivities).filter(([,busy])=>busy).map(([key])=>key)]
+  }),[sourceMode,sourceUrl,preparedSource?.id,retainedSourceId,localFileName,sourceTitle,transcript,editMode,provider,instruction,supplementalPrompt,plan,hasEditPlan,sourceCaptions,activePartIndex,workspace,batchId,renderJob?.id,restoredJobId,batchEditing,selectedBatchPreviewKey,batchUrls,manualPart1Title,manualPart2Title,manualPart1Ranges,manualPart2Ranges,webAiPrompt,webAiResult,webAiContext,controls,isAnalyzing,isPreparingSource,subtitleBusy,youtubeState,transcriptStatus,isStartingRender,isStartingBatch,draftActivities,interruptedTasks]);
+  const latestSession=useRef<EditorSession|null>(null),maySave=useRef(false);
+  useLayoutEffect(()=>{latestSession.current={...sessionSnapshot,previewTime:previewCurrentTime};maySave.current=sessionReady&&saveEnabled;},[sessionSnapshot,previewCurrentTime,sessionReady,saveEnabled]);
+  const saveSession=useCallback(()=>{if(!maySave.current||!latestSession.current)return;const error=writeEditorSession(latestSession.current);setSaveError(error);},[]);
+  useEffect(()=>{if(!sessionReady||!saveEnabled)return;const generation=saveGeneration.current;const timer=setTimeout(()=>{if(saveGeneration.current===generation)saveSession();},1000);return()=>clearTimeout(timer);},[sessionReady,saveEnabled,sessionSnapshot,saveSession,previewSaveVersion,isPreviewPlaying]);
+  useEffect(()=>{
+    const hide=()=>{if(document.visibilityState==='hidden')saveSession();};
+    window.addEventListener('beforeunload',saveSession);window.addEventListener('pagehide',saveSession);document.addEventListener('visibilitychange',hide);
+    return()=>{window.removeEventListener('beforeunload',saveSession);window.removeEventListener('pagehide',saveSession);document.removeEventListener('visibilitychange',hide);};
+  },[saveSession]);
+  useEffect(()=>{if(!isPreviewPlaying)return;const timer=setInterval(saveSession,5000);return()=>clearInterval(timer);},[isPreviewPlaying,saveSession]);
+  function newSession(){
+    // Remove the single draft only. Worker jobs/media/library/auth are untouched.
+    try{localStorage.removeItem(SESSION_KEY);localStorage.removeItem('shortcut-batch-id');}catch{setSaveError('Không bỏ được bản nháp trong bộ nhớ local; phiên hiện tại chưa bị xóa.');return;}
+    sessionEpoch.current++;batchSubmitPending.current=false;setIsStartingBatch(false);setIsStartingRender(false);saveGeneration.current++;maySave.current=false;latestSession.current=null;setSaveEnabled(false);setInterruptedTasks([]);
+    resetSourceSelection();setControls({});setDraftActivities({});setRestorePassive(false);setMusicIntent(false);setRetainedSourceId('');restoringSource.current=false;pendingPreviewRestore.current=null;
+    setLocalFile(null);setLocalVideoUrl('');setLocalFileName('');setSourceMode('youtube');setSourceUrl('');setEditMode('ai');setProvider('chatgpt');setPlan(mockPlan(DEFAULT_REQUEST));setSourceTitle(DEFAULT_REQUEST.originalTitle);
+    setInstruction(DEFAULT_REQUEST.instruction||'');setSupplementalPrompt('');setBatchUrls('');setManualPart1Title('');setManualPart2Title('');setManualPart1Ranges('');setManualPart2Ranges('');
+    batchPollEpoch.current++;setBatchId('');setBatch(null);setRestoredJobId('');setSelectedBatchPreviewKey('');setWorkspace('editor');setBatchError('');setBatchNotice('');setEditorRenderNotice('');setSessionNotice('Đã bắt đầu phiên mới. Job đã gửi vẫn được giữ trong lịch sử worker.');setSourceRestoreNotice('');setSaveError('');
+  }
 
   const mainEditorSourceKey=preparedSource?.id||(sourceMode==='local'?localVideoUrl:sourceUrl);
   // Timing depends on cuts/provider, never on appearance-only edits.
@@ -513,8 +603,10 @@ export default function Home() {
     if(!hasEditPlan){
       activeDeckSlot.current=0;previewVideoRef.current=a;a.muted=false;a.playbackRate=1;
       if(a.getAttribute('src')!==previewVideoUrl)a.src=previewVideoUrl;b.pause();
+      const restorePosition=()=>{if(!current()||pendingPreviewRestore.current===null)return;const position=Math.max(0,Math.min(pendingPreviewRestore.current,Number.isFinite(a.duration)?a.duration:pendingPreviewRestore.current));pendingPreviewRestore.current=null;a.currentTime=position;setPreviewCurrentTime(position);a.pause();};
+      a.addEventListener('loadedmetadata',restorePosition);if(a.readyState>=1)restorePosition();
       queueMicrotask(()=>{if(current()){setVisibleDeck(0);setIsPreviewPlaying(false);setPreviewBuffering(false);}});
-      return()=>{active=false;for(const video of videos){video.pause();video.removeAttribute('src');video.load();}};
+      return()=>{active=false;a.removeEventListener('loadedmetadata',restorePosition);for(const video of videos){video.pause();video.removeAttribute('src');video.load();}};
     }
     const controller=createPreviewDecks({videos,url:previewVideoUrl,segments:playbackSegments,
       onActive:(slot,index)=>{if(!current())return;activeDeckSlot.current=slot;previewVideoRef.current=videos[slot];previewSegmentIndex.current=index;setVisibleDeck(slot);},
@@ -523,13 +615,14 @@ export default function Home() {
       onError:message=>{if(!current())return;previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();setPreviewError(message);},
       onEnded:()=>{if(!current())return;previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();}});
     decks.current=controller;
+    if(pendingPreviewRestore.current!==null){const position=Math.max(0,Math.min(pendingPreviewRestore.current,playbackSegments.reduce((n,s)=>n+s.end-s.start,0)/PLAYBACK_RATE));pendingPreviewRestore.current=null;controller.seek(position);controller.pause();}
     const tick=()=>{if(!current())return;controller.tick();frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);
     queueMicrotask(()=>{if(current()){setIsPreviewPlaying(false);setPreviewBuffering(false);}});
     return()=>{active=false;cancelAnimationFrame(frame);controller.dispose();if(decks.current===controller)decks.current=null;};
   },[hasEditPlan,playbackSegments,previewVideoUrl]);
 
   useEffect(() => {
-    if (sourceMode !== "youtube" || !sourceUrl.trim() || !workerHealth?.ok) return;
+    if (!sessionReady || restorePassive || sourceMode !== "youtube" || !sourceUrl.trim() || !workerHealth?.ok) return;
     const controller = new AbortController(), epoch=sourceSelectionEpoch.current;
     sourceRequests.current.add(controller);
     const timer = window.setTimeout(async () => {
@@ -551,7 +644,7 @@ export default function Home() {
       }
     }, 700);
     return () => { window.clearTimeout(timer); controller.abort(); sourceRequests.current.delete(controller); };
-  }, [sourceUrl, sourceMode, workerHealth?.ok]);
+  }, [sessionReady,restorePassive,sourceUrl, sourceMode, workerHealth?.ok]);
 
   useEffect(() => () => {
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
@@ -609,16 +702,6 @@ export default function Home() {
   }, [workerHealth?.ok]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setPreviewCurrentTime(0);
-      setPreviewDuration(0);
-      setIsPreviewPlaying(false);
-      setPreviewError("");
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [previewVideoUrl]);
-
-  useEffect(() => {
     let active = true;
     let pending = false;
     const poll = async () => {
@@ -648,6 +731,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if(!sessionReady||restorePassive)return;
     if (sourceMode !== "youtube" || !sourceUrl.trim()) {
       const idleTimer = window.setTimeout(() => {
         setYoutubeState("idle");
@@ -681,7 +765,7 @@ export default function Home() {
       window.clearTimeout(timer);
       controller.abort();sourceRequests.current.delete(controller);
     };
-  }, [sourceMode, sourceUrl]);
+  }, [sessionReady,restorePassive,sourceMode, sourceUrl]);
 
   useEffect(() => {
     const context = document.modelContext;
@@ -751,11 +835,6 @@ export default function Home() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => setBatchId(localStorage.getItem("shortcut-batch-id") || ""), 0);
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
     const historyKey = "shortcut-auto-download-requests";
     let history: Set<string>;
     try {
@@ -808,7 +887,7 @@ export default function Home() {
         for (const item of data.batch.items) if (item.job) item.job.outputs = item.job.outputs.filter((output) => !removedMediaUrls.current.has(output.url));
         setBatch(data.batch);
         setBatchError("");
-        batchDownloadQueue.current?.enqueue(collectBatchDownloads(data.batch));
+        if(!restorePassive)batchDownloadQueue.current?.enqueue(collectBatchDownloads(data.batch));
         if (!data.batch.finished) timer = setTimeout(() => void poll(), 2000);
       } catch (error) {
         if (disposed || epoch !== batchPollEpoch.current) return;
@@ -818,7 +897,7 @@ export default function Home() {
     }
     void poll();
     return () => { disposed = true; clearTimeout(timer); };
-  }, [batchId, batchPollVersion]);
+  }, [batchId, batchPollVersion,restorePassive]);
 
   useEffect(() => {
     if (workspace !== "batch" || !workerHealth?.ok) return;
@@ -975,7 +1054,7 @@ export default function Home() {
   async function startBatch() {
     if (batchSubmitPending.current || isStoppingBatch) return;
     batchSubmitPending.current = true;
-    const submittedInput = batchUrls;
+    const submittedInput = batchUrls,epoch=sessionEpoch.current;
     setBatchError("");
     setBatchNotice("");
     setIsStartingBatch(true);
@@ -989,6 +1068,7 @@ export default function Home() {
       });
       const data = await response.json() as { batch?: BatchJob; error?: string };
       if (!response.ok || !data.batch) throw new Error(data.error || "Không tạo được hàng đợi.");
+      if(epoch!==sessionEpoch.current)return;
       // Invalidate older in-flight polls before applying the longer queue. Restart
       // polling even if the batch ID is unchanged or a last poll said finished.
       batchPollEpoch.current += 1;
@@ -999,10 +1079,10 @@ export default function Home() {
       setBatchUrls((current) => clearSubmittedBatchInput(current, submittedInput));
       setBatchNotice(`Đã thêm ${urls.length} link vào hàng đợi. Có thể paste thêm link và bấm chạy ngay, không cần chờ lượt trước xong.`);
     } catch (error) {
-      setBatchError(error instanceof Error ? error.message : "Không tạo được hàng đợi.");
+      if(epoch===sessionEpoch.current)setBatchError(error instanceof Error ? error.message : "Không tạo được hàng đợi.");
     } finally {
-      batchSubmitPending.current = false;
-      setIsStartingBatch(false);
+      if(epoch===sessionEpoch.current){batchSubmitPending.current = false;
+      setIsStartingBatch(false);}
     }
   }
 
@@ -1060,7 +1140,7 @@ export default function Home() {
   async function analyze() {
     if (isWebAi) return;
     const selectionEpoch=sourceSelectionEpoch.current,ticket=analysisRequests.current.begin();
-    setError("");setAnalysisNotice("Đang chuẩn bị source…");setIsAnalyzing(true);
+    setInterruptedTasks(current=>current.filter(s=>!s.includes('AI')));setError("");setAnalysisNotice("Đang chuẩn bị source…");setIsAnalyzing(true);
     try {
       if(provider==="mock") {replacePlan(mockPlan({provider:"mock",originalTitle:sourceTitle,transcript,instruction}));setHasEditPlan(true);if(!preparedSource)await prepareSource(ticket.controller.signal);return;}
       if(provider!=="chatgpt")throw new Error("Auto dùng ChatGPT đã cấu hình; Gemini/Muse dùng prompt và import.");
@@ -1134,6 +1214,7 @@ export default function Home() {
   // A custom proposal is not installed until the per-part editor confirms it.
   // Reuse the canonical selector; timestamps never enter this request path.
   async function resolveCustomTeaser(partId:number,input:string,signal:AbortSignal) {
+    setInterruptedTasks(current=>current.filter(s=>s!==`teaser Part ${partId}`));
     if(effectiveTiming.error)throw new Error(effectiveTiming.error);
     const source=preparedSource;
     if(!source)throw new Error("Chuẩn bị nguồn video trước khi chọn teaser.");
@@ -1155,6 +1236,7 @@ export default function Home() {
 
 
   useEffect(() => {
+    if(restoringSource.current&&!preparedSource)return;
     subtitleSourceRef.current = preparedSource?.id;
     subtitleRequestSerial.current += 1;
     subtitleAutoKey.current = "";
@@ -1168,6 +1250,7 @@ export default function Home() {
 
   const loadSubtitles = useCallback(async (install = false, regenerate = false) => {
     const source = preparedSource;
+    setInterruptedTasks(current=>current.filter(s=>!s.includes('phụ đề')));
     if (!source || subtitleBusy) return;
     const selectionEpoch = sourceSelectionEpoch.current;
     const requestId = ++subtitleRequestSerial.current;
@@ -1193,10 +1276,11 @@ export default function Home() {
   }, [preparedSource, subtitleBusy, subtitleSettings.source]);
 
   useEffect(() => {
+    if(!sessionReady||restorePassive)return;
     if (!subtitleSettings.enabled) { subtitleAutoKey.current = ""; return; }
     if (!preparedSource || subtitleBusy || sourceCaptions?.sourceId === preparedSource.id || subtitleAutoKey.current === `${preparedSource.id}:${subtitleSettings.source || 'auto'}`) return;
     void loadSubtitles();
-  }, [preparedSource, subtitleSettings.enabled, subtitleSettings.source, sourceCaptions?.sourceId, subtitleBusy, loadSubtitles]);
+  }, [sessionReady,restorePassive,preparedSource, subtitleSettings.enabled, subtitleSettings.source, sourceCaptions?.sourceId, subtitleBusy, loadSubtitles]);
 
   useEffect(() => {
     if (!workerHealth?.ok || !subtitleSettings.enabled) return;
@@ -1286,6 +1370,9 @@ export default function Home() {
   function handleVideoUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if(restorePassive&&sourceMode==='local'&&file.name===localFileName&&!preparedSource){
+      setLocalFile(file);setLocalVideoUrl(URL.createObjectURL(file));setSourceRestoreNotice('File đã chọn lại; bấm Chuẩn bị nguồn để import, không tự tải/AI.');setSaveEnabled(true);return;
+    }
     resetSourceSelection();
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
     setLocalVideoUrl(URL.createObjectURL(file));
@@ -1304,6 +1391,7 @@ export default function Home() {
     if(previewSourceEpoch!==sourceSelectionEpoch.current)return;
     const video = previewVideoRef.current;
     if (!video || !previewVideoUrl) return;
+    setMusicIntent(true);
     const epoch=previewEpoch.current,controller=decks.current;
     setPreviewError("");
     if (!previewPlayingRef.current) {
@@ -1336,6 +1424,7 @@ export default function Home() {
   const seekPreview = useCallback((value: number) => {
     const video = previewVideoRef.current;
     if (!video || !Number.isFinite(value)) return;
+    setPreviewSaveVersion(v=>v+1);
     if(decks.current){decks.current.seek(value);return;}
     let sourceTime = value;
     if (hasEditPlan) {
@@ -1372,6 +1461,7 @@ export default function Home() {
 
   async function prepareSource(signal?:AbortSignal) {
     const selectionEpoch = sourceSelectionEpoch.current;
+    if(preparedSource)return preparedSource;
     setError("");
     if (!workerHealth?.ok) {
       setError("Media worker đang offline. Chạy `npm run personal` trong thư mục app.");
@@ -1390,7 +1480,7 @@ export default function Home() {
     const controller=new AbortController();sourcePreparation.current=controller;sourceRequests.current.add(controller);
     const requestSignal=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
     const current=()=>!requestSignal.aborted&&sourcePreparation.current===controller&&selectionEpoch===sourceSelectionEpoch.current;
-    setIsPreparingSource(true);
+    setIsPreparingSource(true);setInterruptedTasks(current=>current.filter(s=>!s.includes('nguồn')&&!s.includes('transcript')));
     setRenderJob(null);
     try {
       const response = sourceMode === "youtube"
@@ -1407,7 +1497,12 @@ export default function Home() {
       const data = (await response.json()) as { source?: WorkerSource; error?: string };
       if (!response.ok || !data.source || typeof data.source.id!=="string" || typeof data.source.title!=="string" || !Number.isFinite(data.source.duration) || data.source.duration<=0) throw new Error(typeof data.error==="string"?data.error:"Không chuẩn bị được source: API trả dữ liệu không hợp lệ.");
       if (!current()) return null;
-      setPreparedSource(data.source);
+      setPreparedSource(data.source);setRetainedSourceId(data.source.id);setSourceRestoreNotice('');
+      if(restorePassive){
+        // Reattaching an explicitly selected source must not overwrite draft text/cues.
+        if(!transcript&&data.source.transcript)setTranscript(data.source.transcript);
+        return data.source;
+      }
 
       try {
         setSourceCaptions(data.source.captions?.length ? sourceCaptionTrack({ sourceId: data.source.id, cues: data.source.captions, origin: "youtube" }, data.source) : null);
@@ -1463,7 +1558,7 @@ export default function Home() {
       if (!response.ok || !data.job) throw new Error(data.error || "Không thể bắt đầu render.");
       setEditorRenderJobs((jobs) => [data.job!, ...jobs.filter((job) => job.id !== data.job!.id)]);
       if (selectionEpoch === sourceSelectionEpoch.current) {
-        setRenderJob(data.job);
+        jobRestoreEpoch.current++;setRestoredJobId('');setRenderJob(data.job);
         const renderedPlan = data.job.plan;
         if (renderedPlan && submittedPlan.teaserPolicy === TEASER_POLICY && latestMainSignature.current === mainSignature) setPlan((current) => ({ ...current, parts: renderedPlan.parts, teaserPolicy: TEASER_POLICY }));
       }
@@ -1488,7 +1583,7 @@ export default function Home() {
   const batchPreviewOutput = batchPreviewOutputs.find((output) => output.key === selectedBatchPreviewKey) || batchPreviewOutputs[0];
 
   return (
-    <main className="min-h-screen bg-[#090a0c] text-white">
+    <EditorDraftContext.Provider value={draftContext}><main onInputCapture={()=>setSaveEnabled(true)} onClickCapture={()=>{if(sessionReady)setSaveEnabled(true);}} className="min-h-screen bg-[#090a0c] text-white">
       <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-white/8 bg-[#090a0c]/92 px-4 backdrop-blur-xl sm:px-6 lg:px-8">
         <div className="flex items-center gap-3">
           {/* The same vector supplies the favicon, macOS icon and menu-bar mark. */}
@@ -1509,6 +1604,14 @@ export default function Home() {
         </div>
       </header>
 
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/8 px-5 py-2 text-xs">
+        <button type="button" disabled={!sessionReady} onClick={newSession} className="rounded border border-white/15 px-3 py-2 focus-visible:outline-2 focus-visible:outline-white">Phiên mới</button>
+        <span role="status" className="text-zinc-400">{sessionNotice||'Tự lưu bản nháp trên thiết bị này · khoảng 1 giây sau thay đổi.'}</span>
+        {!!interruptedTasks.length&&<span role="status" className="text-amber-200">Đã gián đoạn: {interruptedTasks.join(', ')}. Không tự chạy lại; dùng nút của tác vụ để tiếp tục/thử lại.</span>}
+        {saveError&&<span role="alert" className="text-amber-200">{saveError}</span>}
+        {sourceRestoreNotice&&<span role="alert" className="text-amber-200">{sourceRestoreNotice}</span>}
+        {retainedSourceId&&!preparedSource&&<button type="button" className="rounded border border-white/15 px-2 py-1" onClick={()=>setSourceRestoreVersion(v=>v+1)}>Nối lại source đã import</button>}
+      </div>
       <nav aria-label="Chế độ làm việc" className="flex flex-wrap gap-2 border-b border-white/8 px-5 py-3">
         <button onClick={() => changeWorkspace("editor")} className={`rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "editor" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}>Chỉnh từng video</button>
         <button onClick={() => changeWorkspace("batch")} className={`rounded-xl px-4 py-2 text-sm font-semibold ${workspace === "batch" ? "bg-white text-black" : "bg-white/5 text-zinc-400 hover:text-white"}`}>Xử lý hàng loạt {batch && !batch.finished ? "· Đang chạy" : ""}</button>
@@ -2027,7 +2130,7 @@ export default function Home() {
           })} />,
           }} />
 
-          <MusicPanel previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}} />
+          <MusicPanel autoPrepare={sessionReady&&(!restorePassive||musicIntent)} previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>{setMusicIntent(true);setPlan(current=>({...current,music}));}} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}} />
           <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}</summary>
             <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => {
@@ -2123,6 +2226,6 @@ export default function Home() {
         </aside>
       </div>
       {workspace === "editor" && <EditorRenderList jobs={editorRenderJobs} stopping={stoppingRenderIds} deleting={deletingRenderIds} deletingAll={deletingAllRenders} error={editorRenderError} notice={editorRenderNotice} origin={WORKER_ORIGIN} onStop={(job) => void stopRender(job)} onDelete={(job) => void deleteEditorRender(job)} onDeleteAll={() => void deleteAllEditorRenders()} />}
-    </main>
+    </main></EditorDraftContext.Provider>
   );
 }

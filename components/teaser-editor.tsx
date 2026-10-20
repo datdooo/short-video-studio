@@ -1,5 +1,6 @@
 'use client';
 import {useCallback,useEffect,useMemo,useRef,useState}from'react';
+import {useEditorDraft,useDraftActivity,draftIdentity} from './editor-draft-context';
 import type{EditPart}from'@/lib/edit-plan';
 import {chooseTeaserAlternative,hookNeedsReselection}from'@/lib/teaser-hooks.mjs';
 import {customTimestampPart,parseCustomTeaser}from'@/lib/custom-teaser.mjs';
@@ -20,11 +21,12 @@ function savedInput(part:EditPart){
  return custom.input;
 }
 export function TeaserEditor({part,cues,sourceUrl,active,onAudition,onChange,onResolve}:{part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<Teaser>}){
- const identity=useMemo(()=>JSON.stringify([part.segments,part.teaser,part.customTeaser,cues]),[part,cues]);
+ const identity=useMemo(()=>draftIdentity([part.segments,part.teaser,part.customTeaser,cues]),[part,cues]);
  const baseline=useMemo(()=>savedTimes(part),[part]);
- const[draft,setDraft]=useState<{key:string;times:Times}|null>(null),[inputDraft,setInputDraft]=useState<{key:string;text:string}|null>(null);
+ const[draft,setDraft]=useEditorDraft<{key:string;times:Times}|null>(`teaser-times-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'times'in v&&!!v.times&&typeof v.times==='object'&&'start'in v.times&&typeof v.times.start==='string'&&'end'in v.times&&typeof v.times.end==='string'),[inputDraft,setInputDraft]=useEditorDraft<{key:string;text:string}|null>(`teaser-input-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'text'in v&&typeof v.text==='string');
  const[error,setError]=useState(''),[busy,setBusy]=useState(false),request=useRef<AbortController|null>(null);
- const[candidate,setCandidate]=useState<{key:string;part:EditPart}|null>(null),[showPreview,setShowPreview]=useState(false),preview=useRef<HTMLVideoElement|null>(null);
+ const[candidate,setCandidate]=useEditorDraft<{key:string;part:EditPart}|null>(`teaser-candidate-${part.id}`,null,v=>{try{if(v===null)return true;const c=v as {key:string;part:EditPart};if(typeof c.key!=='string'||c.part?.id!==part.id||draftIdentity(c.part.segments)!==draftIdentity(part.segments)||c.part.teaser?.status!=='selected'||!Array.isArray(c.part.teaser.limitations)||!Array.isArray(c.part.teaser.evidenceTimes))return false;customTimestampPart(part,`${c.part.teaser.start}–${c.part.teaser.end}`,cues);return true;}catch{return false;}}),[showPreview,setShowPreview]=useState(false),preview=useRef<HTMLVideoElement|null>(null);
+ useDraftActivity(`teaser Part ${part.id}`,busy);
  const proposed=candidate?.key===identity?candidate.part:null,h=proposed?.teaser;
  const values=draft&&draft.key===identity?draft.times:baseline;
  const input=inputDraft?.key===identity?inputDraft.text:savedInput(part);

@@ -1,5 +1,6 @@
 'use client';
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef} from 'react';
+import {useEditorDraft} from './editor-draft-context';
 import type {ReactNode} from 'react';
 import type {EditPlan,EditPart} from '@/lib/edit-plan';
 import {hookRangeKey} from '@/lib/teaser-hooks.mjs';
@@ -13,15 +14,16 @@ type Props={children?:ReactNode;plan:EditPlan;part:EditPart;duration:number;lock
  onRestore:(id:number)=>void;onInvalidate:()=>void};
 export function MainRangesEditor({plan,part,duration,locked,onEdit,onDraft,onLock,onRestore,onInvalidate,children}:Props){
  const key=hookRangeKey(part);
- const[draft,setDraft]=useState<{key:string;rows:MainRangeRow[]}|null>(null);
+ const[draft,setDraft]=useEditorDraft<{key:string;appliedKey?:string;rows:MainRangeRow[]}|null>(`main-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'rows'in v&&Array.isArray(v.rows)&&v.rows.length<=MAX_MAIN_RANGES&&v.rows.every(r=>r&&typeof r.start==='string'&&typeof r.end==='string'&&(r.exactStart===undefined||Number.isFinite(r.exactStart))&&(r.exactEnd===undefined||Number.isFinite(r.exactEnd))));
  const ownApplied=useRef<string|null>(null);
- const rows=draft&&(draft.key===key||ownApplied.current===key)?draft.rows:mainRangeRows(part);
+ const rows=draft&&(draft.key===key||draft.appliedKey===key||ownApplied.current===key)?draft.rows:mainRangeRows(part);
  const checked=inspectMainRanges(plan,part.id,rows,duration),invalid=Boolean(checked.error||checked.errors.some(Boolean));
  const report=useRef(onDraft);useEffect(()=>{report.current=onDraft;},[onDraft]);
  useEffect(()=>{report.current(part.id,key,invalid);},[part.id,key,invalid]);
  function edit(next:MainRangeRow[]){
-   onInvalidate();setDraft({key,rows:next});ownApplied.current=null;
+   onInvalidate();ownApplied.current=null;
    const result=inspectMainRanges(plan,part.id,next,duration),bad=Boolean(result.error||result.errors.some(Boolean));
+   setDraft({key,rows:next,...(!bad?{appliedKey:JSON.stringify(result.ranges.map(r=>[r.start,r.end]))}:{})});
    onDraft(part.id,key,bad);
    if(!bad){ownApplied.current=JSON.stringify(result.ranges.map(r=>[r.start,r.end]));onEdit(part.id,next,key);}
  }
