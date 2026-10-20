@@ -1,3 +1,21 @@
+# Active update — preview source ownership + ChatGPT teaser revision (2026-10-20)
+
+Started clean at ca4c3c5bd4bb534a6defdcecc1f3c17a466daef9 on
+`recovery/visual-dev-reconstructed`. Read `docs/preview-source-lifecycle-fix.md`
+and the latest section of `docs/per-part-teaser-hooks.md`. Source fixes cover
+mutable preview-ref ownership, stale callbacks/requests/BGM on source change,
+and part-arc/curiosity candidate/evidence selection with ChatGPT default and no
+silent heuristic winner. Earlier H/I/J/F changes remain intact. No tests, browser,
+render, live AI/YouTube or music audition permitted/performed. Combined Node22 `npm run package:mac:dev` succeeded once, exit0. App:
+`release/dev/ShortCut Studio Dev.app`. Build log:
+`/tmp/shortcut-dev-preview-lifecycle-teaser-build-20261020.log`. This includes the
+current implementation below; only delivery documentation changed afterward.
+No launch/listening/runtime qualification. No push authorized. User first checks
+source-switch crash and ChatGPT Retry/Custom/no-teaser behavior. Use `git log -1`
+for the final checkpoint SHA; no unrelated work or old QA was repeated.
+
+---
+
 # Active checkpoint — canonical Custom Time and gentle music (2026-10-20)
 
 Branch `recovery/visual-dev-reconstructed`, clean starting HEAD

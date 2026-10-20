@@ -712,17 +712,22 @@ async function hookFrames(part, source, signal, candidateTimes) {
   const ranges = part.segments.filter((s) => !s.isPadding).slice(0,200), total = timelineDuration(ranges), frames = [];
   const directory = path.join(dataRoot, "cache", "hook-frames");
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  for (let i = 0; i < (candidateTimes?.length || 6); i++) {
+  const boundedTimes=candidateTimes?.slice(0,48);
+  const frameSignal=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(45_000)]);
+  for (let i = 0; i < (boundedTimes?.length || 6); i++) {
+    signal?.throwIfAborted();if(frameSignal.aborted)break;
     let offset = (i + 0.5) / 6 * total, range = ranges[0];
     for (const s of ranges) { range = s; if (offset < s.end - s.start) break; offset -= s.end - s.start; }
-    const time = candidateTimes?.[i]?.time ?? Math.min(range.end - 0.001, range.start + offset);
+    const time = boundedTimes?.[i]?.time ?? Math.min(range.end - 0.001, range.start + offset);
+    if(!Number.isFinite(time)||!ranges.some(r=>time>=r.start&&time<=r.end))continue;
     const file = path.join(directory, `${randomUUID()}.jpg`);
     try {
-      await run(ffmpeg, ["-y", "-v", "error", "-ss", String(time), "-i", source.mediaPath, "-frames:v", "1", "-vf", "scale=512:288:force_original_aspect_ratio=decrease", "-q:v", "5", file], { signal });
+      await run(ffmpeg, ["-y", "-v", "error", "-ss", String(time), "-i", source.mediaPath, "-frames:v", "1", "-vf", "scale=512:288:force_original_aspect_ratio=decrease", "-q:v", "5", file], { signal:frameSignal });
       const bytes = await readFile(file);
       if (bytes.length > 300_000) throw new Error("Hook frame exceeds budget");
-      frames.push({ time, ...(candidateTimes?.[i]?.candidateId?{candidateId:candidateTimes[i].candidateId}:{}), data: bytes.toString("base64") });
-    } finally { await rm(file, { force: true }); }
+      frames.push({ time, ...(boundedTimes?.[i]?.candidateId?{candidateId:boundedTimes[i].candidateId}:{}), data: bytes.toString("base64") });
+    } catch { signal?.throwIfAborted();break; }
+    finally { await rm(file, { force: true }); }
   }
   return frames;
 }
@@ -805,7 +810,7 @@ async function planTeasers(plan, source, signal, transcript, selectionOptions = 
     if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter((c) => c.end > c.start);
   }
   const context = source.sourceContext;
-  return selectTeasers(plan, sourceInput, { ...selectionOptions, cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap } : source, signal });
+  return selectTeasers(plan, sourceInput, { ...selectionOptions, cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap, visualSignals:context.visualSignals,audioSignals:context.audioSignals } : source, signal });
 }
 
 function safeName(value) {
@@ -1751,7 +1756,9 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/youtube/metadata") {
-      sendJson(request, response, 200, await youtube.metadata(requestUrl.searchParams.get("url") || "")); return;
+      const controller=new AbortController(),abort=()=>controller.abort(new Error("Metadata client disconnected"));response.once("close",abort);
+      try{sendJson(request,response,200,await youtube.metadata(requestUrl.searchParams.get("url")||"",controller.signal));}
+      finally{response.removeListener("close",abort);}return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/youtube") {
       const body = await readJson(request);
@@ -1800,7 +1807,9 @@ const server = createServer(async (request, response) => {
       if (mediaLibrary.isLocked(speechSource[1])) throw new Error("Source đang được chuyển vào thùng rác.");
       const source = await loadSource(speechSource[1]);
       if (speechSource[2] === "captions") {
-        sendJson(request, response, 200, await speech.captions(source, undefined, { regenerate: body.regenerate === true, provider: body.provider || 'auto' })); return;
+        const controller=new AbortController(),abort=()=>controller.abort(new Error("Caption client disconnected"));response.once("close",abort);
+        try{sendJson(request,response,200,await speech.captions(source,controller.signal,{regenerate:body.regenerate===true,provider:body.provider||'auto'}));}
+        finally{response.removeListener("close",abort);}return;
       }
       validatePlan(body.plan, source);
       if (speechSource[2] === "teaser-hooks") {
@@ -1820,8 +1829,9 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/youtube/transcript") {
       const body = await readJson(request);
-      sendJson(request, response, 200, await fetchYouTubeTranscript(String(body.url || "").trim()));
-      return;
+      const controller=new AbortController(),abort=()=>controller.abort(new Error("Transcript client disconnected"));response.once("close",abort);
+      try{sendJson(request,response,200,await fetchYouTubeTranscript(String(body.url||"").trim(),controller.signal));}
+      finally{response.removeListener("close",abort);}return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/upload") {
       const source = await importUpload(request, requestUrl);

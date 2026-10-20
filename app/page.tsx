@@ -352,6 +352,10 @@ export default function Home() {
   const editorMutationEpoch = useRef(0);
   const [stoppingRenderIds, setStoppingRenderIds] = useState<string[]>([]);
   const sourceSelectionEpoch = useRef(0);
+  const sourceRequests = useRef(new Set<AbortController>());
+  const sourcePreparation = useRef<AbortController | null>(null);
+  const previewEpoch = useRef(0);
+  useEffect(()=>{const requests=sourceRequests.current;return()=>{for(const request of requests)request.abort();requests.clear();};},[]);
   const renderSubmissionPending = useRef(false);
   const [isStartingRender, setIsStartingRender] = useState(false);
   const [batchUrls, setBatchUrls] = useState("");
@@ -385,6 +389,7 @@ export default function Home() {
   const [previewCurrentTime, setPreviewCurrentTime] = useState(0);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [previewError, setPreviewError] = useState("");
+  const [noTeaserConsent,setNoTeaserConsent]=useState("");
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const previewSegmentIndex = useRef(0);
   const deckVideos=useRef<(HTMLVideoElement|null)[]>([null,null]);
@@ -396,6 +401,24 @@ export default function Home() {
   const previewPlayingRef = useRef(false);
   const musicPlaybackControl = useRef<{play:()=>void;pause:()=>void}|null>(null);
   const registerMusicPlayback = useCallback((handle:{play:()=>void;pause:()=>void}|null)=>{musicPlaybackControl.current=handle;},[]);
+  // Called synchronously before source state/ref changes, not after unmount.
+  function resetSourceSelection(){
+    sourceSelectionEpoch.current++; previewEpoch.current++; invalidateAnalysis();
+    for(const request of sourceRequests.current)request.abort();
+    sourceRequests.current.clear(); sourcePreparation.current=null;
+    previewPlayingRef.current=false; musicPlaybackControl.current?.pause();
+    decks.current?.dispose(); decks.current=null;
+    for(const video of deckVideos.current)video?.pause();
+    setIsPreviewPlaying(false);setPreviewBuffering(false);setPreviewCurrentTime(0);setPreviewDuration(0);setPreviewError("");
+    setPreparedSource(null);setRenderJob(null);setHasEditPlan(false);setIsPreparingSource(false);
+    setTranscript("");setTranscriptStatus("");setSourceCaptions(null);subtitleRequestSerial.current++;subtitleSourceRef.current=undefined;
+    setSubtitleBusy(false);setSubtitleNotice("");setMainDraftErrors({});setBatchEditing(null);setActivePartIndex(0);
+    setWebAiPrompt("");setWebAiResult("");setWebAiContext(null);setWebAiNotice("");setWebAiError("");setError("");
+    setNoTeaserConsent("");setSourceTitle("");setYoutubeState("idle");setYoutubeError("");setSourceSize({width:1920,height:1080});
+    // Retain appearance, subtitle settings, music choice/gain/ducking. Only
+    // source-bound caption/VAD evidence is cleared; queued snapshots are untouched.
+    setPlan(current=>({...current,originalTitle:"",captionCues:undefined,musicSpeech:undefined}));
+  }
   function changeWorkspace(next:"editor"|"batch"|"storage"){
     if(next!=="editor"){previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}
     setWorkspace(next);
@@ -427,6 +450,8 @@ export default function Home() {
   const previewCaption = previewCaptions.find((cue) => previewCurrentTime * PLAYBACK_RATE >= cue.start && previewCurrentTime * PLAYBACK_RATE < cue.end);
   const partDuration = finalDurationOf(activePart);
   const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined, customTeaser: undefined })), cues: sourceCaptions?.cues });
+  const noTeaserKey=JSON.stringify([preparedSource?.id,mainSignature,previewPlan.parts.filter(p=>p.teaser?.status==="unavailable").map(p=>[p.id,p.teaser?.reason])]);
+  const missingTeaserParts=previewPlan.parts.filter(p=>p.teaser?.status==="unavailable");
   const latestMainSignature = useRef(mainSignature);
   useEffect(() => { latestMainSignature.current = mainSignature; }, [mainSignature]);
   const hookIdentity = JSON.stringify({ sourceId: preparedSource?.id, provider, transcript, instruction, mainSignature });
@@ -475,23 +500,41 @@ export default function Home() {
     [localVideoUrl, preparedSource, sourceMode],
   );
 
+  const previewSourceEpoch=sourceSelectionEpoch.current;
+  const isCurrentPreviewVideo=(video:HTMLVideoElement)=>previewSourceEpoch===sourceSelectionEpoch.current&&video===previewVideoRef.current;
+
   useEffect(()=>{
-    const videos=deckVideos.current;if(!previewVideoUrl||!videos[0]||!videos[1])return;
-    if(!hasEditPlan){activeDeckSlot.current=0;previewVideoRef.current=videos[0];videos[0].muted=false;videos[0].playbackRate=1;if(!videos[0].getAttribute('src'))videos[0].src=previewVideoUrl;videos[1].pause();queueMicrotask(()=>setVisibleDeck(0));return;}
+    const a=deckVideos.current[0],b=deckVideos.current[1];
+    if(!previewVideoUrl||!a||!b)return;
+    const videos=[a,b],epoch=++previewEpoch.current;
+    let active=true,frame=0;
+    const current=()=>active&&previewEpoch.current===epoch;
     previewPlayingRef.current=false;
-    const controller=createPreviewDecks({videos:videos as HTMLVideoElement[],url:previewVideoUrl,segments:playbackSegments,
-      onActive:(slot,index)=>{activeDeckSlot.current=slot;previewVideoRef.current=videos[slot];previewSegmentIndex.current=index;setVisibleDeck(slot);},
-      onClock:setPreviewCurrentTime,onBuffer:setPreviewBuffering,onError:message=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();setPreviewError(message);},
-      onEnded:()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();}});
-    decks.current=controller;let frame=0;const tick=()=>{controller.tick();frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);
-    queueMicrotask(()=>setIsPreviewPlaying(false));
-    return()=>{cancelAnimationFrame(frame);controller.dispose();decks.current=null;};
+    musicPlaybackControl.current?.pause();
+    if(!hasEditPlan){
+      activeDeckSlot.current=0;previewVideoRef.current=a;a.muted=false;a.playbackRate=1;
+      if(a.getAttribute('src')!==previewVideoUrl)a.src=previewVideoUrl;b.pause();
+      queueMicrotask(()=>{if(current()){setVisibleDeck(0);setIsPreviewPlaying(false);setPreviewBuffering(false);}});
+      return()=>{active=false;for(const video of videos){video.pause();video.removeAttribute('src');video.load();}};
+    }
+    const controller=createPreviewDecks({videos,url:previewVideoUrl,segments:playbackSegments,
+      onActive:(slot,index)=>{if(!current())return;activeDeckSlot.current=slot;previewVideoRef.current=videos[slot];previewSegmentIndex.current=index;setVisibleDeck(slot);},
+      onClock:seconds=>{if(current())setPreviewCurrentTime(seconds);},
+      onBuffer:value=>{if(current())setPreviewBuffering(value);},
+      onError:message=>{if(!current())return;previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();setPreviewError(message);},
+      onEnded:()=>{if(!current())return;previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();}});
+    decks.current=controller;
+    const tick=()=>{if(!current())return;controller.tick();frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);
+    queueMicrotask(()=>{if(current()){setIsPreviewPlaying(false);setPreviewBuffering(false);}});
+    return()=>{active=false;cancelAnimationFrame(frame);controller.dispose();if(decks.current===controller)decks.current=null;};
   },[hasEditPlan,playbackSegments,previewVideoUrl]);
 
   useEffect(() => {
     if (sourceMode !== "youtube" || !sourceUrl.trim() || !workerHealth?.ok) return;
-    const controller = new AbortController();
+    const controller = new AbortController(), epoch=sourceSelectionEpoch.current;
+    sourceRequests.current.add(controller);
     const timer = window.setTimeout(async () => {
+      if(controller.signal.aborted||epoch!==sourceSelectionEpoch.current)return;
       setTranscript("");
       setTranscriptStatus("Đang tự lấy phụ đề gốc từ YouTube…");
       try {
@@ -501,14 +544,14 @@ export default function Home() {
         });
         const data = await response.json() as { transcript?: string; title?: string; message?: string; error?: string };
         if (!response.ok) throw new Error(data.error || "Không lấy được transcript.");
-        if (controller.signal.aborted) return;
-        setTranscript(data.transcript || "");
-        setTranscriptStatus(data.transcript ? "Đã tự lấy transcript theo ngôn ngữ gốc." : data.message || "Video không có phụ đề.");
+        if (controller.signal.aborted || epoch!==sourceSelectionEpoch.current) return;
+        setTranscript(typeof data.transcript==="string"?data.transcript:"");
+        setTranscriptStatus(typeof data.transcript==="string"&&data.transcript ? "Đã tự lấy transcript theo ngôn ngữ gốc." : typeof data.message==="string"?data.message:"Video không có phụ đề.");
       } catch (caughtError) {
-        if (!controller.signal.aborted) setTranscriptStatus(caughtError instanceof Error ? caughtError.message : "Không lấy được transcript.");
+        if (!controller.signal.aborted && epoch===sourceSelectionEpoch.current) setTranscriptStatus(caughtError instanceof Error ? caughtError.message : "Không lấy được transcript.");
       }
     }, 700);
-    return () => { window.clearTimeout(timer); controller.abort(); };
+    return () => { window.clearTimeout(timer); controller.abort(); sourceRequests.current.delete(controller); };
   }, [sourceUrl, sourceMode, workerHealth?.ok]);
 
   useEffect(() => () => {
@@ -613,8 +656,10 @@ export default function Home() {
       }, 0);
       return () => window.clearTimeout(idleTimer);
     }
-    const controller = new AbortController();
+    const controller = new AbortController(), epoch=sourceSelectionEpoch.current;
+    sourceRequests.current.add(controller);
     const timer = window.setTimeout(async () => {
+      if(controller.signal.aborted||epoch!==sourceSelectionEpoch.current)return;
       setYoutubeState("loading");
       setYoutubeError("");
       try {
@@ -622,19 +667,20 @@ export default function Home() {
           signal: controller.signal,
         });
         const data = (await response.json()) as { title?: string; error?: string };
-        if (!response.ok || !data.title) throw new Error(data.error || "Không lấy được YouTube title.");
+        if (!response.ok || typeof data.title!=="string" || !data.title.trim()) throw new Error(data.error || "Không lấy được YouTube title.");
+        if(controller.signal.aborted||epoch!==sourceSelectionEpoch.current)return;
         setSourceTitle(data.title);
         setPlan((current) => ({ ...current, originalTitle: data.title as string }));
         setYoutubeState("ready");
       } catch (caughtError) {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || epoch!==sourceSelectionEpoch.current) return;
         setYoutubeState("error");
         setYoutubeError(caughtError instanceof Error ? caughtError.message : "Không lấy được YouTube title.");
       }
     }, 450);
     return () => {
       window.clearTimeout(timer);
-      controller.abort();
+      controller.abort();sourceRequests.current.delete(controller);
     };
   }, [sourceMode, sourceUrl]);
 
@@ -908,7 +954,7 @@ export default function Home() {
     catch(error){setBatchError(error instanceof Error?error.message:"Không tiếp tục được item.");}
   }
   async function openBatchItem(group:BatchJob,item:BatchJob["items"][number]){
-    if(!item.sourceId)return;invalidateAnalysis();const ticket=analysisRequests.current.begin();const epoch=++sourceSelectionEpoch.current;setBatchError("");
+    if(!item.sourceId)return;resetSourceSelection();const ticket=analysisRequests.current.begin();const epoch=sourceSelectionEpoch.current;setBatchError("");
     try{const response=await fetch(`${WORKER_ORIGIN}/api/sources/${item.sourceId}`,{signal:ticket.controller.signal});const data=await response.json() as {source?:WorkerSource;error?:string};if(!response.ok||!data.source)throw new Error(data.error||"Không mở được source đã lưu.");if(!analysisRequests.current.isCurrent(ticket)||epoch!==sourceSelectionEpoch.current)return;
       const source=data.source;setSourceMode("youtube");setSourceUrl(source.sourceUrl||item.url);setPreparedSource(source);setSourceTitle(source.title);setTranscript(source.transcript||"");setRenderJob(null);
       setProvider(item.settings?.provider||"chatgpt");setInstruction(item.settings?.instruction||"");setSupplementalPrompt(item.settings?.supplementalPrompt||"");
@@ -921,6 +967,7 @@ export default function Home() {
     if(!batchEditing||preparedSource?.id!==batchEditing.sourceId)return;
     setError("");setIsStartingRender(true);
     try{if(effectiveTiming.error)throw new Error(effectiveTiming.error);const submitted=await chooseTeasers(previewPlan,preparedSource);
+      if(submitted.parts.some(p=>p.teaser?.status==='unavailable')&&(noTeaserConsent!==noTeaserKey||submitted.parts.some(p=>p.teaser?.status==='unavailable'&&!missingTeaserParts.some(old=>old.id===p.id)))){setPlan(current=>({...current,parts:submitted.parts,teaserPolicy:submitted.teaserPolicy}));throw new Error('Retry/Custom Teaser hoặc xác nhận xuất main không teaser trước khi lưu item.');}
       const response=await fetch(`${WORKER_ORIGIN}/api/batches/${batchEditing.batchId}/items/${batchEditing.itemId}/plan`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sourceId:preparedSource.id,transcript,instruction,supplementalPrompt,plan:snapshotPlanVisualStyle({...submitted,...(sourceCaptions?.sourceId===preparedSource.id?{captionCues:sourceCaptions}:{})})})});const data=await response.json() as {batch?:BatchJob;error?:string};if(!response.ok||!data.batch)throw new Error(data.error||"Không lưu được plan item.");
       batchPollEpoch.current++;setBatchPollVersion(v=>v+1);setBatch(data.batch);setBatchId(data.batch.id);setBatchEditing(null);setWorkspace("batch");
     }catch(error){setError(error instanceof Error?error.message:"Không lưu được plan item.");}finally{setIsStartingRender(false);}
@@ -1081,16 +1128,20 @@ export default function Home() {
 
 
   async function chooseTeasers(nextPlan: EditPlan, source: WorkerSource, force=false,signal?:AbortSignal,targetPartId?:number) {
-    if(!force&&nextPlan.parts.every(part=>{try{if(!part.teaser)return false;validateTeaser(part,source.duration);return true;}catch{return false;}}))return nextPlan;
     if (["gemini", "muse"].includes(nextPlan.providerUsed) && nextPlan.teaserPolicy === TEASER_POLICY) {
       if (!await externalHooksCurrent(nextPlan, source, transcript)) throw new Error("Hook import đã cũ sau sửa nội dung/transcript. Tạo prompt mới cho provider này trước khi xuất; không tự thay bằng ChatGPT/fallback.");
       return nextPlan;
     }
+    if(!force&&nextPlan.parts.every(part=>{try{if(!part.teaser)return false;validateTeaser(part,source.duration);return Boolean(part.customTeaser)||part.teaser.status==="unavailable"||part.teaser.selection==="manual";}catch{return false;}}))return nextPlan;
     const captionCues = sourceCaptions?.sourceId === source.id ? sourceCaptionTrack(sourceCaptions, source) : nextPlan.captionCues;
-    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/teaser-hooks`, { method: "POST", signal,headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcript.slice(0,100_000),...(targetPartId!==undefined?{partId:targetPartId}:{}), plan: { ...nextPlan, ...(captionCues ? { captionCues } : {}) } }) });
+    const controller=new AbortController();sourceRequests.current.add(controller);
+    const requestSignal=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
+    try{
+    const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/teaser-hooks`, { method: "POST", signal:requestSignal,headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transcript: transcript.slice(0,100_000),...(targetPartId!==undefined?{partId:targetPartId}:{}), plan: { ...nextPlan, ...(captionCues ? { captionCues } : {}) } }) });
     const result = await response.json() as { plan?: EditPlan; error?: string };
     if (!response.ok || !result.plan) throw new Error(result.error || "Không chọn được teaser hook.");
     return result.plan;
+    }finally{sourceRequests.current.delete(controller);}
   }
 
   // A custom proposal is not installed until the per-part editor confirms it.
@@ -1141,13 +1192,15 @@ export default function Home() {
     const requestId = ++subtitleRequestSerial.current;
     subtitleAutoKey.current = `${source.id}:${subtitleSettings.source || 'auto'}`;
     const currentRequest = () => isCurrentCaptionRequest({ sourceId: source.id, serial: requestId, selectionEpoch }, { sourceId: subtitleSourceRef.current, serial: subtitleRequestSerial.current, selectionEpoch: sourceSelectionEpoch.current });
+    const controller=new AbortController();sourceRequests.current.add(controller);
     setSubtitleBusy(true); setSubtitleNotice(install ? "Đang tải model Whisper base · 142 MB…" : "Đang tạo phụ đề…");
     try {
       if (install) {
         const response = await fetch(`${WORKER_ORIGIN}/api/speech/model`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
         const data = await response.json() as { error?: string }; if (!response.ok) throw new Error(data.error || "Không tải được model.");
       }
-      const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/captions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regenerate, provider: subtitleSettings.source || 'auto' }) });
+      if(!currentRequest()||controller.signal.aborted)return;
+      const response = await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/captions`, { method: "POST", signal:controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regenerate, provider: subtitleSettings.source || 'auto' }) });
       const data = await response.json() as Partial<CaptionTrack> & { error?: string };
       if (!currentRequest()) return;
       if (!response.ok || !data.cues) throw new Error(data.error || "Không tạo được phụ đề.");
@@ -1155,7 +1208,7 @@ export default function Home() {
       setSourceCaptions(track);
       setSubtitleNotice(`${data.cues.length} câu · ${data.origin === "youtube" ? "phụ đề YouTube" : "nhận diện local"}. Có thể sửa chữ trước khi xuất.`);
     } catch (caught) { if (currentRequest()) setSubtitleNotice(caught instanceof Error ? caught.message : "Không tạo được phụ đề."); }
-    finally { if (currentRequest()) setSubtitleBusy(false); }
+    finally { sourceRequests.current.delete(controller);if (currentRequest()) setSubtitleBusy(false); }
   }, [preparedSource, subtitleBusy, subtitleSettings.source]);
 
   useEffect(() => {
@@ -1252,7 +1305,7 @@ export default function Home() {
   function handleVideoUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-    sourceSelectionEpoch.current += 1; invalidateAnalysis();
+    resetSourceSelection();
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
     setLocalVideoUrl(URL.createObjectURL(file));
     setLocalFileName(file.name);
@@ -1267,8 +1320,10 @@ export default function Home() {
   }
 
   async function togglePreview() {
+    if(previewSourceEpoch!==sourceSelectionEpoch.current)return;
     const video = previewVideoRef.current;
     if (!video || !previewVideoUrl) return;
+    const epoch=previewEpoch.current,controller=decks.current;
     setPreviewError("");
     if (!previewPlayingRef.current) {
       try {
@@ -1282,9 +1337,11 @@ export default function Home() {
         }
         previewPlayingRef.current = true; setIsPreviewPlaying(true);
         musicPlaybackControl.current?.play();
-        if(decks.current)await decks.current.play();else await video.play();
+        if(controller)await controller.play();else await video.play();
 
       } catch {
+        if(epoch!==previewEpoch.current||previewVideoRef.current!==video)return;
+        musicPlaybackControl.current?.pause();
         previewPlayingRef.current = false; setIsPreviewPlaying(false);
         setPreviewError("Trình duyệt chưa phát được video source này.");
       }
@@ -1304,7 +1361,7 @@ export default function Home() {
       const position = locateTimelineTime(playbackSegments, value);
       previewSegmentIndex.current = position.index;
       sourceTime = position.sourceTime;
-      if (previewPlayingRef.current) { void video.play(); }
+      if (previewPlayingRef.current) { const epoch=previewEpoch.current;void video.play().catch(()=>{if(epoch===previewEpoch.current)setPreviewError("Bấm Play để tiếp tục sau khi tua.");}); }
     }
     video.currentTime = sourceTime;
     setPreviewCurrentTime(value);
@@ -1348,24 +1405,27 @@ export default function Home() {
       return null;
     }
 
+    sourcePreparation.current?.abort();
+    const controller=new AbortController();sourcePreparation.current=controller;sourceRequests.current.add(controller);
+    const requestSignal=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
+    const current=()=>!requestSignal.aborted&&sourcePreparation.current===controller&&selectionEpoch===sourceSelectionEpoch.current;
     setIsPreparingSource(true);
     setRenderJob(null);
     try {
       const response = sourceMode === "youtube"
         ? await fetch(`${WORKER_ORIGIN}/api/sources/youtube`, {
-            method: "POST", signal,
+            method: "POST", signal:requestSignal,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url: sourceUrl.trim() }),
           })
         : await fetch(`${WORKER_ORIGIN}/api/sources/upload?filename=${encodeURIComponent(localFile!.name)}`, {
-            method: "POST", signal,
+            method: "POST", signal:requestSignal,
             headers: { "Content-Type": localFile!.type || "application/octet-stream", "X-Filename": encodeURIComponent(localFile!.name) },
             body: localFile,
           });
       const data = (await response.json()) as { source?: WorkerSource; error?: string };
-      if (!response.ok || !data.source) throw new Error(data.error || "Không chuẩn bị được source.");
-      signal?.throwIfAborted();
-      if (selectionEpoch !== sourceSelectionEpoch.current) return null;
+      if (!response.ok || !data.source || typeof data.source.id!=="string" || typeof data.source.title!=="string" || !Number.isFinite(data.source.duration) || data.source.duration<=0) throw new Error(typeof data.error==="string"?data.error:"Không chuẩn bị được source: API trả dữ liệu không hợp lệ.");
+      if (!current()) return null;
       setPreparedSource(data.source);
 
       try {
@@ -1376,13 +1436,14 @@ export default function Home() {
       }
       setSourceTitle(data.source.title);
       setPlan((current) => ({ ...current, originalTitle: data.source!.title }));
-      if (data.source.transcript) setTranscript(data.source.transcript);
+      if (typeof data.source.transcript==="string") setTranscript(data.source.transcript);
       return data.source;
     } catch (caughtError) {
-      if (selectionEpoch === sourceSelectionEpoch.current) setError(caughtError instanceof Error ? caughtError.message : "Không chuẩn bị được source.");
+      if (current()) {const message=caughtError instanceof Error ? caughtError.message : "Không chuẩn bị được source.";if(sourceMode==="youtube"){setYoutubeState("error");setYoutubeError(message);}else setError(message);}
       return null;
     } finally {
-      setIsPreparingSource(false);
+      sourceRequests.current.delete(controller);
+      if(sourcePreparation.current===controller){sourcePreparation.current=null;setIsPreparingSource(false);}
     }
   }
 
@@ -1402,6 +1463,11 @@ export default function Home() {
       const source = preparedSource || await prepareSource();
       if (!source) return;
       if (submittedPlan.teaserPolicy === TEASER_POLICY) submittedPlan = await chooseTeasers(submittedPlan, source);
+      if(selectionEpoch!==sourceSelectionEpoch.current)return;
+      if(submittedPlan.parts.some(p=>p.teaser?.status==='unavailable')&&(noTeaserConsent!==noTeaserKey||submittedPlan.parts.some(p=>p.teaser?.status==='unavailable'&&!missingTeaserParts.some(old=>old.id===p.id)))){
+        setPlan(current=>({...current,parts:submittedPlan.parts,teaserPolicy:submittedPlan.teaserPolicy}));
+        setError('Chưa chọn được teaser bằng ChatGPT hoặc provider đã chọn. Retry, dùng Custom Teaser, hoặc xác nhận xuất main không teaser bên dưới.');return;
+      }
       for (const part of submittedPlan.parts) {
         for (const segment of part.segments) {
           if (segment.end > source.duration + 0.05) {
@@ -1570,7 +1636,7 @@ export default function Home() {
             </Badge>
           </div>
 
-          <Tabs value={sourceMode} onValueChange={(value) => { sourceSelectionEpoch.current += 1; invalidateAnalysis(); setSourceMode(value as "youtube" | "local"); setPreparedSource(null); setRenderJob(null); setHasEditPlan(false); setTranscript(""); }} className="mt-6">
+          <Tabs value={sourceMode} onValueChange={(value) => { resetSourceSelection(); setSourceMode(value as "youtube" | "local"); }} className="mt-6">
             <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1" style={{ height: 40 }}>
               <TabsTrigger value="youtube" className="min-w-0 rounded-lg text-xs" style={{ height: 32, paddingBlock: 0, fontSize: 12, lineHeight: '16px' }}>YouTube</TabsTrigger>
               <TabsTrigger value="local" className="min-w-0 rounded-lg text-xs" style={{ height: 32, paddingBlock: 0, fontSize: 12, lineHeight: '16px' }}>Local video</TabsTrigger>
@@ -1579,7 +1645,7 @@ export default function Home() {
               <label htmlFor="youtube-url" className="field-label">YouTube URL</label>
               <div className="relative mt-2">
                 <Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
-                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { sourceSelectionEpoch.current += 1; invalidateAnalysis(); setSourceUrl(event.target.value); setPreparedSource(null); setRenderJob(null); setHasEditPlan(false); setTranscript(""); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
+                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { resetSourceSelection(); setSourceUrl(event.target.value); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
               </div>
               <p className="mt-2 text-[11px] leading-5 text-zinc-600">
                 {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
@@ -1801,7 +1867,7 @@ export default function Home() {
             {previewVisualStyle.background.mode !== "source-blur" && <div data-studio-background className="absolute inset-0" style={backgroundCss(previewVisualStyle.background)} />}
             <div className="absolute inset-x-0 isolate overflow-hidden" style={{ top: `${FOREGROUND_Y / 1920 * 100}%`, height: `${FOREGROUND_HEIGHT / 1920 * 100}%` }}>
               {previewVideoUrl ? (
-                <>{[0,1].map(slot=><video key={slot}
+                <>{[0,1].map(slot=><video key={`${previewVideoUrl}:${slot}`}
                   ref={slot===0?bindDeckA:bindDeckB}
                   data-preview-deck={slot} data-preview-active={visibleDeck===slot}
                   crossOrigin="anonymous"
@@ -1812,20 +1878,18 @@ export default function Home() {
                   playsInline
                   onClick={() => void togglePreview()}
                   onLoadedMetadata={(event) => {
+                    if(previewSourceEpoch!==sourceSelectionEpoch.current||event.currentTarget!==deckVideos.current[slot])return;
                     const duration = Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : preparedSource?.duration || 0;
                     setPreviewDuration(duration);
                     setSourceSize({ width: event.currentTarget.videoWidth || 1920, height: event.currentTarget.videoHeight || 1080 });
-                    if (hasEditPlan && event.currentTarget===previewVideoRef.current) {
-                      event.currentTarget.currentTime = playbackSegments[0]?.start || 0;
-                      event.currentTarget.playbackRate = PLAYBACK_RATE;
-                    }
+                    // Segment seeking belongs to the active controller, never a stale metadata event.
                     setPreviewError("");
                   }}
-                  onTimeUpdate={event=>{if(event.currentTarget===previewVideoRef.current)updatePreviewClock();}}
-                  onPlay={event => { if(event.currentTarget===previewVideoRef.current){previewPlayingRef.current = true; setIsPreviewPlaying(true);} }}
-                  onPause={() => { if (!hasEditPlan) { previewPlayingRef.current = false; setIsPreviewPlaying(false); } }}
-                  onEnded={() => { if (!hasEditPlan) { previewPlayingRef.current = false; setIsPreviewPlaying(false); }  }}
-                  onError={event => {if(event.currentTarget===previewVideoRef.current)setPreviewError("Không phát được source. Hãy bấm Chuẩn bị source lại hoặc thử video MP4/H.264.");}}
+                  onTimeUpdate={event=>{if(isCurrentPreviewVideo(event.currentTarget))updatePreviewClock();}}
+                  onPlay={event => { if(isCurrentPreviewVideo(event.currentTarget)){previewPlayingRef.current = true; setIsPreviewPlaying(true);} }}
+                  onPause={event => { if (!hasEditPlan && isCurrentPreviewVideo(event.currentTarget)) { previewPlayingRef.current = false; setIsPreviewPlaying(false); } }}
+                  onEnded={event => { if (!hasEditPlan && isCurrentPreviewVideo(event.currentTarget)) { previewPlayingRef.current = false; setIsPreviewPlaying(false); }  }}
+                  onError={event => {if(isCurrentPreviewVideo(event.currentTarget))setPreviewError("Không phát được source. Hãy bấm Chuẩn bị source lại hoặc thử video MP4/H.264.");}}
                 />)}</>
               ) : (
                 <div className="absolute inset-0 bg-[linear-gradient(125deg,#111_0%,#572317_42%,#ef6b32_43%,#241716_47%,#0b0c0f_100%)]" />
@@ -1982,7 +2046,7 @@ export default function Home() {
                 }catch{return current;}
               });}}/>
           </div>)}
-          {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing||Boolean(activePart.customTeaser)} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Chọn lại hook part này · giữ nguyên main</button>}
+          {hasEditPlan&&<button type="button" disabled={!preparedSource||isAnalyzing||Boolean(activePart.customTeaser)} onClick={()=>void reselectHooks()} className="mt-3 rounded border border-white/15 px-3 py-2 text-xs disabled:opacity-40">Retry teaser part này · giữ nguyên main</button>}
           <label className="mt-4 block text-xs">Hook → Main<select aria-label="Hook transition" className="studio-input mt-2 w-full" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Legacy · theo transition đã lưu</option><option value="vr-light-leak-v2">Warm Cloud Light Leak · video only</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>
           <MusicPanel previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>setPlan(current=>({...current,music}))} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}} />
           <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
@@ -2065,6 +2129,7 @@ export default function Home() {
             </div>
           )}
 
+          {!!missingTeaserParts.length&&<label className="mt-4 flex items-start gap-2 text-xs text-amber-200"><input type="checkbox" checked={noTeaserConsent===noTeaserKey} onChange={e=>setNoTeaserConsent(e.target.checked?noTeaserKey:"")}/>Tôi chọn xuất main không teaser cho Part {missingTeaserParts.map(p=>p.id).join(', ')}. Có thể Retry hoặc dùng Custom Teaser trước.</label>}
           <Button
             onClick={() => void startRender()}
             disabled={!hasEditPlan || isStartingRender || subtitleBusy || Boolean(effectiveTiming.error) || renderJob?.state === "queued" || renderJob?.state === "rendering" || !workerHealth?.ok}

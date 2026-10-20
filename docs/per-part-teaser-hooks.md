@@ -223,3 +223,38 @@ raw private payloads, then checks excerpts against the actual local video and
 subsequent content. Any fallback fails live qualification. No successful live
 request has been run at this checkpoint. Do not claim GPT/Gemini/Muse works until
 that succeeds. Full Smart Auto Cut C–H and main-candidate fusion remain incomplete.
+
+## 2026-10-20 — part-arc / curiosity selection (source-only revision)
+
+Auto uses the existing authenticated ChatGPT adapter, not a provider ensemble.
+It reads bounded whole-part context, metadata/chapters/comments/relative replay,
+available cached local scene/audio proxies and same-part candidates in one
+selection request. No new classification call. The model must compare immediate
+1–2s attraction, specific unusual detail/result, the truthful question later main
+answers, relevance and complete meaning; punctuation/duration aren't rankings.
+The existing schema returns the winner and at most two distinct alternatives,
+with concrete comparative reasons, observations and ending evidence.
+
+Candidate changes: retain multi-sentence boundary options, always propose visual
+windows even with abundant speech, reserve slots for replay and available context/
+local proxy proposals, and keep <=12 diverse candidates. All candidates request
+four local timestamped stills (<=48, <=512×288, shared45s extraction budget), rather
+than three candidates only. No full transcode. Scratch JPEGs are removed in
+finally; partial extraction reports actual coverage. Stills cannot prove motion,
+audio or an action's completion. Local activity is a location hint, not quality.
+Unavailable cached local signals are not fabricated or newly analyzed here.
+
+Code validates local speech/end cues and actual visual support as well as existing
+same-part, no-gap, first10 rendered main seconds, <=9 rendered seconds and boundary
+constraints. It never edits returned AI timestamps. At most two attempts; existing
+provider retry/backoff remains. Auth/quota/timeout/insufficient evidence produces
+“Chưa chọn được teaser bằng ChatGPT”; no automatic heuristic winner. The editor
+retains main and offers Retry, Custom Teaser and explicit no-teaser export consent.
+Gemini/Muse remain explicit imports, checked before the generic reuse shortcut.
+
+Prompt/cache version `same-part-hook-v4-part-arc` replaces v3 for NEW analysis.
+Saved v3 adaptive teasers still validate and queued snapshots aren't migrated.
+Source/content/ranges/cues/supporting inputs/provider/model/prompt determine cache;
+style does not. Source/runtime auth/inference and editorial quality of this revision
+have NOT been verified: user explicitly disallowed tests, calls, render and browser
+QA. No claim of better real-video choices or working current inference is made.

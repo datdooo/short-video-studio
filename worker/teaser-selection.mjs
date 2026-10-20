@@ -5,7 +5,7 @@ export { HOOK_SCHEMA, HOOK_INSTRUCTIONS };
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
-import { hookCandidates,hookDurationLimits,HOOK_SELECTION_POLICY,permittedHookRanges,unavailableHook,TEASER_POLICY, HOOK_PROMPT_VERSION, mainRanges, hookRangeKey, fallbackTeaser, validateTeaser } from "../lib/teaser-hooks.mjs";
+import { hookCandidates,hookDurationLimits,HOOK_SELECTION_POLICY,permittedHookRanges,unavailableHook,TEASER_POLICY, HOOK_PROMPT_VERSION, mainRanges, hookRangeKey, validateTeaser } from "../lib/teaser-hooks.mjs";
 
 const clean = (s, max) => String(s || "").replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "").slice(0, max);
 import { validateHeatmap } from "../lib/source-context/heatmap.mjs";
@@ -50,13 +50,13 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
       Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start && c.end-c.start <= 10 && String(c.text || '').trim() &&
       input.allowedRanges.some(r => c.start < r.end && c.end > r.start)
     ).slice(0, 240).map(({start,end}) => ({start,end}));
-    const key = hash({ version: HOOK_PROMPT_VERSION, sourceHash, sourceId: source.id, transcriptHash: hash(source.transcript || ""), ranges: hookRangeKey(part), input, provider: provider?.id || "none", model: provider?.model || "none", frames: "candidate-local-9x512-v3" });
+    const key = hash({ version: HOOK_PROMPT_VERSION, sourceHash, sourceId: source.id, transcriptHash: hash(source.transcript || ""), ranges: hookRangeKey(part), input, provider: provider?.id || "none", model: provider?.model || "none", frames: "all-candidates-max48x512-v4" });
     const file = path.join(cacheRoot, `${key}.json`);
     try {
       const cached = JSON.parse(await readFile(file, "utf8"));
       validateTeaser({ ...part, teaser: cached.teaser }, source.duration);
       checkHookSpeechBoundaries(cached.teaser, boundaryCues);
-      if (cached.teaser.promptVersion === HOOK_PROMPT_VERSION && cached.teaser.selectionPolicy === HOOK_SELECTION_POLICY && cached.teaser.inputKey === key && (cached.teaser.selection === "ai" || Date.now() - cached.at < 60_000)) return cached.teaser;
+      if (cached.promptVersion===HOOK_PROMPT_VERSION && cached.inputKey===key && cached.teaser.selectionPolicy === HOOK_SELECTION_POLICY && (cached.teaser.selection === "ai" || Date.now() - cached.at < 60_000)) return cached.teaser;
     } catch { /* Missing/invalid cache is not selection evidence. */ }
     if (pending.has(key)) return structuredClone(await pending.get(key));
     const task = (async () => {
@@ -68,9 +68,10 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
           signal?.throwIfAborted();
           try {
-            const response = await provider.analyze({ input: { ...input, ...(attempt ? { retry: "Previous selection was invalid or split known speech; recheck all bounds and choose complete timed cues." } : {}) }, images, instructions: HOOK_INSTRUCTIONS+(customInstruction?"\nUSER CUSTOM REQUEST is a strict footage-search constraint, not a request to create speech/images. Select ONLY an excerpt matching customTeaserRequest in this retained part. If the requested event cannot be established with available speech/visual evidence, return unavailable with a clear reason. Never substitute an unrelated attractive moment. Explain the observed match in reason/relation. Sparse images cannot prove the largest catch or a complete action without evidence.":""), maxTokens:3000, schema: HOOK_SCHEMA, signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(90_000)]) });
+            input.visualCoverage=input.transcriptCandidates.map(c=>({candidateId:c.id,frameTimes:images.filter(f=>f.candidateId===c.id).map(f=>f.time),limitation:"Sparse stills do not prove continuous action or audio."}));
+            const response = await provider.analyze({ input: { ...input, ...(attempt ? { retry: "Previous selection lacked valid local evidence or boundaries. Recheck same-part bounds and evidence; choose a concrete interesting complete event, or unavailable. Punctuation alone is not an editorial reason." } : {}) }, images, instructions: HOOK_INSTRUCTIONS+(customInstruction?"\nUSER CUSTOM REQUEST is a strict footage-search constraint, not a request to create speech/images. Select ONLY an excerpt matching customTeaserRequest in this retained part. If the requested event cannot be established with available speech/visual evidence, return unavailable with a clear reason. Never substitute an unrelated attractive moment. Explain the observed match in reason/relation. Sparse images cannot prove the largest catch or a complete action without evidence.":""), maxTokens:4500, schema: HOOK_SCHEMA, signal: AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(90_000)]) });
             const value = validateHookResponse(response.value);
-            if(value.start===null&&value.end===null&&typeof value.reason==='string'&&value.reason.trim())return unavailableHook(part,value.reason);
+            if(value.start===null&&value.end===null&&typeof value.reason==='string'&&value.reason.trim()){result=unavailableHook(part,"Chưa chọn được teaser bằng ChatGPT. "+value.reason+" Dùng Retry hoặc Custom Teaser; có thể chủ động xuất main không teaser.");break;}
             validateEditorialEvidence(value,{candidates:input.transcriptCandidates,images,cues});
             for(const choice of value.alternatives){validateEditorialEvidence(choice,{candidates:input.transcriptCandidates,images,cues});checkHookSpeechBoundaries(choice,boundaryCues);}
             checkHookSpeechBoundaries(value,boundaryCues);
@@ -93,10 +94,10 @@ export function createTeaserSelector({ cacheRoot, resolveProvider, frames = asyn
           }
         }
       }
-      result ||= customInstruction?unavailableHook(part,"Không tìm được Custom Teaser có bằng chứng phù hợp ("+failure+"). Teaser hiện tại được giữ; không thay bằng fallback."):fallbackTeaser(part, failure, boundaryCues, key);
+      result ||= customInstruction?unavailableHook(part,"Không tìm được Custom Teaser có bằng chứng phù hợp ("+failure+"). Teaser hiện tại được giữ; không thay bằng fallback."):unavailableHook(part,"Chưa chọn được teaser bằng ChatGPT ("+failure+"). Dùng Custom Teaser hoặc chọn lại; main được giữ nguyên, không tự lấy đoạn chung chung.");
       try {
         await mkdir(cacheRoot, { recursive: true, mode: 0o700 });
-        await writeFile(file, JSON.stringify({ at: Date.now(), teaser: result }), { mode: 0o600 });
+        await writeFile(file, JSON.stringify({ at: Date.now(), promptVersion:HOOK_PROMPT_VERSION,inputKey:key,teaser: result }), { mode: 0o600 });
         const entries = (await readdir(cacheRoot)).filter((f) => /^[a-f0-9]{64}\.json$/.test(f));
         for (const name of entries.filter((f) => f !== `${key}.json`).slice(0, Math.max(0, entries.length - 256))) await unlink(path.join(cacheRoot, name)).catch(() => {});
       } catch { /* Cache is best effort; do not discard an otherwise valid selection. */ }
