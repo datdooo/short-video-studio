@@ -4,7 +4,7 @@ import {normalizeMusic,validateSpeechActivity} from '../lib/music/settings.mjs';
 import {validateMainAnalysis} from '../lib/auto-cut/analysis.mjs';
 import { PLAYBACK_RATE } from '../lib/render-config.mjs';
 import { assertRenderableVisualStyle, resolvePlanVisualStyle } from "../lib/visual-style/normalize.mjs";
-import { validateTeaser, TEASER_POLICY } from "../lib/teaser-hooks.mjs";
+import { requireBothTeasers,validateTeaser, TEASER_POLICY } from "../lib/teaser-hooks.mjs";
 export function validatePlan(plan, source) {
   if (!plan || !Array.isArray(plan.parts) || plan.parts.length !== 2) throw new Error("Edit plan phải có đúng 2 Part.");
   if(plan.hookTransition!==undefined&&!["rainbow-light-leak","vr-light-leak-v2","dip-black","flash-white","none"].includes(plan.hookTransition))throw Error("Invalid hook transition.");
@@ -48,4 +48,10 @@ export function validatePlan(plan, source) {
     validateMainRangeMetadata(part,source.duration);
     if(part.mainEdited&&(part.startTrimApplied!==true||part.smartCutApplied!==true))throw Error("Manual main ranges must bypass start trimming and Smart Cut.");
   }
+}
+
+// Loading/editing/analyzing old plans intentionally remains validatePlan-only.
+export function validateRenderPlan(plan,source){
+ requireBothTeasers(plan,source.duration,(source.captions?.length?source.captions:plan.captionCues?.cues)||[]);
+ validatePlan(plan,source);
 }

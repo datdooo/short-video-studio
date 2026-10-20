@@ -1,5 +1,5 @@
 import type {EditPlan,EditPart,Segment} from './edit-plan';
-export type MainRangeRow={start:string;end:string};
+export type MainRangeRow={start:string;end:string;exactStart?:number;exactEnd?:number;timecode?:boolean};
 export type AiMainRanges={version:1;ranges:Pick<Segment,'start'|'end'|'label'|'reason'>[]};
 export const MAX_MAIN_RANGES:number;
 export function sourceTime(value:string):number;

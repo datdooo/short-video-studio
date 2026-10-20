@@ -50,7 +50,7 @@ import { externalHooksCurrent } from "../lib/teaser-import.mjs";
 import { createBatchSubmissionQueue, restoreBatchPreparation } from "./batch-queue.mjs";
 import { createCommandLifecycle } from "./command-lifecycle.mjs";
 import { createMediaLibrary } from "./media-library.mjs";
-import { validatePlan } from "./plan-validation.mjs";
+import { validatePlan,validateRenderPlan } from "./plan-validation.mjs";
 import { trimPartStart } from "./part-start.mjs";
 import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
@@ -1416,6 +1416,7 @@ async function executeRender(job, source, plan, signal) {
   try {
     signal?.throwIfAborted();
     requireCurrentExportPolicy(job);
+    validateRenderPlan(plan,source);
     job.state = "rendering";
     job.startedAt = new Date().toISOString();
     const outputDirectory = path.join(source.directory, "outputs", job.id);
@@ -1490,12 +1491,13 @@ async function startRender(body, parentSignal) {
   const source = await loadSource(body.sourceId);
   parentSignal?.throwIfAborted();
   body.plan = originalCutPlan(body.plan, source.id);
-  validatePlan(body.plan, source);
+  validateRenderPlan(body.plan, source);
   let originalPlan = structuredClone({ ...body.plan, originalTitle: source.title, parts: body.plan.parts.map(trimPartStart) });
   if (!["manual", "mock"].includes(originalPlan.providerUsed) && originalPlan.parts.some((part) => !part.smartCutApplied)) {
     originalPlan = smartCutPlan(originalPlan, await speech.boundaries(source), source.duration);
   }
-  if (body.selectTeasers === true || (originalPlan.teaserPolicy === TEASER_POLICY && originalPlan.parts.some((p) => !p.teaser))) originalPlan = await planTeasers(originalPlan, source, parentSignal);
+  // Rendering never selects/fills hooks. Explicit selection must finish first.
+  validateRenderPlan(originalPlan,source);
   originalPlan = snapshotPlanVisualStyle(originalPlan);
   if (originalPlan.subtitles.enabled && originalPlan.captionCues) originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
   originalPlan.music=normalizeMusic(originalPlan.music);
@@ -1503,9 +1505,9 @@ async function startRender(body, parentSignal) {
     if(originalPlan.music.ducking)originalPlan.musicSpeech=await musicSpeech.detect(source,parentSignal);
   }
   const renderPlan = originalPlan;
-  validatePlan(renderPlan, source);
+  validateRenderPlan(renderPlan, source);
   if (mediaLibrary.isLocked(source.id)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
-  if(body.submissionId){assertId(body.submissionId);const existing=jobs.get(body.submissionId);if(existing){if(existing.sourceId!==source.id)throw new Error("Submission belongs to another source");requireCurrentExportPolicy(existing);return existing;}
+  if(body.submissionId){assertId(body.submissionId);const existing=jobs.get(body.submissionId);if(existing){if(existing.sourceId!==source.id)throw new Error("Submission belongs to another source");requireCurrentExportPolicy(existing);validateRenderPlan(existing.plan,source);return existing;}
     if(existsSync(path.join(source.directory,"outputs",body.submissionId)))throw new Error("Render output exists without its history; inspect it before another submission.");}
   const job = {
     id: body.submissionId || randomUUID(),
@@ -1547,7 +1549,7 @@ async function resumeRender(job,parentSignal){
   requireCurrentExportPolicy(job);
   if(!['error','cancelled'].includes(job.state)||renderControllers.has(job.id))throw new Error('Render still active or already complete; no duplicate submission.');
   if(mediaLibrary.isLocked(job.sourceId))throw new Error('Source is in use/trash.');
-  const source=await loadSource(job.sourceId);validatePlan(job.plan,source);job.state='queued';job.error=null;
+  const source=await loadSource(job.sourceId);validateRenderPlan(job.plan,source);job.state='queued';job.error=null;
   await persistBatchHistory({strict:true});enqueueRender(job,source,structuredClone(job.plan),parentSignal);return job;
 }
 
@@ -1905,6 +1907,7 @@ const server = createServer(async (request, response) => {
       if(!batch)throw new Error('Queue not found');
       const targets=batch.items.filter(i=>!i.deleted&&(!body.itemIds||body.itemIds.includes(i.id)));
       if(targets.some(i=>i.jobId&&renderControllers.has(i.jobId)))throw new Error('Wait for stopping renders before resume.');
+      for(const item of targets){const saved=item.jobId?jobs.get(item.jobId):null;if(saved?.state==='done')continue;const plan=saved?.plan||item.plan;if(plan){const source=await loadSource(saved?.sourceId||item.sourceId);validateRenderPlan(plan,source);}}
       if(targets.some(i=>i.needsAnalysis&&i.settings?.provider==='chatgpt'))await activeChatGPTCredentials();
       const resumed=batchPreparationQueue.resume(id,body.itemIds);await persistBatchHistory({strict:true});sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
     }
@@ -1914,7 +1917,7 @@ const server = createServer(async (request, response) => {
       if(!item||!item.sourceId)throw new Error('Prepared item not found');
       if(item.jobId||!['awaiting-import','review-required','paused','error','cancelled'].includes(item.state))throw new Error('Render/preparation snapshot is immutable while submitted; finish/stop it first.');
       if(body.sourceId!==item.sourceId)throw new Error('Plan belongs to another source');
-      const source=await loadSource(item.sourceId);validatePlan(body.plan,source);
+      const source=await loadSource(item.sourceId);validateRenderPlan(body.plan,source);
       if(['gemini','muse'].includes(body.plan.providerUsed)&&!await externalHooksCurrent(body.plan,source,String(body.transcript||'')))throw new Error('External hooks are missing/stale; generate/import hook selections before queueing.');
       item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
       item.approved=true;item.needsAnalysis=false;item.state='render-ready';item.checkpoint='plan';item.error=null;

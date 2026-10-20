@@ -1,3 +1,4 @@
+import {requireBothTeasers} from '../lib/teaser-hooks.mjs';
 import { assertRenderableVisualStyle, snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { randomUUID } from "node:crypto";
 
@@ -49,6 +50,7 @@ export function createBatchSubmissionQueue({ batches, controllers, prepare, onCh
       if(itemIds!==undefined&&(!Array.isArray(itemIds)||!itemIds.length||itemIds.length>100||itemIds.some(id=>typeof id!=='string')))fail('Invalid resume item list',400);
       const items=batch.items.filter(i=>!i.deleted&&(!itemIds||itemIds.includes(i.id))&&['error','cancelled','paused','render-ready','review-required','awaiting-import'].includes(i.state));
       if(!items.length)fail('No resumable items',409);
+      for(const item of items){if(item.plan)requireBothTeasers(item.plan);}
       if(items.some(i=>scheduled.has(i.id)))fail('These items are still stopping/preparing; retry shortly.',409);
       if(items.some(i=>i.settings?.resumeVersion!==1))fail('Legacy item lacks resumable settings; open it in the editor instead.',409);
       if(!controllers.get(batch.id)||controllers.get(batch.id).signal.aborted)controllers.set(batch.id,new AbortController());

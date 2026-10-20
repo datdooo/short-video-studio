@@ -1,4 +1,4 @@
-import type { EditPart, Segment } from "./edit-plan";
+import type { EditPlan, EditPart, Segment } from "./edit-plan";
 export type Teaser = { selectionPolicy?: "later-main-v1" | "adaptive-editorial-v3"; version: 1; rangeKey: string; reason: string } & ({ status: "unavailable" } | {
   status: "selected"; start: number; end: number; selection: "ai" | "fallback" | "external-import" | "manual";
   candidateId?:string;kind?:string;partUnderstanding?:string;contentTypes?:string;observed?:string;startContext?:string;standalone?:boolean;complete?:boolean;endingBasis?:string;cueIds?:string[];replayUse?:string;
@@ -32,3 +32,5 @@ export function unavailableHook(part:EditPart,reason:string):Teaser;
 
 export function chooseTeaserAlternative(part:EditPart,index:number):EditPart;
 export function adjustTeaserRange(part:EditPart,start:number,end:number,cues?:{start:number;end:number;text:string}[]):EditPart;
+export function teaserReadiness(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[]):{partId:number;reason:string}[];
+export function requireBothTeasers(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[]):void;

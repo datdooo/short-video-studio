@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {snapshotPlanVisualStyle} from '../lib/visual-style/normalize.mjs';
-import {validatePlan} from './plan-validation.mjs';
+import {validateRenderPlan} from './plan-validation.mjs';
 // Existing FIFO calls this processor; one link's error cannot mutate another plan.
 export function createBatchProcessor({acquire,load,analyze,render,resumeRender,getJob,persist,createId=randomUUID}) {
   return async function prepare(batch,_body,items,signal){
@@ -9,13 +9,14 @@ export function createBatchProcessor({acquire,load,analyze,render,resumeRender,g
       if(item.deleted)continue;
       if(signal.aborted){if(!item.jobId)item.state='cancelled';continue;}
       const settings=item.settings||_body;
-      if(authBlocked&&settings.provider==='chatgpt'){item.state='paused';item.error='Reconnect ChatGPT, then explicitly resume this item.';item.errorCode='auth-required';await persist();continue;}
+      if(authBlocked&&settings.provider==='chatgpt'){item.state='paused';item.error='Cần kết nối lại ChatGPT rồi chủ động tiếp tục mục này.';item.errorCode='auth-required';await persist();continue;}
       try{
         let source;
         if(item.sourceId)source=await load(item.sourceId); // A missing saved source needs user action; never redownload it silently.
         else{item.state='downloading';await persist();source=await acquire(item.url,signal);signal.throwIfAborted();item.sourceId=source.id;item.title=source.title;item.checkpoint='source';await persist();}
         if(item.jobId){
           const job=getJob(item.jobId);if(!job)throw new Error('Saved render record missing; inspect outputs before submitting again.');
+          if(job.state!=='done')validateRenderPlan(job.plan,source);
           if(['error','cancelled'].includes(job.state))await resumeRender(job,signal);
           item.state=job.state;item.error=job.error;await persist();continue;
         }
@@ -28,22 +29,22 @@ export function createBatchProcessor({acquire,load,analyze,render,resumeRender,g
           item.checkpoint='plan';item.needsAnalysis=false;
           if(item.plan.analysis?.method==='deterministic-fallback'){
             const reason=item.plan.analysis.fallbackReason||'';item.approved=false;
-            if(/auth|rate-limited|model-unavailable/.test(reason)){item.state='error';item.error=`Automatic provider unavailable (${reason}); reconnect/wait and retry explicitly.`;item.errorCode=/auth/.test(reason)?'auth-required':'provider-unavailable';item.needsAnalysis=true;authBlocked=/auth/.test(reason);}
-            else{item.state='review-required';item.error='Deterministic fallback: review/approve this plan in the editor before rendering.';}
+            if(/auth|rate-limited|model-unavailable/.test(reason)){item.state='error';item.error=`AI chưa khả dụng (${reason}); kết nối lại/chờ rồi chủ động thử lại. Chưa xác minh lựa chọn nội dung.`;item.errorCode=/auth/.test(reason)?'auth-required':'provider-unavailable';item.needsAnalysis=true;authBlocked=/auth/.test(reason);}
+            else{item.state='review-required';item.error='Bản cắt dự phòng chưa được AI xác minh; mở editor, kiểm tra main và chọn đủ teaser trước khi xuất.';}
             await persist();continue;
           }
           item.approved=true;await persist();
         }
         if(item.approved===false){item.state='review-required';await persist();continue;}
-        validatePlan(item.plan,source);
+        validateRenderPlan(item.plan,source);
         item.state='render-ready';await persist();
         item.submissionId ||= createId();item.submissionProtocol=1;item.state='submitting';await persist();
         const existing=getJob(item.submissionId);
-        if(existing){if(['error','cancelled'].includes(existing.state))await resumeRender(existing,signal);item.jobId=existing.id;item.state=existing.state;item.plan=structuredClone(existing.plan);await persist();continue;}
+        if(existing){if(existing.state!=='done')validateRenderPlan(existing.plan,source);if(['error','cancelled'].includes(existing.state))await resumeRender(existing,signal);item.jobId=existing.id;item.state=existing.state;item.plan=structuredClone(existing.plan);await persist();continue;}
         const job=await render({sourceId:source.id,plan:structuredClone(item.plan),submissionId:item.submissionId},signal);
         item.jobId=job.id;item.plan=structuredClone(job.plan);item.state=job.state;item.error=null;item.checkpoint='render';await persist();
       }catch(error){
-        item.state=signal.aborted?'cancelled':'error';item.error=signal.aborted?null:error instanceof Error?error.message:String(error);
+        item.state=signal.aborted?'cancelled':error.code==='TEASER_REQUIRED'?'review-required':'error';if(error.code==='TEASER_REQUIRED'){item.approved=false;item.errorCode='teaser-required';}item.error=signal.aborted?null:error instanceof Error?error.message:String(error);
         await persist();
       }
     }

@@ -258,3 +258,34 @@ Source/content/ranges/cues/supporting inputs/provider/model/prompt determine cac
 style does not. Source/runtime auth/inference and editorial quality of this revision
 have NOT been verified: user explicitly disallowed tests, calls, render and browser
 QA. No claim of better real-video choices or working current inference is made.
+
+## 2026-10-20 — Vietnamese editorial explanations / inline Timeline
+
+New prompt version `same-part-hook-v5-vietnamese`; v3/v4 adaptive saved teasers
+remain valid, with no range/evidence migration. Shared explanation-language rules
+are included in ChatGPT teaser/main and external GPT/Gemini/Muse plan prompts.
+Reason, relation, ending, alternative reasons, retain/exclude decisions, limitations
+and unavailable caveats must be Vietnamese in the SAME request. Source quotes,
+transcript, subtitles, title/hashtags and language codes retain source language;
+quotes inside explanations require a Vietnamese interpretation. No translation call.
+Main analysis cache keys also include the explanation-policy version. Display
+uses a lightweight Vietnamese-text guard: untranslated legacy/internal notes show
+an honest Vietnamese “not yet available in Vietnamese” notice; raw historical
+explanations remain untouched in the plan. This is not automatic translation or
+proof of language quality. Current provider compliance remains unverified.
+
+Inline Custom Teaser accepts a description or source timecode in each Part's
+Timeline, no separate section. Explicit source edits/results populate a valid candidate in the one teaser
+row; Apply installs it immediately, optional audition never gates the button; unfinished invalid drafts don't enter the plan. “Tạo/chọn lại teaser” uses
+ChatGPT only for a description/empty Auto request, never for timestamp input.
+No confirmation checkbox, extra timestamp pair or new preview/rendering pipeline.
+Hook→Main keeps its existing common value and foreground-only scope.
+
+## Latest export gate — both teasers required
+
+Supersedes earlier no-teaser consent/export fallback descriptions. New render
+and batch/resume paths require a technically valid selected teaser in BOTH parts;
+there is no main-only option or render-triggered AI/heuristic fill. Incomplete
+plans can be loaded/previewed/edited; each Timeline shows the blocking issue.
+Explicit selection retries stay bounded. Old history, original occurrences,
+queued snapshot content and existing exports remain intact.

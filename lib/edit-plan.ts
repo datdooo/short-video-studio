@@ -1,3 +1,4 @@
+import {EXPLANATION_INSTRUCTIONS} from './explanation-language.mjs';
 import { trimPartStart } from "../worker/part-start.mjs";
 import { PLAYBACK_RATE, FOREGROUND_SCALE, timelineDuration, isStillSegment } from "./render-config.mjs";
 import { resolvePlanVisualStyle } from "./visual-style/normalize.mjs";
@@ -313,7 +314,8 @@ export const EDIT_PLAN_SCHEMA = {
 } as const;
 
 export function buildPrompt(request: AnalyzeRequest) {
-  return `Create a 2-part video edit plan from the complete timestamped transcript below, following the user's editing instructions.
+  return `${EXPLANATION_INSTRUCTIONS}
+Create a 2-part video edit plan from the complete timestamped transcript below, following the user's editing instructions.
 
 Hard rules:
 - Preserve source chronology for the MAIN content inside every part. The only exception is explicitly marked supplemental footage appended at the very end to meet the minimum duration; never insert it into the main story.

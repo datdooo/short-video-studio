@@ -1,3 +1,49 @@
+# Active update — consolidated source-timecode Timeline (2026-10-20)
+
+Started clean on `recovery/visual-dev-reconstructed` at
+`69db1cb236b7e2310828661f0c0ec639cce73893`; previous lifecycle/ChatGPT work preserved.
+Read the new top section of `docs/custom-main-ranges.md`. Changes: per-part Teaser
+before Main in one Timeline, shared source HH:MM:SS:FF30fps inputs, untouched AI
+precision retained, Custom Teaser description/timestamp button inline, lock/restore colocated; Apply enabled for valid candidates; optional audition, no confirmation checkbox. Hook→Main selector moved near the first teaser,
+shared two-part value preserved, constrained narrow-window layout. Vietnamese
+explanation rules in existing ChatGPT/main/external requests; legacy notes retained
+in plans with honest Vietnamese fallback display, no translation calls. No plan schema,
+renderer, source/caption/BGM timing or queued-snapshot migration. New runtime file
+`lib/source-timecode.mjs` and `lib/explanation-language.mjs` added to shared packager manifest. NO tests, QA/render,
+browser or live AI/YouTube; user accepts manually. No push/production/backups.
+Latest policy: BOTH parts must have valid teasers; main-only consent removed.
+Shared readiness guards cover UI render/save, API before/after normalization,
+queued execution, batch submit and resume; legacy plan loading still permissive.
+No automatic fill at export. Visual Template stays in place, collapsed native
+accordion, derived label/Custom; Background Current recipes untouched.
+An initial combined build finished before these last user requirements could be
+stopped. Final review also localized remaining batch fallback warnings; completed
+intermediate packages are superseded by the final combined build recorded below.
+No running app or unrelated process was stopped (build processes had finished).
+
+Final delivery build: Node22 `npm run package:mac:dev`, exit0.
+App: `release/dev/ShortCut Studio Dev.app`.
+Log: `/tmp/shortcut-dev-timeline-final-build-20261020.log`.
+Three package invocations completed during this turn: the first was superseded
+by incoming mandatory-teaser/template requirements; final review also localized
+batch warnings/memoized readiness, requiring the last build. Intermediate logs:
+`/tmp/shortcut-dev-timeline-timecode-vi-build-20261020.log` and
+`/tmp/shortcut-dev-timeline-required-teasers-build-20261020.log`.
+Only the final app is current. Existing running DEV app was not stopped/launched.
+No tests, lint/typecheck, browser automation, render, provider/YouTube calls or
+manual playback/audition performed. Built-in packager native/signature audits
+completed; runtime/AI compliance/layout acceptance is still unverified.
+
+Manual acceptance: source60–70s displays00:01:00:00–00:01:10:00 and8s at1.25×;
+invalid/partial/FF30 stays draft; untouched AI endpoints stay exact; Apply works
+without audition/checkbox; both parts missing/invalid hooks block export/batch/
+resume; repair each through Timeline; toggle template without changing style,
+select a template and customize while it stays open; narrow-window Hook→Main
+control and optional source audition; new AI explanations Vietnamese while source
+quotes/title/subtitles/hashtags remain original. No old outputs/history deleted.
+
+---
+
 # Active update — preview source ownership + ChatGPT teaser revision (2026-10-20)
 
 Started clean at ca4c3c5bd4bb534a6defdcecc1f3c17a466daef9 on

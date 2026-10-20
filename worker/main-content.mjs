@@ -26,7 +26,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
       let provider, failure;
       try { provider = await resolveProvider(options.signal); } catch (e) { options.signal?.throwIfAborted(); failure = hookFailure(e); }
       const { sourceId, analysisKey, ...stableInput } = prepared;
-      const key = hash({ analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none' });
+      const key = hash({ explanationLanguage:'vi-v1',analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none' });
       const result = await shared(key, signal => cache.using(key, async () => {
         const cached = await cache.get(key);
         if (cached) {
@@ -52,7 +52,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
           }
         }
         if (!plan) plan = deterministicMainSelection(prepared,options.currentPlan,failure || 'provider-unavailable');
-        if (textOnly) plan.analysis.limitations.push('Main semantic selection received no accepted images; text/signal evidence only.');
+        if (textOnly) plan.analysis.limitations.push('AI chọn main chưa nhận được hình ảnh hợp lệ; chỉ có bằng chứng văn bản/tín hiệu, chưa xác minh hành động trong video.');
         plan.analysis = { ...plan.analysis, sourceId, analysisKey, cacheKey:key, ...(options.local?.cacheKey ? { localCacheKey:options.local.cacheKey } : {}) };
         validatePlan(plan,source); signal.throwIfAborted();
         // Do not perpetually cache auth/rate/timeout failures as a successful AI result.
