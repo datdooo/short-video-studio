@@ -26,7 +26,7 @@ export function createSourceReuse({sourcesRoot,load,download,metadata,isLocked=(
     const result=await shared(parsed.id,async active=>{
       const prior=index.get(parsed.id);
       if(prior){if(isLocked(prior.sourceId))throw new Error('Source is busy/in trash; do not download a duplicate.');
-        try{const loaded=await load(prior.sourceId);if(loaded.kind!=='youtube'||youtubeUrl(loaded.sourceUrl).id!==parsed.id)throw new Error('Cached source identity mismatch; inspect source metadata.');return loaded;}catch(error){if(!['ENOENT','ENOTDIR'].includes(error.code))throw error;index.delete(parsed.id);}}
+        try{const loaded=await load(prior.sourceId,active);if(loaded.kind!=='youtube'||youtubeUrl(loaded.sourceUrl).id!==parsed.id)throw new Error('Cached source identity mismatch; inspect source metadata.');return loaded;}catch(error){if(!['ENOENT','ENOTDIR'].includes(error.code))throw error;index.delete(parsed.id);}}
       if(index.size>=10000)throw new Error('Source index capacity reached; select existing sources instead of downloading duplicates.');
       if(truncated)throw new Error('Source library exceeds bounded legacy indexing; select the existing source rather than downloading a possible duplicate.');
       const context=await metadata(parsed.url,active);
@@ -36,7 +36,7 @@ export function createSourceReuse({sourcesRoot,load,download,metadata,isLocked=(
       // Guard unknown remote sizes during streaming; yt-dlp scratch cleanup owns partials.
       const space=new AbortController();let checking=false;
       const timer=setInterval(async()=>{if(checking)return;checking=true;try{const s=await statfs(path.dirname(sourcesRoot));if(s.bavail*s.bsize<512*1024*1024)space.abort(new Error('Low storage: preserve 512 MiB free; download cancelled.'));}catch{space.abort(new Error('Storage availability check failed'));}finally{checking=false;}},2000);timer.unref();
-      try{const source=await download(parsed.url,AbortSignal.any([active,space.signal]));index.set(parsed.id,{sourceId:source.id,at:source.createdAt||''});await saveIndex();return await load(source.id);}
+      try{const source=await download(parsed.url,AbortSignal.any([active,space.signal]));index.set(parsed.id,{sourceId:source.id,at:source.createdAt||''});await saveIndex();return await load(source.id,active);}
       finally{clearInterval(timer);}
     },signal);
     return structuredClone(result);

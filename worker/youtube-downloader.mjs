@@ -28,6 +28,12 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
       try { listener(value); } catch { /* A disconnected observer never owns a download. */ }
     }
   }
+  function processingOptions(parsed, phase, signal) {
+    return { signal,
+      onQueued: kind => emitProgress(parsed, { phase: kind === 'render' ? 'waiting-render' : 'waiting-resource', percent: null }),
+      onStart: () => emitProgress(parsed, { phase, percent: null }),
+    };
+  }
   function subscribeProgress(url, listener) {
     const { id } = youtubeUrl(url);
     if (!progressListeners.has(id) && progressListeners.size >= 64) throw new Error('Quá nhiều lượt theo dõi nguồn. Thử lại sau.');
@@ -147,7 +153,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
         if (!ffmpeg) throw new Error('Missing tool FFmpeg');
         emitProgress(parsed, { phase: 'muxing', percent: null });
         const inputs = info.combined ? ['-i', path.join(directory, 'combined.media')] : ['-i', path.join(directory, 'video.media'), '-i', path.join(directory, 'audio.media')];
-        await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...inputs, '-map', '0:v:0', '-map', info.combined ? '0:a:0' : '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', path.join(directory, 'source.mp4')], { signal: bounded });
+        await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...inputs, '-map', '0:v:0', '-map', info.combined ? '0:a:0' : '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', path.join(directory, 'source.mp4')], processingOptions(parsed, 'muxing', bounded));
       }
       return info;
     }
@@ -221,7 +227,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
         if (!name) throw new Error('Media validation failed');
         let mediaPath = path.join(directory, name);
         emitProgress(parsed, { phase: 'probing', percent: null });
-        let media = await probeMedia(mediaPath);
+        let media = await probeMedia(mediaPath, signal);
         const expected = Number(info.duration);
         if (!media.width || !media.height || !media.hasAudio || !media.duration || (expected > 0 && media.duration < expected - Math.max(3, expected * .02)) || (await stat(mediaPath)).size < 1000) throw new Error('Media validation failed: video stream/audio missing or truncated');
         const target = upscaleDimensions(media.width, media.height);
@@ -233,11 +239,11 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
           const encode = async (encoder) => run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', mediaPath,
             '-map', '0:v:0', '-map', '0:a:0', '-vf', `scale=${target.width}:${target.height}:flags=lanczos,setsar=1`,
             '-c:v', encoder, ...(encoder === 'h264_videotoolbox' ? ['-b:v', '12M', '-allow_sw', '1'] : ['-preset', 'fast', '-crf', '18']),
-            '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output], { signal: bounded });
+            '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output], processingOptions(parsed, 'upscaling', bounded));
           const encoder = upscaleEncoder();
           try { await encode(encoder); }
           catch (error) { bounded.throwIfAborted(); if (encoder !== 'h264_videotoolbox') throw error; await encode('libx264'); }
-          const scaled = await probeMedia(output);
+          const scaled = await probeMedia(output, bounded);
           if (scaled.width !== target.width || scaled.height !== target.height || !scaled.hasAudio || Math.abs(scaled.duration - media.duration) > .5 || (await stat(output)).size < 1000) throw new Error('Media validation failed: upscale output invalid');
           media = scaled; mediaPath = output;
         }

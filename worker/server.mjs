@@ -94,6 +94,9 @@ const batchControllers = new Map();
 const renderControllers = new Map();
 const commandLifecycle = createCommandLifecycle();
 const mediaResources=createMediaResources();
+// Header/stream inspection is serial and bounded, but must not wait for a full
+// export. No full-video decode or heavy FFmpeg/ASR lease is needed here.
+const metadataResources=createMediaResources({maxWaiting:16});
 const pendingRenderSubmissions=new Map();
 let renderQueue=Promise.resolve();
 const exportBusy=()=>pendingRenderSubmissions.size>0||[...jobs.values()].some(j=>["queued","rendering"].includes(j.state)&&renderControllers.has(j.id));
@@ -871,8 +874,34 @@ function assertId(value) {
 }
 
 async function run(binary,args,options={}){
-  const heavy=binary===ffmpeg||binary===ffprobe||binary===whisper;
-  if(heavy)return mediaResources.use('analysis',signal=>runCommand(binary,binary===ffmpeg?balancedFfmpegArgs(args):args,{...options,signal,lowerPriority:true}),options.signal);
+  if(ffprobe&&binary===ffprobe){
+    const inherited=mediaResources.currentSignal();
+    const parent=AbortSignal.any([options.signal,inherited].filter(Boolean));
+    // Heavy-lease validation gets the next probe slot, not the background FIFO.
+    // Its execution deadline starts at spawn, so waiting behind one live probe
+    // cannot consume the time budget of an otherwise completed export.
+    let timeout=inherited?undefined:AbortSignal.timeout(30_000);
+    const bounded=timeout?AbortSignal.any([parent,timeout]):parent;
+    try{return await metadataResources.use(inherited?'render':'probe',signal=>{
+      timeout ||= AbortSignal.timeout(30_000);
+      return runCommand(binary,args,{...options,signal:AbortSignal.any([signal,timeout]),lowerPriority:true});
+    },bounded);}
+    catch(error){
+      parent.throwIfAborted();
+      if(timeout?.aborted)throw Object.assign(new Error('Kiểm tra video quá 30 giây. Thử chuẩn bị nguồn lại sau.'),{code:'MEDIA_PROBE_TIMEOUT',status:504});
+      if(error.code==='MEDIA_QUEUE_FULL')throw Object.assign(new Error('Đang có nhiều lượt kiểm tra video. Thử lại sau.'),{code:'MEDIA_PROBE_BUSY',status:429});
+      throw error;
+    }
+  }
+  const heavy=binary&&(binary===ffmpeg||binary===whisper);
+  if(heavy){
+    const state=mediaResources.state();
+    if(!mediaResources.ownsLease()&&(state.active||state.waiting))options.onQueued?.(state.renderBusy?'render':'analysis');
+    return mediaResources.use('analysis',signal=>{
+      options.onStart?.();
+      return runCommand(binary,binary===ffmpeg?balancedFfmpegArgs(args):args,{...options,signal,lowerPriority:true});
+    },options.signal);
+  }
   return runCommand(binary,args,options);
 }
 async function runCommand(binary, args, options = {}) {
@@ -925,16 +954,17 @@ async function runCommand(binary, args, options = {}) {
   });
 }
 
-async function probeMedia(mediaPath) {
+async function probeMedia(mediaPath, signal) {
   const result = await run(
     ffprobe,
     [
       "-v", "error",
+      "-threads", "1", "-probesize", "5000000", "-analyzeduration", "5000000",
       "-show_entries", "format=duration,start_time:stream=index,codec_type,codec_name,width,height,sample_aspect_ratio,start_time,duration,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation",
       "-of", "json",
       mediaPath,
     ],
-    { missingMessage: "Không tìm thấy ffprobe. Hãy cài FFmpeg trước." },
+    { signal, missingMessage: "Không tìm thấy ffprobe. Hãy cài FFmpeg trước." },
   );
   const data = JSON.parse(result.stdout);
   const video = data.streams?.find((stream) => stream.codec_type === "video");
@@ -1206,12 +1236,13 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-async function loadSource(sourceId) {
+async function loadSource(sourceId, signal) {
+  signal?.throwIfAborted();
   const id = assertId(sourceId);
   const directory = path.join(sourcesRoot, id);
   const metadata = JSON.parse(await readFile(path.join(directory, "source.json"), "utf8"));
   const mediaPath = await findSourceMedia(directory);
-  const media = await probeMedia(mediaPath);
+  const media = await probeMedia(mediaPath, signal);
   const source = { ...metadata, ...media, directory, mediaPath };
   return { ...source, sourceContext: sourceContextFor(source) };
 }
@@ -1268,13 +1299,14 @@ async function subtitleFrames(source, plan, part, directory, signal) {
   const blank = path.join(directory, "subtitle-blank.png");
   await sharp({ create: { width: 1080, height: 1920, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toFile(blank);
   const frames = []; let position = 0;
+  // Replayed teaser/main captions can share exact bitmaps within this part.
+  const subtitleImages = new Map();
   const add = (file, duration) => { if (duration > 0.001) frames.push(`file '${path.basename(file)}'\nduration ${(duration/PLAYBACK_RATE).toFixed(6)}`); };
   for (const [index, cue] of captions.entries()) {
     signal?.throwIfAborted();
     const start = Math.max(position, cue.start), end = Math.min(cue.end, captions[index + 1]?.start ?? Infinity);
     if (end <= start) continue;
     add(blank, start - position);
-    const file = path.join(directory, `subtitle-${index}.png`);
     const size = style.size;
     const lines = cue.text.split("\n"), family = fontFamilyFor(cue.text, style.font);
     const y = subtitleY(style, source.height);
@@ -1282,7 +1314,13 @@ async function subtitleFrames(source, plan, part, directory, signal) {
     const legacyGraphic = `<g font-family="${escapeXml(family)}" font-size="${size}" font-weight="700" stroke-linejoin="round" paint-order="stroke fill"><g transform="translate(2,3)" fill="#000" stroke="#000" stroke-width="${style.outline * 2 + 2}" opacity=".6">${text}</g><g fill="${style.color}" stroke="${style.outlineColor}" stroke-width="${style.outline * 2}">${text}</g></g>`;
     const graphic = style.effect === undefined ? legacyGraphic : styledTextSvg(lines, { fontFamily: family, fontSize: size, firstBaseline: y - (lines.length - 1) * size * 1.2, lineHeight: size * 1.2, roundBaseline: false, style: { ...style, fontWeight: style.fontWeight ?? 700, opacity: style.opacity ?? 1 } });
     const svg = (opacity) => `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><g opacity="${opacity}">${graphic}</g></svg>`;
-    await sharp(Buffer.from(svg(1))).png().toFile(file);
+    const image = svg(1);
+    let file = subtitleImages.get(image);
+    if (!file) {
+      file = path.join(directory, `subtitle-${index}.png`);
+      await sharp(Buffer.from(image)).png().toFile(file);
+      if (subtitleImages.size < 256) subtitleImages.set(image, file);
+    }
     add(file, end - start);
     position = end;
   }
@@ -1568,7 +1606,7 @@ function startRender(body,parentSignal){
 }
 async function prepareRenderSubmission(body, parentSignal, fingerprint) {
   if (mediaLibrary.isLocked(body.sourceId)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
-  const source = await loadSource(body.sourceId);
+  const source = await loadSource(body.sourceId, parentSignal);
   parentSignal?.throwIfAborted();
   body.plan = originalCutPlan(body.plan, source.id);
   if(body.transcript!==undefined){if(typeof body.transcript!=='string'||body.transcript.length>100000)throw Error('Invalid render transcript.');body.plan={...body.plan,teaserTranscriptKey:await selectionDigest(transcriptValue(body.transcript))};}
@@ -1643,7 +1681,7 @@ async function resumeRender(job,parentSignal){
   requireCurrentExportPolicy(job);
   if(!['error','cancelled'].includes(job.state)||renderControllers.has(job.id))throw new Error('Render still active or already complete; no duplicate submission.');
   if(mediaLibrary.isLocked(job.sourceId))throw new Error('Source is in use/trash.');
-  const source=await loadSource(job.sourceId);validateRenderPlan(job.plan,source);await verifySourceTeasers(job.plan,source,parentSignal);job.state='queued';job.error=null;
+  const source=await loadSource(job.sourceId,parentSignal);validateRenderPlan(job.plan,source);await verifySourceTeasers(job.plan,source,parentSignal);job.state='queued';job.error=null;
   await persistBatchHistory({strict:true});enqueueRender(job,source,structuredClone(job.plan),parentSignal);return job;
 }
 

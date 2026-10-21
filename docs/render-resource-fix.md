@@ -1,5 +1,10 @@
 # Bounded rendering / M2 balanced profile — 2026-10-20
 
+2026-10-21 follow-up: `source-probe-render-performance.md` separates bounded
+metadata probes from the heavy lane, protects export-owned validation and removes
+redundant blend/subtitle work. The original FFmpeg/Whisper/VAD/export limits and
+finite range assembly below remain. No new runtime performance qualification.
+
 Status: source/diff/syntax review only; no render, tests, benchmark, browser or
 AI/YouTube requests. User reported whole-system lag on Render. This change must
 not be called performance-qualified until the user measures real playback/export.

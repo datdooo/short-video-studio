@@ -145,17 +145,17 @@ type WorkerSource = {
 };
 
 type SourcePreparationProgress = {
-  phase: 'metadata'|'connecting'|'download'|'muxing'|'probing'|'upscaling'|'completing';
+  phase: 'metadata'|'connecting'|'download'|'muxing'|'probing'|'upscaling'|'completing'|'waiting-render'|'waiting-resource';
   percent: number|null; stream?: 'video'|'audio'|'media'; estimated?: boolean;
 };
-const SOURCE_PREPARATION_PHASES=['metadata','connecting','download','muxing','probing','upscaling','completing'] as const;
+const SOURCE_PREPARATION_PHASES=['metadata','connecting','download','muxing','probing','upscaling','completing','waiting-render','waiting-resource'] as const;
 function sourcePreparationLabel(progress:SourcePreparationProgress|null){
   if(!progress)return 'Đang chuẩn bị…';
   if(progress.phase==='download'){
     const label=progress.stream==='audio'?'Tải tiếng':progress.stream==='video'?'Tải hình':'Tải nguồn';
     return progress.percent===null?`${label}…`:`${label} ${progress.estimated?'≈ ':''}${progress.percent}%`;
   }
-  return {metadata:'Đọc thông tin nguồn…',connecting:'Kết nối nguồn…',muxing:'Ghép hình và tiếng…',probing:'Kiểm tra video…',upscaling:'Chuẩn hóa video…',completing:'Hoàn tất nguồn…'}[progress.phase];
+  return {metadata:'Đọc thông tin nguồn…',connecting:'Kết nối nguồn…',muxing:'Ghép hình và tiếng…',probing:'Kiểm tra video…',upscaling:'Chuẩn hóa video…',completing:'Hoàn tất nguồn…','waiting-render':'Chờ render để xử lý nguồn…','waiting-resource':'Chờ tác vụ media khác…'}[progress.phase];
 }
 async function readSourcePreparation(response:Response,onProgress:(value:SourcePreparationProgress)=>void):Promise<{source?:WorkerSource;error?:string}>{
   if(!response.headers.get('content-type')?.includes('application/x-ndjson'))return response.json();

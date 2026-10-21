@@ -1,3 +1,51 @@
+# Active fix — source probe during export / redundant render work (2026-10-21)
+
+Actual base HEAD `0bbc6ff3d696d63698c1226f226c0316d2d99e1e`, clean at start,
+branch `recovery/visual-dev-reconstructed`, cached upstream ahead6. Remote was
+not fetched/reverified; no push/merge. Preserve all earlier fixes.
+Read `docs/source-probe-render-performance.md` for cause, paths and limits.
+
+Read-only live health/job snapshot: render active,2 waiting, part1/progress19,
+VideoToolbox and no CPU fallback. Existing launcher tail had no probe failure.
+No new render/download/AI/ASR/browser/test/lint/typecheck/benchmark was started.
+
+SOURCE changes:
+- ffprobe no longer waits for full export's heavy lease. Independent serial
+  metadata lane,1 running/16 background waiting +1 reserved priority slot for
+  heavy-owner verification,1 thread,5MB/5s probe. Background deadline30s including
+  wait; heavy-owner deadline30s starts at execution. Retains inherited job abort,
+  child group cleanup and process priority. Explicit busy/timeout errors, no
+  full redownload fallback for these local errors. Cache/new source load and
+  preflight/resume now carry existing signals into probe.
+- FFmpeg mux/upscale still uses exclusive heavy lease; progress reports waiting
+  render/resource versus actual work. Does not turn normalization into concurrent
+  export. Download byte progress and API/result schema remain.
+- Transition blend timeline-enable uses exact existing windows and math; no
+  full-foreground pixel-expression work outside effects. Wash/alpha still run.
+- Per-part subtitle SVG→PNG reuse capped256 entries; identical bitmaps only,
+  unchanged concat order/durations/tail. No global media cache/dependency.
+- No encoder/bitrate/CRF/resolution/FPS/speed/framing/audio/metadata-policy change.
+  Finite packet range assembly and M2 thread/resource protections preserved.
+
+Diff reviewed, including independent read-only cancellation/admission review.
+No speedup/quality/UI runtime claim. User manually accepts. One final combined
+Node22 `npm run package:mac:dev` (nice10) completed exit0; log
+`/tmp/shortcut-dev-probe-render-efficiency-20261021.log`. App current with source:
+`release/dev/ShortCut Studio Dev.app`; six changed packaged worker/lib modules
+hash-match source, frontend compiled in this build. Only docs edited afterward.
+Live DEV PIDs54307/54308 and active render left alone; cwd now
+`release/dev/.build-sCvZgk/previous-build.app/Contents/Resources/app`. Retain this
+old app until jobs finish. User normally quits/reopens the new DEV app afterward;
+the live worker still has old code, so its waiting imports are not fixed in place.
+No new bundle/backups and no user media/exports/credentials/production touched.
+Removed only this build's generated Swift/icon scratch
+`$TMPDIR/shortcut-mac-build-OxIzY0`; retained old app is in active use. App allocated
+du size293748KiB; no APFS free-space recovery claim. No broad cleanup.
+Source/docs checkpoint committed locally after build (use `git log -1` for SHA);
+no push, cached upstream now ahead7; remote not live-verified.
+
+---
+
 # Active update — preparation button download percent (2026-10-21)
 
 Actual clean base `286e7394947d22d6b13bb3fe8ada0fcf8451245b`, same DEV branch.

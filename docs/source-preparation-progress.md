@@ -1,5 +1,11 @@
 # Tiến độ nút Chuẩn bị nguồn — 2026-10-21
 
+Follow-up cùng ngày: `docs/source-probe-render-performance.md` ghi sửa probe bị
+chờ render. ffprobe chuyển sang lane nhẹ có giới hạn/timeout riêng; FFmpeg ghép/
+chuẩn hóa còn xếp hàng nặng thì báo “Chờ render để xử lý nguồn…” hoặc “Chờ tác vụ
+media khác…”, không giả là đang kiểm tra. Các ghi chú build phía cuối mục này là
+bản trước follow-up; build mới xem đầu CODEX_HANDOFF.md.
+
 - Nút sau ô URL YouTube nhận tiến độ tải thật, thay vì chờ JSON cuối cùng.
 - Phần trăm là downloaded_bytes / total_bytes của từng luồng hình/tiếng/media.
   Nếu chỉ có total_bytes_estimate, hiển thị ≈. Không biết tổng byte thì không

@@ -11,6 +11,8 @@ export function youtubeUrl(value) {
 // Only fixed messages leave the downloader. Raw errors can contain signed URLs,
 // cookie paths, headers or credential values from an upstream library.
 export function youtubeFailure(error) {
+  if(error?.code==='MEDIA_PROBE_TIMEOUT')return 'Kiểm tra video quá 30 giây. Thử chuẩn bị nguồn lại sau.';
+  if(error?.code==='MEDIA_PROBE_BUSY')return 'Đang có nhiều lượt kiểm tra video. Thử lại sau.';
   const value = String(error?.message || error);
   if ([
     'YouTube yêu cầu xác thực hoặc cookie trình duyệt chưa đọc được',
@@ -53,6 +55,9 @@ export async function fallback(attempts, execute, signal) {
     try { return await execute(attempt); }
     catch (error) {
       signal?.throwIfAborted();
+      // A local bounded probe failure is not an authentication/format failure.
+      // Do not redownload the same media through every fallback engine.
+      if(['MEDIA_PROBE_TIMEOUT','MEDIA_PROBE_BUSY'].includes(error?.code))throw Object.assign(new Error(youtubeFailure(error)),{code:error.code,status:error.status});
       failures.push(`${attempt.label}: ${youtubeFailure(error)}`);
     }
   }
