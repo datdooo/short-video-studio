@@ -1,3 +1,47 @@
+# RESUMED — final UI integration (2026-10-21)
+
+User explicitly resumed the paused handoff. Actual starting Git:
+`recovery/visual-dev-reconstructed`, HEAD
+`578ded553feb11ec7780eba213b582555a897fb3`, clean. All earlier checkpoint work
+preserved. No push/merge; remote not fetched/reverified for this scoped UI turn.
+
+Completed source review of candidate/editor/drafts, Batch/Kho layout and controls;
+no new feature scope/research/engine changes. Narrow follow-up corrections:
+- Review catalog was keyed by playback URL (temporarily empty on hydration, blob
+  for local media). It could be overwritten before saved source reopened. Review
+  now waits for session + managed source, uses canonical managed media identity,
+  and exact content/cue/request hashes. Known legacy URL hashes migrate unchanged
+  catalog order/focus. Unknown historic blob hashes are not guessed; selected
+  teaser remains in the plan, and unrecoverable older UI catalog may need retry.
+- Batch's forced180px+180px rows could overflow a short viewport while workspace
+  clipping hid the bottom. Zero-minimum tracks let existing inner panes scroll.
+- Long filenames in download actions may grow beyond common36px minimum rather
+  than overflowing a forced36px box. Regular buttons/compact variants retained.
+
+Latest loading-text/dark-overlay removals from578ded5 remain in source; buffering,
+BGM timing/errors and transition presets are unchanged. Preview1×, export1.25×,
+framing125%, main/locks/timestamps, provider algorithms and render-lag engine fixes
+unchanged. No worker/production/credential/media/export/backup edits.
+
+No tests/lint/typecheck/browser/smoke/render/AI/YouTube/ASR or listening run.
+User manually accepts. One combined Node22 `npm run package:mac:dev` completed
+exit0. App `release/dev/ShortCut Studio Dev.app`; log
+`/tmp/shortcut-dev-handoff-resumed-final-20261021.log`. All current source changes,
+including prior loading-overlay removal, are in this app; only docs edited after
+build. No package retry, smoke or runtime QA. Never equate build success to
+playback/layout/inference qualification. Running DEV web/worker PIDs39230/39231
+remain on old `.build-8Qtejy/previous-build.app`, left alone. User normally quits
+and reopens the new DEV app after jobs finish; do not restart active jobs.
+
+Source/docs committed as a coherent follow-up (use `git log -1` for SHA), no push.
+Manual checklist: retry -> candidates append / Apply keeps order -> reload both
+parts; Space play/pause + seek without loading overlay; short-window Batch/Kho
+scrolling, long filenames, icon insets and consistent Inspector controls.
+Unknown old blob-URL catalog hashes may need new choices; saved selected teaser
+and all main ranges/history/job snapshots are preserved.
+
+---
+
 # HANDOFF NOW — user paused implementation for quota (2026-10-21)
 
 **Stop new implementation. Preserve all work.** User requested immediate handoff.

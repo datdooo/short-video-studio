@@ -752,7 +752,8 @@ button, input, textarea { font: inherit; }
 /* Existing text actions, including Batch/Kho native and shadcn buttons, use
    the same normal size. Cards, icon controls and compact chrome stay distinct. */
 .prototype-shell :is(.studio-source-panel,.studio-inspector-body) button[aria-pressed]:not([aria-label^="Visual template:"]) { min-height:var(--control-height); padding:6px 12px; font-size:var(--control-font-size); }
-.prototype-shell :is(.studio-batch-workspace,.studio-library-workspace) :is(.studio-action-row button,a.studio-download) { height:var(--control-height); min-height:var(--control-height); padding:0 var(--control-padding); gap:var(--control-gap); font-size:var(--control-font-size); }
+.prototype-shell :is(.studio-batch-workspace,.studio-library-workspace) .studio-action-row button { min-height:var(--control-height); gap:var(--control-gap); font-size:var(--control-font-size); }
+.prototype-shell :is(.studio-batch-workspace,.studio-library-workspace) a.studio-download { height:auto; min-height:var(--control-height); padding:6px var(--control-padding); gap:var(--control-gap); font-size:var(--control-font-size); }
 
 /* Kho owns one scroll area below its search and tabs, never a workspace scroll. */
 .prototype-shell > .studio-library-workspace { overflow:hidden; display:flex; flex-direction:column; }
@@ -765,7 +766,7 @@ button, input, textarea { font: inherit; }
 
 /* Full workspace layouts, using existing job/media components and callbacks. */
 .prototype-shell > .studio-batch-workspace { max-width:none; margin:0; min-width:0; overflow:hidden; display:flex; flex-direction:column; padding:12px; }
-.studio-batch-grid { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(240px,300px); grid-template-rows:minmax(180px,.9fr) minmax(180px,1.1fr); gap:12px; margin-top:12px; }
+.studio-batch-grid { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(240px,300px); grid-template-rows:minmax(0,.9fr) minmax(0,1.1fr); gap:12px; margin-top:12px; }
 .studio-batch-grid > * { min-width:0; min-height:0; }
 .studio-batch-setup { grid-column:1; grid-row:1; }
 .studio-batch-queue { grid-column:1; grid-row:2; }

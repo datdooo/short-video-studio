@@ -22,8 +22,8 @@ function choicesOf(part:EditPart):Choice[]{
  for(let index=0;index<(h.alternatives?.length||0);index++)try{const next=chooseTeaserAlternative(part,index);if(next.teaser?.status==='selected')choices.push({id:choiceId(next.teaser),part:next});}catch{/* Malformed optional choices never hide the valid selected excerpt. */}
  return choices;
 }
-export function TeaserCandidateReview({part,proposed,contextKey,hasEdits,sourceUrl,suspended,onAudition,onPlaybackControl,onApply}:{
- part:EditPart;proposed:EditPart|null;contextKey:string;hasEdits:boolean;sourceUrl:string;suspended:boolean;onAudition:()=>void;
+export function TeaserCandidateReview({part,proposed,contextKey,legacyContextKey,hasEdits,sourceUrl,suspended,onAudition,onPlaybackControl,onApply}:{
+ part:EditPart;proposed:EditPart|null;contextKey:string;legacyContextKey?:string;hasEdits:boolean;sourceUrl:string;suspended:boolean;onAudition:()=>void;
  onPlaybackControl:(control:PlaybackControl|null)=>void;onApply:(choice:EditPart)=>void;
 }){
  const h=part.teaser?.status==='selected'?part.teaser:null,currentId=h?choiceId(h):'';
@@ -33,7 +33,8 @@ export function TeaserCandidateReview({part,proposed,contextKey,hasEdits,sourceU
   try{const value=v as {key:string;items:Choice[]};return typeof value.key==='string'&&Array.isArray(value.items)&&value.items.length<=MAX_CHOICES&&value.items.every(c=>{if(typeof c.id!=='string'||c.part?.id!==part.id||hookRangeKey(c.part)!==hookRangeKey(part)||c.part.teaser?.status!=='selected')return false;validateTeaser(c.part);return c.id===choiceId(c.part.teaser);});}catch{return false;}
  });
  const incoming=[...choicesOf(part),...(proposed&&pending?.selection!=='manual'?choicesOf(proposed):[])];
- const choices:Choice[]=catalog?.key===contextKey?[...catalog.items]:[];
+ const catalogMatches=catalog&&(catalog.key===contextKey||catalog.key===legacyContextKey);
+ const choices:Choice[]=catalogMatches&&catalog?[...catalog.items]:[];
  for(const choice of incoming)if(!choices.some(c=>c.id===choice.id))choices.push(choice);
  // Append new analysis results. Apply only changes the current badge; it never
  // sorts/replaces the catalog. Bound UI history, preserving the active choice.
@@ -43,10 +44,11 @@ export function TeaserCandidateReview({part,proposed,contextKey,hasEdits,sourceU
  useEffect(()=>{if(savedChoices.length&&(catalog?.key!==contextKey||JSON.stringify(catalog.items.map(c=>c.id))!==ids))setCatalog({key:contextKey,items:savedChoices});},[contextKey,ids,catalog,setCatalog]);
  if(proposed&&pending?.selection==='manual'&&!choices.some(c=>c.id===choiceId(pending)))choices.push({id:choiceId(pending),part:proposed,draft:true});
  const[focus,setFocus]=useEditorDraft<{scope:string;id:string}|null>(`teaser-review-focus-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'scope'in v&&typeof v.scope==='string'&&'id'in v&&typeof v.id==='string');
+ useEffect(()=>{if(legacyContextKey&&focus?.scope===legacyContextKey)setFocus({scope:contextKey,id:focus.id});},[legacyContextKey,contextKey,focus,setFocus]);
  const lastProposal=useRef('');
  const pendingId=pending?choiceId(pending):'';
  useEffect(()=>{if(!pendingId){lastProposal.current='';return;}if(lastProposal.current!==pendingId){lastProposal.current=pendingId;setFocus({scope:contextKey,id:pendingId});}},[pendingId,contextKey,setFocus]);
- const selected=choices.find(c=>c.id===(focus?.scope===contextKey?focus.id:pendingId||currentId))||choices[0];
+ const selected=choices.find(c=>c.id===(focus&&(focus.scope===contextKey||focus.scope===legacyContextKey)?focus.id:pendingId||currentId))||choices[0];
  const teaser=selected?.part.teaser?.status==='selected'?selected.part.teaser:null;
  const used=selected?.id===currentId;
  return <aside className="studio-teaser-review" data-has-choice={Boolean(teaser)} aria-label={`Ứng viên teaser Part ${part.id}`}>

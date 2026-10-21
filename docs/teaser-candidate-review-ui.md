@@ -71,3 +71,20 @@ User paused for quota. Latest Grok workspace package finished exit0 at
 `/tmp/shortcut-dev-grok-workspaces-final-20261021.log`, but candidate loading
 overlay removal occurred after frontend compilation; newest source is not fully
 in that app. No further build/tests/QA. Read top of CODEX_HANDOFF.md before resume.
+
+## Resume correction — 2026-10-21
+
+After user resume, source review found that transient empty/blob playback URLs
+could reset the catalog during session restore. Review now waits for the managed
+source/cues and keys by canonical source URL, preserving exact legacy matches and
+card/focus order. Unknown old blob hashes cannot be safely reconstructed; saved
+plan selections remain available. No freshness relaxation or plan migration.
+Batch zero-minimum grid rows retain inner scrolling in short windows; long
+download actions grow beyond36px when necessary. Build outcome is recorded at
+the top of CODEX_HANDOFF.md. No runtime acceptance performed.
+
+Final resumed delivery: one Node22 DEV package build succeeded, exit0, log
+`/tmp/shortcut-dev-handoff-resumed-final-20261021.log`. This app now includes the
+loading-overlay removal and source/scroll/download-action corrections. Only docs
+changed afterward. Old live app left running; no tests/browser/render/AI/audio
+acceptance performed, no push. Open new app normally after jobs finish.

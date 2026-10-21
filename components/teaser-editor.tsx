@@ -25,11 +25,21 @@ function savedInput(part:EditPart){
  if(custom.mode==='timestamp'){try{const parsed=parseCustomTeaser(custom.input);if(parsed.mode==='timestamp')return`${formatSourceTimecode(parsed.start)} → ${formatSourceTimecode(parsed.end)}`;}catch{return'';}}
  return custom.input;
 }
-export function TeaserEditor({transition,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{transition?:ReactNode;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart)=>void;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<Teaser>}){
+export function TeaserEditor({transition,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,reviewSourceKey,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{transition?:ReactNode;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;reviewSourceKey:string;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart)=>void;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<Teaser>}){
  const enabled=part.teaserEnabled!==false;
- const reviewInput=draftIdentity([sourceUrl,part.id,part.title,part.hook,part.segments,cues,reviewRequest]);
- const[reviewRevision,setReviewRevision]=useState<{input:string;key:string}|null>(null);
- useEffect(()=>{let current=true;void selectionDigest(reviewInput).then(key=>{if(current)setReviewRevision({input:reviewInput,key});});return()=>{current=false;};},[reviewInput]);
+ // Playback URLs can be blob URLs, or empty while a saved managed source is
+ // reopening. Neither is an analysis identity. Keep restored catalogs untouched
+ // until source/captions are available, then use its canonical managed media URL.
+ const reviewInput=draftIdentity([reviewSourceKey,part.id,part.title,part.hook,part.segments,cues,reviewRequest]);
+ const[reviewRevision,setReviewRevision]=useState<{input:string;key:string;legacyKey?:string}|null>(null);
+ useEffect(()=>{
+  if(!reviewSourceKey)return;let current=true;
+  // Preserve old catalogs only when their exact source/content/request hash
+  // matches a known URL. An unknown historic blob URL is not guessed.
+  const legacyInput=sourceUrl&&sourceUrl!==reviewSourceKey?draftIdentity([sourceUrl,part.id,part.title,part.hook,part.segments,cues,reviewRequest]):null;
+  void Promise.all([selectionDigest(reviewInput),legacyInput?selectionDigest(legacyInput):undefined]).then(([key,legacyKey])=>{if(current)setReviewRevision({input:reviewInput,key,legacyKey});});
+  return()=>{current=false;};
+ },[reviewInput,reviewSourceKey,sourceUrl]);
  const identity=useMemo(()=>draftIdentity([part.segments,part.teaser,part.customTeaser,cues]),[part,cues]);
  const baseline=useMemo(()=>savedTimes(part),[part]);
  const[draft,setDraft]=useEditorDraft<{key:string;times:Times}|null>(`teaser-times-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'times'in v&&!!v.times&&typeof v.times==='object'&&'start'in v.times&&typeof v.times.start==='string'&&'end'in v.times&&typeof v.times.end==='string'),[inputDraft,setInputDraft]=useEditorDraft<{key:string;text:string}|null>(`teaser-input-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'text'in v&&typeof v.text==='string');
@@ -113,7 +123,7 @@ export function TeaserEditor({transition,onAuditionControl,reviewTarget,reviewVi
   {error&&<p role="alert" className="text-amber-200">{explainInVietnamese(error,'Không chọn được teaser; kiểm tra nguồn, kết nối AI hoặc mốc đã nhập.')} Teaser/main hiện tại không thay đổi.</p>}
   </div>
  </section>
- {active&&reviewVisible&&reviewTarget&&reviewRevision?.input===reviewInput&&createPortal(<TeaserCandidateReview part={part} proposed={enabled?proposed:null} contextKey={reviewRevision.key} sourceUrl={sourceUrl} suspended={suspended||!enabled} onAudition={onAudition} onPlaybackControl={bindAudition}
+ {active&&reviewVisible&&reviewTarget&&reviewSourceKey&&reviewRevision?.input===reviewInput&&createPortal(<TeaserCandidateReview part={part} proposed={enabled?proposed:null} contextKey={reviewRevision.key} legacyContextKey={reviewRevision.legacyKey} sourceUrl={sourceUrl} suspended={suspended||!enabled} onAudition={onAudition} onPlaybackControl={bindAudition}
   hasEdits={Boolean(draft?.key===identity||inputDraft!==null||proposed)}
   onApply={next=>{request.current?.abort();audition.current?.pause();onChange(next);setDraft(null);setInputDraft(null);setCandidate(null);setBusy(false);setError('');}}/>,reviewTarget)}
  </>;
