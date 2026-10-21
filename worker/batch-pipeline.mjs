@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {snapshotPlanVisualStyle} from '../lib/visual-style/normalize.mjs';
 import {validateRenderPlan} from './plan-validation.mjs';
 // Existing FIFO calls this processor; one link's error cannot mutate another plan.
-export function createBatchProcessor({acquire,load,analyze,render,resumeRender,getJob,persist,createId=randomUUID}) {
+export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,resumeRender,getJob,persist,createId=randomUUID}) {
   return async function prepare(batch,_body,items,signal){
     let authBlocked=false;
     for(const item of items){
@@ -35,6 +35,13 @@ export function createBatchProcessor({acquire,load,analyze,render,resumeRender,g
           }
           item.approved=true;await persist();
         }
+        if(item.needsTeasers){
+          if(['gemini','muse'].includes(settings.provider)){item.state='awaiting-import';item.error='Nhập lại hook của provider đã chọn; main được giữ.';await persist();continue;}
+          if(!repairTeasers)throw Error('Chưa có đường sửa teaser; mở plan trong editor.');
+          item.state='analyzing';await persist();
+          item.plan=await repairTeasers(item.plan,source,signal,item.transcript??source.transcript??'',settings);
+          item.needsTeasers=false;item.approved=true;await persist();
+        }
         if(item.approved===false){item.state='review-required';await persist();continue;}
         validateRenderPlan(item.plan,source);
         item.state='render-ready';await persist();
@@ -44,7 +51,7 @@ export function createBatchProcessor({acquire,load,analyze,render,resumeRender,g
         const job=await render({sourceId:source.id,plan:structuredClone(item.plan),submissionId:item.submissionId},signal);
         item.jobId=job.id;item.plan=structuredClone(job.plan);item.state=job.state;item.error=null;item.checkpoint='render';await persist();
       }catch(error){
-        item.state=signal.aborted?'cancelled':error.code==='TEASER_REQUIRED'?'review-required':'error';if(error.code==='TEASER_REQUIRED'){item.approved=false;item.errorCode='teaser-required';}item.error=signal.aborted?null:error instanceof Error?error.message:String(error);
+        item.state=signal.aborted?'cancelled':error.code==='TEASER_REQUIRED'?'review-required':'error';if(error.code==='TEASER_REQUIRED'){item.approved=false;item.errorCode='teaser-required';if(!item.jobId&&!item.needsAnalysis)item.needsTeasers=true;}item.error=signal.aborted?null:error instanceof Error?error.message:String(error);
         await persist();
       }
     }

@@ -20,7 +20,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
     prepare,
     async select(source, context, options = {}) {
       if (lockedParts(options.currentPlan).every(Boolean)) {
-        const plan = structuredClone(options.currentPlan); validatePlan(plan, source); return plan;
+        const plan = structuredClone(options.currentPlan); validatePlan(plan, source,{teasers:false}); return plan;
       }
       const prepared = await prepare(source, context, options);
       let provider, failure;
@@ -30,7 +30,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
       const result = await shared(key, signal => cache.using(key, async () => {
         const cached = await cache.get(key);
         if (cached) {
-          try { const plan = { ...cached, originalTitle:source.title, analysis:{ ...cached.analysis, sourceId, cacheKey:key } }; validatePlan(plan,source); assertMainLocks(plan,options.currentPlan); return plan; } catch { /* Invalid/old cache is not a valid analysis. */ }
+          try { const plan = { ...cached, originalTitle:source.title, analysis:{ ...cached.analysis, sourceId, cacheKey:key } }; validatePlan(plan,source,{teasers:false}); assertMainLocks(plan,options.currentPlan); return plan; } catch { /* Invalid/old cache is not a valid analysis. */ }
         }
         let plan, textOnly = false;
         if (provider) {
@@ -44,7 +44,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
               const response = await provider.analyze({ input:modelSelectionInput(stableInput), images: attempt ? [] : images, schema:MAIN_SCHEMA, instructions:MAIN_INSTRUCTIONS, signal:bounded, maxTokens:2400 });
               textOnly ||= Boolean(attempt);
               plan = selectionToPlan(prepared,response.value,{ currentPlan:options.currentPlan,provider:provider.id,model:provider.model });
-              validatePlan(plan,source); break;
+              validatePlan(plan,source,{teasers:false}); break;
             } catch (e) {
               signal.throwIfAborted(); failure = hookFailure(e);
               if (bounded.aborted || /auth|rate-limited|model-unavailable/.test(failure)) break;
@@ -54,7 +54,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
         if (!plan) plan = deterministicMainSelection(prepared,options.currentPlan,failure || 'provider-unavailable');
         if (textOnly) plan.analysis.limitations.push('AI chọn main chưa nhận được hình ảnh hợp lệ; chỉ có bằng chứng văn bản/tín hiệu, chưa xác minh hành động trong video.');
         plan.analysis = { ...plan.analysis, sourceId, analysisKey, cacheKey:key, ...(options.local?.cacheKey ? { localCacheKey:options.local.cacheKey } : {}) };
-        validatePlan(plan,source); signal.throwIfAborted();
+        validatePlan(plan,source,{teasers:false}); signal.throwIfAborted();
         // Do not perpetually cache auth/rate/timeout failures as a successful AI result.
         if (plan.analysis.method === 'ai') await cache.put(key,plan);
         return plan;

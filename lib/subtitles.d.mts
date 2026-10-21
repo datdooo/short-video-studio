@@ -1,6 +1,8 @@
 import type { EditPart } from "./edit-plan";
-export type Caption = { start: number; end: number; text: string };
-export type CaptionTrack = { sourceId: string; sourceDuration?: number; timeline?: string; cues: Caption[]; origin: string };
+export type Caption = { start: number; end: number; text: string; timing?: 'word'|'cue'|'estimated' };
+export type CaptionTrack = { sourceId: string; sourceDuration?: number; timeline?: string; cues: Caption[]; origin: string; timing?: 'word'|'cue'|'estimated' };
+export function effectiveCaptionTrack(plan: {captionCues?:CaptionTrack},source:{id:string;duration:number;captions?:Caption[]},edited?:CaptionTrack|null):CaptionTrack|undefined;
+export function selectionCaptionTrack(plan:{captionCues?:CaptionTrack},source:{id:string;duration:number;captions?:Caption[]},transcript?:string,cached?:CaptionTrack):CaptionTrack;
 export function sourceCaptionTrack(track: CaptionTrack, source: { id: string; duration: number }): CaptionTrack;
 export function isCurrentCaptionRequest(request: { sourceId?: string; serial: number; selectionEpoch: number }, current: { sourceId?: string; serial: number; selectionEpoch: number }): boolean;
 export type SubtitleStyle = { enabled: boolean; source?: string; font: string; size: number; color: string; outlineColor: string; outline: number; position: string; fontWeight?: number; opacity?: number; effect?: "none" | "soft-shadow" | "heavy-shadow" };

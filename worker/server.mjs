@@ -1,3 +1,5 @@
+import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
+import {assertTeaserContexts,selectionDigest,transcriptValue,teaserEvidenceValue} from '../lib/teaser-context.mjs';
 import {createMediaResources,balancedFfmpegArgs} from './media-resources.mjs';
 import {prepareRangeInput} from './range-input.mjs';
 import{parseCustomTeaser}from"../lib/custom-teaser.mjs";
@@ -53,7 +55,7 @@ import { createBatchSubmissionQueue, restoreBatchPreparation } from "./batch-que
 import { createCommandLifecycle } from "./command-lifecycle.mjs";
 import { createMediaLibrary } from "./media-library.mjs";
 import { validatePlan,validateRenderPlan } from "./plan-validation.mjs";
-import { trimPartStart } from "./part-start.mjs";
+import { effectiveCutPlan } from "./part-start.mjs";
 import { createExportNameAllocator } from "./export-names.mjs";
 import { createSpeechService } from "./speech.mjs";
 import { smartCutPlan } from "./smart-cut.mjs";
@@ -66,7 +68,7 @@ import { createYouTubeDownloader } from "./youtube-downloader.mjs";
 import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth, localAuthOrigin } from "./chatgpt-auth-state.mjs";
 import { createChatGPTStore } from './chatgpt-store.mjs';
 import { createTeaserSelector } from "./teaser-selection.mjs";
-import { TEASER_POLICY, presentationSegments, presentationDuration, partTransitionWindows } from "../lib/teaser-hooks.mjs";
+import { TEASER_POLICY, presentationSegments, presentationDuration, partTransitionWindows, validateTeaser } from "../lib/teaser-hooks.mjs";
 import { detectScript, fontFamilyForStyle, listFonts } from "../lib/visual-style/fonts.mjs";
 import { DEFAULT_VISUAL_STYLE } from "../lib/visual-style/defaults.mjs";
 import { styledTextSvg } from "../lib/visual-style/text-render.mjs";
@@ -76,7 +78,7 @@ import { currentFilterEnvironment, ffmpegFilterExpression } from "../lib/visual-
 import { snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundFilter, timelineDuration } from '../lib/render-config.mjs';
 import { originalCutPlan } from '../lib/legacy-plan.mjs';
-import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack, transcriptCues } from "../lib/subtitles.mjs";
+import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack, effectiveCaptionTrack, selectionCaptionTrack } from "../lib/subtitles.mjs";
 
 sharp.concurrency(2);sharp.cache({memory:32,files:8,items:32});
 
@@ -599,7 +601,7 @@ async function listChatGPTModels(credentials = null, signal) {
     headers: { Authorization: `Bearer ${session.access_token}`, Accept: "application/json" },
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error?.message || body.detail || `Không đọc được model ChatGPT (${response.status}).`);
+  if (!response.ok) throw Object.assign(new Error(`Không đọc được model ChatGPT (${response.status}).`),{status:response.status});
   const models = (body.models || body.data || [])
     .filter((model) => !model.visibility || model.visibility === "list")
     .map((model) => ({ slug: model.slug || model.id, displayName: model.display_name || model.name || model.slug || model.id }))
@@ -643,7 +645,7 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
       model,
       store: false,
       stream: true,
-      ...(content ? { max_output_tokens: Math.max(1200, Math.min(3000, Number(body.maxTokens) || 1200)) } : {}),
+      ...(content ? { max_output_tokens: Math.max(1200, Math.min(4500, Number(body.maxTokens) || 1200)) } : {}),
       instructions: body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
       input: [{ role: "user", content: content || String(body.input || "") }],
       text: {
@@ -673,6 +675,7 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
   let buffer = "";
   let outputText = "";
   let completed = false;
+  try {
   while (true) {
     const { done, value } = await reader.read();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
@@ -687,6 +690,7 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
         completed = true;
         if (!outputText) outputText = responseTextFromCompleted(parsed.data?.response);
       }
+      if(eventType==='response.incomplete')throw new Error('INVALID_RESPONSE_INCOMPLETE: ChatGPT chưa hoàn tất JSON trong giới hạn output.');
       if (eventType === "response.failed") {
         const error = parsed.data?.response?.error || parsed.data?.error || {};
         if (error.code === "subscription_sharing_usage_limit_exceeded") throw new Error("PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.");
@@ -695,6 +699,7 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
     }
     if (done) break;
   }
+  } finally { await reader.cancel().catch(()=>{}); reader.releaseLock(); }
   if (!completed) throw new Error("INVALID_RESPONSE: ChatGPT stream kết thúc trước response.completed.");
   const cleaned = outputText.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   try {
@@ -768,13 +773,13 @@ function protectedAnalysisKeys() {
 
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
-const processBatch = createBatchProcessor({acquire:importYouTube,load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
+const processBatch = createBatchProcessor({acquire:importYouTube,load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
 const analyzeSource = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers});
 
 async function mainAnalysisInputs(source, body, signal) {
   if (body.currentPlan) {
     if (body.currentPlan.analysis?.sourceId && body.currentPlan.analysis.sourceId !== source.id) throw new Error("Plan belongs to another source.");
-    validatePlan(body.currentPlan, source);
+    validatePlan(body.currentPlan, source, {teasers:false});
   }
   const context = await sourceContexts.ensure(source, { signal, comments: true });
   const local = await localSignals.forSource(source,signal);
@@ -791,33 +796,65 @@ async function mainAnalysisInputs(source, body, signal) {
       if(status.binaryReady&&status.modelReady){await requireDiskSpace(dataRoot,256*1024*1024+Math.ceil(source.duration*32000));cues=(await speech.captions(source,AbortSignal.any([signal,AbortSignal.timeout(60000)]))).cues;}
     } catch { signal?.throwIfAborted(); /* Use available local/metadata evidence; no model is downloaded. */ }
   }
-  const boundaryCues = cues;
-  if(body.captionCues)cues=sourceCaptionTrack(body.captionCues,source).cues;
-  const lines = typeof body.transcript === "string" ? transcriptCues(body.transcript.slice(0, 100000)).filter(c => c.at < source.duration) : [];
-  if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter(c => c.end > c.start);
-  return { context, options: { cues, boundaryCues:boundaryCues.length?boundaryCues:cues, local, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
+  const track=selectionCaptionTrack({captionCues:body.captionCues||body.currentPlan?.captionCues},source,body.transcript||source.transcript,
+    cues.length?{sourceId:source.id,cues,origin:'cached-caption'}:undefined);
+  return { context, options: { cues:track.cues, boundaryCues:track.cues, captionTrack:track, local, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
+
 }
 
 async function planTeasers(plan, source, signal, transcript, selectionOptions = {}) {
   const sourceContext = await sourceContexts.ensure(source, { signal, comments: true });
+  // The shared YouTube metadata cache does not own source-local scene/audio
+  // analysis. Preserve those current source-bound signals through enrichment.
+  for(const key of ['visualSignals','audioSignals'])if(source.sourceContext?.[key])sourceContext[key]=structuredClone(source.sourceContext[key]);
   if (source.directory) {
     try { await saveSourceContext(source.directory, sourceContext); }
     catch { signal?.throwIfAborted(); /* Context persistence failure must not disable hook analysis. */ }
   }
   source = { ...source, sourceContext };
-  let cues = Array.isArray(source.captions) ? source.captions : [];
-  if (plan.captionCues) cues = sourceCaptionTrack(plan.captionCues, source).cues;
-  else {
-    try { cues = (await speech.cachedCaptions(source))?.cues || []; } catch { /* No ASR download/recognition is triggered for selection. */ }
-  }
-  const sourceBoundaryCues = cues;
-  const sourceInput = typeof transcript === "string" ? { ...source, transcript: transcript.slice(0, 100_000) } : source;
-  if ((typeof transcript === "string" || !cues.length) && sourceInput.transcript) {
-    const lines = transcriptCues(sourceInput.transcript).filter((c) => c.at < source.duration).sort((a,b) => a.at-b.at);
-    if (lines.length) cues = lines.map((c,i) => ({ start:c.at, end:lines[i+1]?.at ?? source.duration, text:c.text })).filter((c) => c.end > c.start);
-  }
+  let cached;
+  if(!plan.captionCues&&!source.captions?.length)try{cached=await speech.cachedCaptions(source);}catch{/* Optional local cache only. */}
+  const sourceInput={...source,transcript:transcriptValue(transcript??source.transcript)};
+  const track=selectionCaptionTrack(plan,sourceInput,sourceInput.transcript,cached);
+  const cues=track.cues;
+  sourceInput.captionProvenance={origin:track.origin,timing:track.timing||'cue'};
+  sourceInput.selectionRequest={instruction:String(selectionOptions.instruction||'').slice(0,6000),supplementalPrompt:String(selectionOptions.supplementalPrompt||'').slice(0,6000)};
+  plan={...plan,captionCues:track};
+
   const context = source.sourceContext;
-  return selectTeasers(plan, sourceInput, { ...selectionOptions, cues, boundaryCues: sourceBoundaryCues.length ? sourceBoundaryCues : cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap, visualSignals:context.visualSignals,audioSignals:context.audioSignals } : source, signal });
+  return selectTeasers(plan, sourceInput, { ...selectionOptions, cues, boundaryCues:cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap, visualSignals:context.visualSignals,audioSignals:context.audioSignals } : source, signal });
+}
+
+async function repairBatchTeasers(plan,source,signal,transcript,request={}){
+ validatePlan(plan,source,{teasers:false});let next=structuredClone(plan);
+ next.teaserTranscriptKey=await selectionDigest(transcriptValue(transcript));
+ for(const part of next.parts){
+  if(part.teaserEnabled===false)continue;
+  const isolated={...next,parts:next.parts.map(p=>p.id===part.id?p:{...p,teaserEnabled:false,teaser:undefined,customTeaser:undefined})};
+  try{validateRenderPlan(isolated,source);await verifySourceTeasers(isolated,source,signal);continue;}catch{/* Repair this part only, never rerun the main planner. */}
+  if(part.teaser?.selection==='manual'||part.customTeaser?.mode==='timestamp')throw Object.assign(Error(`Part ${part.id}: mốc manual cần sửa trong Timeline; batch không tự đổi quyết định người dùng.`),{code:'TEASER_REQUIRED',status:409});
+  next=await planTeasers(next,source,signal,transcript,{targetPartId:part.id,instruction:request.instruction,supplementalPrompt:request.supplementalPrompt,customInstruction:part.customTeaser?.mode==='description'?part.customTeaser.input:undefined,forceRefresh:true});
+ }
+ validateRenderPlan(next,source);await verifySourceTeasers(next,source,signal);return next;
+}
+
+async function verifySourceTeasers(plan,source,signal){
+ const selected=plan.parts.filter(p=>p.teaserEnabled!==false&&p.teaser?.status==='selected'&&['ai','external-import'].includes(p.teaser.selection));
+ if(!selected.length)return;
+ const digest=await hookSourceFingerprint(source,signal);
+ const stored=JSON.parse(await readFile(path.join(source.directory,'source.json'),'utf8'));
+ const evidenceKey=await selectionDigest(teaserEvidenceValue({...source,sourceContext:sourceContextFor({...source,...stored})}));
+ if(selected.some(p=>p.teaser.binding?.sourceFingerprint!==digest||p.teaser.binding?.evidenceKey!==evidenceKey))throw Object.assign(Error('Source đã đổi hoặc teaser cũ chưa có bằng chứng source; chọn lại teaser trước khi xuất.'),{code:'TEASER_REQUIRED',status:409});
+}
+async function finalizeImportedTeasers(plan,source,transcript,signal,request){
+ validatePlan(plan,source);
+ const cues=effectiveCaptionTrack(plan,source)?.cues||[];
+ if(!await externalHooksCurrent(plan,source,transcript))throw Error('Hook web import đã cũ; tạo prompt/import lại, không tự chuyển provider.');
+ await assertTeaserContexts(plan,source,cues,transcript,request);
+ const next=structuredClone(plan),digest=await hookSourceFingerprint(source,signal);
+ for(const p of next.parts)if(p.teaserEnabled!==false&&p.teaser?.status==='selected'&&p.teaser.selection==='external-import'){p.teaser.binding.sourceFingerprint=digest;p.teaser.binding.evidenceKey=await selectionDigest(teaserEvidenceValue(source));}
+ next.teaserTranscriptKey=await selectionDigest(transcriptValue(transcript));
+ return next;
 }
 
 function safeName(value) {
@@ -893,7 +930,7 @@ async function probeMedia(mediaPath) {
     ffprobe,
     [
       "-v", "error",
-      "-show_entries", "format=duration:stream=index,codec_type,codec_name,width,height,pix_fmt,color_range,color_space,color_transfer,color_primaries",
+      "-show_entries", "format=duration,start_time:stream=index,codec_type,codec_name,width,height,sample_aspect_ratio,start_time,duration,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation",
       "-of", "json",
       mediaPath,
     ],
@@ -902,10 +939,23 @@ async function probeMedia(mediaPath) {
   const data = JSON.parse(result.stdout);
   const video = data.streams?.find((stream) => stream.codec_type === "video");
   if (!video) throw new Error("File nguồn không có video stream.");
+  const audio=data.streams?.find(stream=>stream.codec_type==='audio');
+  const sourceStart=Number(data.format?.start_time||0);
+  const [sarN,sarD]=String(video.sample_aspect_ratio||'1:1').split(':').map(Number);
+  const sar=Number.isFinite(sarN/sarD)&&sarN/sarD>0?sarN/sarD:1;
+  const rotation=Number(video.side_data_list?.find(item=>Number.isFinite(Number(item.rotation)))?.rotation??video.tags?.rotate??0);
+  const quarterTurn=Math.abs(Math.round(rotation/90))%2===1;
+  const displayWidth=Number(video.width||0)*sar,displayHeight=Number(video.height||0);
+  const audioStart=audio&&Number.isFinite(Number(audio.start_time))?Number(audio.start_time)-sourceStart:undefined;
+  const audioEnd=audioStart!==undefined&&audio?.duration!==undefined&&Number.isFinite(Number(audio.duration))?audioStart+Number(audio.duration):undefined;
   return {
-    duration: Number(data.format?.duration || 0),
-    width: Number(video.width || 0),
-    height: Number(video.height || 0),
+    duration: Number(data.format?.duration || 0),sourceStart,sampleAspectRatio:sar,rotation,
+    codedWidth:Number(video.width||0),codedHeight:Number(video.height||0),
+    width:quarterTurn?displayHeight:displayWidth,
+    height:quarterTurn?displayWidth:displayHeight,
+    ...(audioStart!==undefined?{audioStart}:{}),...(audioEnd!==undefined?{audioEnd}:{}),
+    videoStart:video.start_time!==undefined?Number(video.start_time)-sourceStart:0,
+    videoDuration:video.duration!==undefined?Number(video.duration):null,
     hasAudio: Boolean(data.streams?.some((stream) => stream.codec_type === "audio")),
     videoCodec: String(video.codec_name || ""),
     pixelFormat: String(video.pix_fmt || ""),
@@ -927,14 +977,14 @@ function decodeEntities(value) {
 }
 
 function compactTimestamp(value) {
-  const match = value.match(/(?:(\d+):)?(\d{2}):(\d{2})[.,]\d{3}/);
+  const match = value.match(/(?:(\d+):)?(\d{2}):(\d{2})[.,](\d{3})/);
   if (!match) return value;
   const hours = Number(match[1] || 0);
   const minutes = Number(match[2]);
   const seconds = Number(match[3]);
   return hours > 0
-    ? [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":")
-    : [minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":");
+    ? [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":")+`.${match[4]}`
+    : [minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":")+`.${match[4]}`;
 }
 
 function vttToTranscript(vtt) {
@@ -1290,7 +1340,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   const vrInput=overlayInput+2+(subtitlesPath?1:0)+(backgroundAsset?1:0)+(animatedSceneInput!==undefined?1:0);
   const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput: overlayInput + 1, sceneInput: animatedSceneInput, overlayFormat, clockRate:1 });
   const filters = [
-    `[0:v]select=concatdec_select,settb=AVTB,setpts=PTS/${PLAYBACK_RATE},setsar=1,fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
+    `[0:v]select=concatdec_select,settb=AVTB,setpts=PTS/${PLAYBACK_RATE},fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
     '[1:a]asetpts=N/SR/TB[cuta]',
     `[cutv]${ffmpegFilterExpression(plan.visualStyle?.filter, { contrast: renderContrast, saturation: renderSaturation })}[graded]`,
     ...(background.mode === "source-blur" ? [
@@ -1426,23 +1476,25 @@ function reserveExportNames(plan, source) {
 }
 
 async function executeRender(job, source, plan, signal) {
+  let scratch;
   try {
     signal?.throwIfAborted();
     requireCurrentExportPolicy(job);
-    validateRenderPlan(plan,source);job.plan=structuredClone(plan);
+    validateRenderPlan(plan,source);await verifySourceTeasers(plan,source,signal);job.plan=structuredClone(plan);
     job.state = "rendering";
     job.startedAt = new Date().toISOString();
     const outputDirectory = path.join(source.directory, "outputs", job.id);
     await mkdir(outputDirectory, { recursive: true });
+    scratch=await renderScratch(outputDirectory,{sourceId:source.id,jobId:job.id});
     const exportNames = job.exportNames || await reserveExportNames(plan, source);
     job.exportNames = exportNames;
     await persistBatchHistory({strict:true});
-    const sceneAsset = await renderSceneOverlay({ overlays: plan.visualStyle?.overlays || [], publicRoot: path.join(projectRoot, "public"), outputPath: path.join(outputDirectory, "scene-overlays.png") });
+    const sceneAsset = await renderSceneOverlay({ overlays: plan.visualStyle?.overlays || [], publicRoot: path.join(projectRoot, "public"), outputPath: path.join(scratch.root, "scene-overlays.png") });
     // One static gradient per job, shared by all parts; never rasterize per frame.
     const background = assertRenderableBackground(plan.visualStyle?.background);
     let backgroundAsset;
     if (background.mode === "gradient") {
-      backgroundAsset = path.join(outputDirectory, "background.png");
+      backgroundAsset = path.join(scratch.root, "background.png");
       const pixels = Buffer.alloc(1080 * 1920 * 3);
       for (let y = 0; y < 1920; y++) {
         const row = Buffer.from(gradientRowRgb(background, y, 1920));
@@ -1452,9 +1504,10 @@ async function executeRender(job, source, plan, signal) {
     }
     for (const [index, part] of plan.parts.entries()) {
       signal?.throwIfAborted();
-      const prior=job.outputs.find(o=>o.part===part.id);
+      const finalDirectory=path.join(outputDirectory,`part-${part.id}`);
+      const prior=job.outputs.find(o=>o.part===part.id)||await recoverPublication({directory:finalDirectory,filename:exportNames[index],sourceId:source.id,jobId:job.id,partId:part.id,metadataPolicy:EXPORT_METADATA_POLICY});
       const completed=await verifiedRenderOutput({file:path.join(outputDirectory,`part-${part.id}`,exportNames[index]),filename:exportNames[index],record:prior,sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
-      if(completed){if(!prior)job.outputs.push(completed);job.progress=Math.round((index+1)/plan.parts.length*100);await persistBatchHistory({strict:true});continue;}
+      if(completed){if(!job.outputs.some(o=>o.part===part.id))job.outputs.push(completed);job.progress=Math.round((index+1)/plan.parts.length*100);await persistBatchHistory({strict:true});continue;}
       // An existing unrecorded/legacy/corrupt file is never overwritten or
       // adopted as a clean export. Keep it and require a separate new job.
       const existingFile=path.join(outputDirectory,`part-${part.id}`,exportNames[index]);
@@ -1463,7 +1516,7 @@ async function executeRender(job, source, plan, signal) {
       job.outputs=job.outputs.filter(o=>o.part!==part.id);
       job.currentPart = part.id;
       const filename = exportNames[index];
-      const partDirectory = path.join(outputDirectory, `part-${part.id}`);
+      const partDirectory = path.join(scratch.root, `part-${part.id}`);
       await mkdir(partDirectory, { recursive: true });
       const outputPath = path.join(partDirectory, filename);
       job.encoder = await renderPart({
@@ -1480,7 +1533,11 @@ async function executeRender(job, source, plan, signal) {
           job.progress = Math.round(((index + partProgress) / plan.parts.length) * 100);
         },
       });
+      signal?.throwIfAborted();
       const outputStat = await stat(outputPath);
+      const checked=await verifiedRenderOutput({file:outputPath,filename,record:{filename,size:outputStat.size,metadataPolicy:EXPORT_METADATA_POLICY},sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
+      if(!checked)throw Error('MP4 chưa đạt geometry/duration/audio contract; chưa publish, có thể Resume part này.');
+      await publishRender({staging:outputPath,directory:finalDirectory,filename,sourceId:source.id,jobId:job.id,partId:part.id,metadataPolicy:EXPORT_METADATA_POLICY,signal});
       job.outputs.push({
         part: part.id,
         filename,
@@ -1497,7 +1554,7 @@ async function executeRender(job, source, plan, signal) {
     job.state = signal?.aborted ? "cancelled" : "error";
     job.error = signal?.aborted ? null : error instanceof Error ? error.message : String(error);
     job.finishedAt = new Date().toISOString();
-  }
+  } finally {if(scratch)await scratch.dispose().catch(()=>{});}
 }
 
 function startRender(body,parentSignal){
@@ -1514,11 +1571,16 @@ async function prepareRenderSubmission(body, parentSignal, fingerprint) {
   const source = await loadSource(body.sourceId);
   parentSignal?.throwIfAborted();
   body.plan = originalCutPlan(body.plan, source.id);
-  validateRenderPlan(body.plan, source);
-  let originalPlan = structuredClone({ ...body.plan, originalTitle: source.title, parts: body.plan.parts.map(trimPartStart) });
+  if(body.transcript!==undefined){if(typeof body.transcript!=='string'||body.transcript.length>100000)throw Error('Invalid render transcript.');body.plan={...body.plan,teaserTranscriptKey:await selectionDigest(transcriptValue(body.transcript))};}
+  const captions=effectiveCaptionTrack(body.plan,source);
+  let originalPlan = structuredClone(effectiveCutPlan({...body.plan,originalTitle:source.title,...(captions?{captionCues:captions}:{})}));
+  validateRenderPlan(originalPlan,source);
+  if(body.instruction!==undefined||body.supplementalPrompt!==undefined)await assertTeaserContexts(originalPlan,source,captions?.cues||[],body.transcript||source.transcript||'',{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
+  await verifySourceTeasers(originalPlan,source,parentSignal);
   // Rendering never selects/fills hooks. Explicit selection must finish first.
   validateRenderPlan(originalPlan,source);
   originalPlan = snapshotPlanVisualStyle(originalPlan);
+  if(originalPlan.subtitles.enabled&&!originalPlan.captionCues)throw Error('Tạo/duyệt phụ đề trong editor trước khi xuất; không tự thay caption track của job đã gửi.');
   if (originalPlan.subtitles.enabled && originalPlan.captionCues) originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
   originalPlan.music=normalizeMusic(originalPlan.music);
   if(originalPlan.music.enabled){for(const part of originalPlan.parts){const m=effectiveMusic(originalPlan.music,part.id);if(m.enabled)await musicLibrary.resolve(m.assetId);}
@@ -1561,9 +1623,10 @@ function enqueueRender(job,source,renderPlan,parentSignal){
   const task=renderQueue.then(async()=>{
     const signal=controller.signal;signal.throwIfAborted();job.phase='preparing';
     let prepared=structuredClone(renderPlan);
-    if(!['manual','mock'].includes(prepared.providerUsed)&&prepared.parts.some(p=>!p.smartCutApplied))prepared=smartCutPlan(prepared,await speech.boundaries(source,signal),source.duration);
+    // Cut compatibility was resolved before job creation; snapshots never run a second Smart Cut here.
+    if(prepared.parts.some(p=>!p.startTrimApplied||!p.smartCutApplied))throw Error('Snapshot cũ chưa chốt cut; mở trong editor và gửi job mới, không tự sửa job đã lưu.');
     if(prepared.music?.enabled&&prepared.music.ducking)prepared.musicSpeech=await musicSpeech.detect(source,signal);
-    if(prepared.subtitles?.enabled&&!prepared.captionCues)prepared.captionCues=await speech.captions(source,signal,{provider:prepared.subtitles.source});
+    if(prepared.subtitles?.enabled&&!prepared.captionCues)throw Error('Tạo/duyệt phụ đề trong editor trước khi gửi job mới; không đổi track sau khi snapshot.');
     signal.throwIfAborted();validateRenderPlan(prepared,source);job.plan=structuredClone(prepared);job.phase='rendering';
     await mediaResources.use('render',active=>executeRender(job,source,prepared,active),signal);
   }).catch((error) => {
@@ -1580,7 +1643,7 @@ async function resumeRender(job,parentSignal){
   requireCurrentExportPolicy(job);
   if(!['error','cancelled'].includes(job.state)||renderControllers.has(job.id))throw new Error('Render still active or already complete; no duplicate submission.');
   if(mediaLibrary.isLocked(job.sourceId))throw new Error('Source is in use/trash.');
-  const source=await loadSource(job.sourceId);validateRenderPlan(job.plan,source);job.state='queued';job.error=null;
+  const source=await loadSource(job.sourceId);validateRenderPlan(job.plan,source);await verifySourceTeasers(job.plan,source,parentSignal);job.state='queued';job.error=null;
   await persistBatchHistory({strict:true});enqueueRender(job,source,structuredClone(job.plan),parentSignal);return job;
 }
 
@@ -1845,7 +1908,7 @@ const server = createServer(async (request, response) => {
         try{sendJson(request,response,200,await speech.captions(source,controller.signal,{regenerate:body.regenerate===true,provider:body.provider||'auto'}));}
         finally{response.removeListener("close",abort);}return;
       }
-      validatePlan(body.plan, source);
+      validatePlan(body.plan, source, {teasers:false});
       if (speechSource[2] === "teaser-hooks") {
         const controller = new AbortController(), abort = () => controller.abort(new Error("Hook client disconnected"));
         response.once("close", abort);
@@ -1853,12 +1916,19 @@ const server = createServer(async (request, response) => {
           if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 100_000)) throw new Error("Invalid hook transcript.");
           if(body.partId!==undefined&&!body.plan.parts.some(p=>p.id===body.partId))throw Error("Invalid hook part ID.");
           if(body.customInstruction!==undefined&&(body.partId===undefined||parseCustomTeaser(body.customInstruction).mode!=='description'))throw Error('Custom description cần part cụ thể và mô tả hợp lệ; timestamp không gọi AI.');
-          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction,forceRefresh:true});
-          validatePlan(next, source); sendJson(request, response, 200, { plan: next });
+          if(body.mode==='validate-import'){
+            const next=await finalizeImportedTeasers(body.plan,source,String(body.transcript||''),controller.signal,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
+            sendJson(request,response,200,{plan:next});return;
+          }
+          if(body.mode!==undefined)throw Error('Invalid teaser operation.');
+          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction,instruction:body.instruction,supplementalPrompt:body.supplementalPrompt,forceRefresh:true});
+          validatePlan(next, source, {teasers:false});
+          for(const part of next.parts)if(body.partId===undefined||part.id===body.partId)if(part.teaserEnabled!==false)validateTeaser(part,source.duration);
+          sendJson(request, response, 200, { plan: next });
         } finally { response.removeListener("close", abort); }
         return;
       }
-      const next = smartCutPlan({ ...body.plan, parts: body.plan.parts.map(trimPartStart) }, await speech.boundaries(source), source.duration);
+      const next = smartCutPlan(effectiveCutPlan(body.plan), await speech.boundaries(source), source.duration);
       validatePlan(next, source); sendJson(request, response, 200, { plan: next }); return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/youtube/transcript") {
@@ -1939,8 +2009,8 @@ const server = createServer(async (request, response) => {
       if(!batch)throw new Error('Queue not found');
       const targets=batch.items.filter(i=>!i.deleted&&(!body.itemIds||body.itemIds.includes(i.id)));
       if(targets.some(i=>i.jobId&&renderControllers.has(i.jobId)))throw new Error('Wait for stopping renders before resume.');
-      for(const item of targets){const saved=item.jobId?jobs.get(item.jobId):null;if(saved?.state==='done')continue;const plan=saved?.plan||item.plan;if(plan){const source=await loadSource(saved?.sourceId||item.sourceId);validateRenderPlan(plan,source);}}
-      if(targets.some(i=>i.needsAnalysis&&i.settings?.provider==='chatgpt'))await activeChatGPTCredentials();
+      for(const item of targets){const saved=item.jobId?jobs.get(item.jobId):null;if(saved?.state==='done')continue;const plan=saved?.plan||item.plan;if(plan){const source=await loadSource(saved?.sourceId||item.sourceId);if(!saved&&(item.needsAnalysis||item.needsTeasers))validatePlan(plan,source,{teasers:false});else{validateRenderPlan(plan,source);await verifySourceTeasers(plan,source);}}}
+      if(targets.some(i=>(i.needsAnalysis||i.needsTeasers)&&i.settings?.provider==='chatgpt'))await activeChatGPTCredentials();
       const resumed=batchPreparationQueue.resume(id,body.itemIds);await persistBatchHistory({strict:true});sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
     }
     const batchPlanMatch=requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})\/plan$/i);
@@ -1949,10 +2019,14 @@ const server = createServer(async (request, response) => {
       if(!item||!item.sourceId)throw new Error('Prepared item not found');
       if(item.jobId||!['awaiting-import','review-required','paused','error','cancelled'].includes(item.state))throw new Error('Render/preparation snapshot is immutable while submitted; finish/stop it first.');
       if(body.sourceId!==item.sourceId)throw new Error('Plan belongs to another source');
-      const source=await loadSource(item.sourceId);validateRenderPlan(body.plan,source);
-      if(['gemini','muse'].includes(body.plan.providerUsed)&&!await externalHooksCurrent(body.plan,source,String(body.transcript||'')))throw new Error('External hooks are missing/stale; generate/import hook selections before queueing.');
+      const source=await loadSource(item.sourceId);
+      if(body.plan.parts?.some(p=>p.teaserEnabled!==false&&p.teaser?.selection==='external-import'))body.plan=await finalizeImportedTeasers(body.plan,source,String(body.transcript||''),undefined,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
+      if(body.transcript!==undefined){body.plan.teaserTranscriptKey=await selectionDigest(transcriptValue(body.transcript));await assertTeaserContexts(body.plan,source,effectiveCaptionTrack(body.plan,source)?.cues||[],body.transcript,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});}
+      validateRenderPlan(body.plan,source);await verifySourceTeasers(body.plan,source);
+
       item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
-      item.approved=true;item.needsAnalysis=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
+      item.transcript=String(body.transcript||source.transcript||'').slice(0,100000);
+      item.approved=true;item.needsAnalysis=false;item.needsTeasers=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
       await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
     }
     const deleteBatchItemMatch = requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})$/i);

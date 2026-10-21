@@ -1,3 +1,17 @@
+# Active implementation — 2026-10-21
+
+Read `teaser-evidence-ranking-20261021.md` and `video-cut-logic-fixes-20261021.md`.
+Current selector/cache: `same-part-hook-v11-replay-ranking`. Relative ChatGPT
+ranking, full bounded source evidence / long-video discovery+exact local evidence,
+strong replay preference for equally compelling choices, independent alternatives,
+technical repair and source-bound freshness. Manual semantic/tail checks warn only.
+Reuse/permissions: `THIRD_PARTY_NOTICES.md` (MR.HiSum full-project private grant
+confirmed by owner; MomentSearch Apache port; VideoITG architecture only).
+NO new runtime/provider/editorial QA. Historical status below is not verification
+of this implementation. Latest build state is at the top of `CODEX_HANDOFF.md`.
+
+---
+
 # Latest user override — 2026-10-21
 
 Read `docs/teaser-manual-toggle.md`: manual timestamps may include the first10

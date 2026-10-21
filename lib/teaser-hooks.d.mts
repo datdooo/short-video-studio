@@ -3,7 +3,8 @@ export type Teaser = { selectionPolicy?: "later-main-v1" | "adaptive-editorial-v
   status: "selected"; start: number; end: number; selection: "ai" | "fallback" | "external-import" | "manual";
   candidateId?:string;kind?:string;partUnderstanding?:string;contentTypes?:string;observed?:string;startContext?:string;standalone?:boolean;complete?:boolean;endingBasis?:string;cueIds?:string[];replayUse?:string;
   heatmapEvidence?:{available:boolean;supportsSelection:boolean;peakTimes:number[];reason:string};alternatives?:import("./teaser-import.mjs").ExternalChoice[];
-  ending?: string; relation: string; evidenceTimes: number[]; limitations: string[]; provider: string; model: string;
+  editedFrom?:{selection:'ai'|'external-import'|'fallback';provider:string;model:string;promptVersion:string;inputKey:string;start:number;end:number};
+  binding?:import('./teaser-context.mjs').TeaserBinding; ending?: string; relation: string; evidenceTimes: number[]; limitations: string[]; provider: string; model: string;
   promptVersion: string; inputKey: string; transition: "inherit-or-dip-black";
 });
 export const TEASER_POLICY: "per-part-v1";

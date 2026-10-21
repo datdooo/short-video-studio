@@ -1,3 +1,43 @@
+# Active checkpoint — teaser evidence/replay + audit fixes (2026-10-21)
+
+- DEV only `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+  Branch `recovery/visual-dev-reconstructed`, starting HEAD `69307f4a74150473e8078c2ee15d410a22e6584c`.
+  All changes in this active entry are local; no push/merge. Use actual Git refs
+  for the final checkpoint SHA, not old historical entries below.
+- Read `docs/teaser-evidence-ranking-20261021.md`,
+  `docs/video-cut-logic-fixes-20261021.md`, `THIRD_PARTY_NOTICES.md` first.
+  Implements approved F1–F9 and defensive R1–R3 from the static audit, IME raw
+  draft preservation, manual semantic-warning-only validation, relative GPT
+  ranking/alternatives, full bounded evidence / long-video discovery+refinement,
+  grouped same-part replay proposals and strong replay tie preference.
+- MR.HiSum: **Được tác giả cấp phép riêng để tái sử dụng toàn bộ project, theo
+  xác nhận của chủ dự án.** Authors/repo/module attribution only in repository
+  notices. Public upstream LICENSE unchanged; no product/video credit or private
+  correspondence. Narrow JS port of replay alignment; MomentSearch Apache cue
+  chunking port; no VideoITG code/weights/new heavy dependencies.
+- No new tests, test/lint/typecheck, browser, render, ASR, AI/YouTube inference or
+  listening/benchmark executed. Source review/diff only; runtime quality remains
+  unverified. Existing live account evidence does not verify the new selector.
+- Build: one combined Node22 `npm run package:mac:dev` succeeded (exit0),
+  `release/dev/ShortCut Studio Dev.app`; log
+  `/tmp/shortcut-dev-teaser-evidence-replay-build-20261021.log`.
+  Frontend build, native packaging/signing completed; chunk-size advisory only.
+  No runtime smoke/QA. Only documentation changed afterward.
+  Read-only lsof after build: web/worker PIDs29622/29621 still run from
+  `release/dev/.build-IQ9dRO/previous-build.app/Contents/Resources/app`.
+  Do not restart/interrupt jobs; user normally quits/reopens the new DEV app
+  when jobs are finished to load the update.
+- Keep manual teaser opening/toggle, exact source HH:MM:SS:FF, preview1×,
+  export1.25×, shared height-normalized framing, BGM/ducking/VisualStyle unchanged.
+  Old incomplete AI bindings/snapshots/partial final outputs require explicit
+  editor reselection/new job where indicated; never silently mutate history.
+- Next: user performs manual acceptance from the new app. Read this entry and
+  current Git first; do not repeat research/build/provider campaigns. Source/docs
+  are grouped into a local checkpoint; use `git log -1` for its actual SHA.
+  Do not push, touch production/credentials/media/exports/backups or create bundles.
+
+---
+
 # Source delivery checkpoint — UI/framing/optional teaser (2026-10-21)
 
 User authorized normal push of all current project source to origin on

@@ -13,8 +13,15 @@ Latest user instructions supersede two older restrictions:
   remain. Enabled parts still require valid teasers before render/batch/resume.
 
 Manual source times remain exact; same-part single retained range, no gap/padding,
-finite ordered endpoints, source duration, speech-boundary checks and max9 export
+finite ordered endpoints, source duration and max9 export
 seconds remain. No forced5-second minimum. No main/content/lock/style/music edits.
+
+Current override: manual cue/sentence/tail/evidence checks are warnings ONLY,
+including Apply, readiness, render API, queue, batch/resume/execution. No mandatory
+audition/checkbox. Description-based GPT and Gemini/Muse retain AI provenance;
+editing their timestamps explicitly creates manual provenance with `editedFrom`.
+Read `teaser-evidence-ranking-20261021.md` for the current source-only update.
+The build/QA paragraphs below describe the older toggle checkpoint.
 
 Switching only changes the per-part boolean, pauses playback and aborts that
 editor's pending hook request. Saved selection, alternatives, custom input and

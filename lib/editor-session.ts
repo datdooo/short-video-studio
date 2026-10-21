@@ -39,7 +39,7 @@ function readPlan(raw:unknown):EditPlan|undefined{
   if(typeof p.teaserEnabled==='boolean')part.teaserEnabled=p.teaserEnabled;
   if(object(p.teaser)&&['selected','unavailable'].includes(String(p.teaser.status))&&typeof p.teaser.reason==='string'){
    if(p.teaser.status==='unavailable'||(finite(p.teaser.start)&&finite(p.teaser.end)&&Array.isArray(p.teaser.limitations)&&p.teaser.limitations.every(v=>typeof v==='string')&&Array.isArray(p.teaser.evidenceTimes)&&p.teaser.evidenceTimes.every(finite))){
-    part.teaser=pick(p.teaser,['version','rangeKey','reason','status','start','end','selection','candidateId','kind','partUnderstanding','contentTypes','observed','startContext','standalone','complete','endingBasis','cueIds','replayUse','heatmapEvidence','alternatives','ending','relation','evidenceTimes','limitations','provider','model','promptVersion','inputKey','transition','selectionPolicy']) as unknown as NonNullable<typeof part.teaser>;
+    part.teaser=pick(p.teaser,['editedFrom','binding','version','rangeKey','reason','status','start','end','selection','candidateId','kind','partUnderstanding','contentTypes','observed','startContext','standalone','complete','endingBasis','cueIds','replayUse','heatmapEvidence','alternatives','ending','relation','evidenceTimes','limitations','provider','model','promptVersion','inputKey','transition','selectionPolicy']) as unknown as NonNullable<typeof part.teaser>;
     try{validateTeaser(part);}catch{part.teaserNeedsReselection=true;if(part.teaser.status==='selected')delete part.teaser.alternatives;}
    }
   }
@@ -47,7 +47,7 @@ function readPlan(raw:unknown):EditPlan|undefined{
   try{validateMainRangeMetadata(part,Infinity);}catch{delete part.aiMainRanges;}
   parts.push(part);
  }
- let plan={originalTitle:text(raw.originalTitle),language:['en','de','fr','ja','ko'].includes(String(raw.language))?raw.language:'en',providerUsed:raw.providerUsed,parts,render:{...RENDER_PRESET},...pick(raw,['teaserPolicy','hookTransition'])} as EditPlan;
+ let plan={originalTitle:text(raw.originalTitle),language:['en','de','fr','ja','ko'].includes(String(raw.language))?raw.language:'en',providerUsed:raw.providerUsed,parts,render:{...RENDER_PRESET},...pick(raw,['teaserPolicy','hookTransition','teaserTranscriptKey'])} as EditPlan;
  if(!['mock','chatgpt','gemini','muse','openai','qwen','manual','deterministic'].includes(plan.providerUsed))plan.providerUsed='manual';
  if(!['none','vr-light-leak-v2','rainbow-light-leak','dip-black','flash-white',undefined].includes(plan.hookTransition))delete plan.hookTransition;
  try{plan=snapshotPlanVisualStyle({...plan,visualStyle:raw.visualStyle,subtitles:raw.subtitles} as EditPlan);}catch{/* Keep other valid editing data. */}

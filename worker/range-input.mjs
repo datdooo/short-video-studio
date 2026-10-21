@@ -2,6 +2,7 @@ import {mkdtemp,writeFile,open,rm,stat} from 'node:fs/promises';
 import {createReadStream} from 'node:fs';
 import path from 'node:path';
 import {requireDiskSpace} from './analysis-cache.mjs';
+import {validSourceRange, MAX_SOURCE_RANGES} from '../lib/source-ranges.mjs';
 // Packet concat is a sequential demuxer: only one source range is read at a
 // time, even when a late teaser precedes early main content. It is NOT a concat
 // filter over simultaneous trim branches. Non-keyframe preroll is rejected by
@@ -9,7 +10,8 @@ import {requireDiskSpace} from './analysis-cache.mjs';
 function quoted(file){if(/[\r\n\0]/.test(file))throw Error('Invalid media path');return "'"+file.replace(/'/g,"'\\''")+"'";}
 export async function prepareRangeInput({source,segments,directory,ffmpeg,run,signal,video=true}){
  signal?.throwIfAborted();
- if(!segments.length||segments.some(s=>!Number.isFinite(s.start)||!Number.isFinite(s.end)||s.start<0||s.end<=s.start||s.end>source.duration+.001))throw Error('Invalid retained source ranges');
+ if(!segments.length||segments.length>MAX_SOURCE_RANGES||segments.some(s=>!validSourceRange(s,source.duration)))throw Error('Invalid retained source ranges');
+ if(source.hasAudio&&Number.isFinite(source.audioStart)&&Number.isFinite(source.audioEnd)&&segments.some(s=>s.start<source.audioStart-.001||s.end>source.audioEnd+.001))throw Error('Range vượt phần audio thực của nguồn. Chọn range có audio đầy đủ; app không tự chèn tiếng im lặng hoặc đổi main.');
  const duration=segments.reduce((n,s)=>n+s.end-s.start,0),bytes=segments.reduce((n,s)=>n+Math.round((s.end-s.start)*48000)*8,0);
  // Lossless PCM uses 384kB/s of RETAINED footage, never the excluded source gap.
  // One part at a time; no video intermediate or duplicate downloaded source.
@@ -28,7 +30,7 @@ export async function prepareRangeInput({source,segments,directory,ffmpeg,run,si
       // resampling. Independent seeks include the teaser's original audio twice.
       await run(ffmpeg,['-v','error','-y','-ss',String(s.start),'-t',String((samples+4800)/48000),'-i',source.mediaPath,'-map','0:a:0','-vn','-sn','-dn','-af',`asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,atrim=end_sample=${samples}`,'-c:a','pcm_f32le','-f','f32le',chunk],{signal});
       const size=(await stat(chunk)).size;
-      if(size!==expected)throw Error('Audio range thiếu/thừa sample; đã dừng để tránh lệch tiếng. Không tự chèn padding hoặc cắt main.');
+      if(size!==expected)throw Error('Audio stream không cung cấp đủ sample cho range đã chọn (có thể kết thúc sớm hơn video); đã dừng để tránh lệch tiếng. Không tự chèn padding hoặc cắt main.');
       for await(const buffer of createReadStream(chunk,{highWaterMark:65536})){signal?.throwIfAborted();let offset=0;while(offset<buffer.length){const {bytesWritten}=await output.write(buffer,offset,buffer.length-offset);if(!bytesWritten)throw Error('Không ghi được audio range');offset+=bytesWritten;}}
      }finally{await rm(chunk,{force:true});}
     }else{

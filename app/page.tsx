@@ -79,11 +79,11 @@ import { MediaLibraryPanel, type LibraryFile } from "@/components/media-library-
 import { EditorRenderList } from "@/components/editor-render-list";
 import { completedRenderJobs } from '@/lib/render-delete.mjs';
 import { CopyButton } from "@/components/copy-button";
-import { trimPartStart } from "@/worker/part-start.mjs";
+import { effectiveCutPlan } from "@/worker/part-start.mjs";
 import {MainRangesEditor} from '@/components/main-ranges-editor';
 import {applyMainRanges,captureAiMainRanges,restoreAiMainRanges} from '@/lib/main-ranges.mjs';
 import type {MainRangeRow} from '@/lib/main-ranges.mjs';
-import { partCaptions, subtitleY, sourceCaptionTrack, isCurrentCaptionRequest, type CaptionTrack, type SubtitleStyle } from "@/lib/subtitles.mjs";
+import { partCaptions, subtitleY, sourceCaptionTrack, effectiveCaptionTrack, isCurrentCaptionRequest, type CaptionTrack, type SubtitleStyle } from "@/lib/subtitles.mjs";
 import { CANVAS_WIDTH, foregroundGeometry, FOREGROUND_SCALE, FOREGROUND_HEIGHT, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH } from '@/lib/render-config.mjs';
 import {
   AiProvider,
@@ -101,6 +101,8 @@ import {
 import { fitTitlePair } from "@/lib/render-spec";
 import { collectBatchDownloads, createBatchDownloadQueue } from "@/lib/batch-downloads.mjs";
 import { clearSubmittedBatchInput } from "@/lib/batch-submission.mjs";
+import {assertTeaserContexts} from "@/lib/teaser-context.mjs";
+import {validSourceRange} from "@/lib/source-ranges.mjs";
 import { attachExternalHooks, externalHooksCurrent, buildExternalHookOnlyPrompt, parseExternalHookOnly } from "@/lib/teaser-import.mjs";
 import {createAnalysisRequestGuard} from "@/lib/auto-cut/request.mjs";
 import {lockedParts} from "@/lib/auto-cut/locks.mjs";
@@ -544,7 +546,7 @@ export default function Home() {
   const timing = useMemo(() => {
     let base = { parts: plan.parts, providerUsed: plan.providerUsed, analysis:plan.analysis };
     try {
-      base = { ...base, parts: plan.parts.map(p=>{const effective=trimPartStart(p);return effective.smartCutApplied?effective:{...effective,smartCutApplied:true};}) };
+      base = effectiveCutPlan(base);
       // Legacy AI plans get an in-memory restore checkpoint from their actual
       // effective main ranges, never an outer start/end window.
       const effective=captureAiMainRanges({...plan,...base});
@@ -553,23 +555,42 @@ export default function Home() {
   }, [plan.parts, plan.providerUsed, plan.analysis, preparedSource?.duration]);
   const draftError=hasEditPlan&&timing.parts.some(p=>mainDraftErrors[p.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[p.id]?.key===hookRangeKey(p)&&mainDraftErrors[p.id]?.invalid)?'Timeline có dòng chưa hợp lệ; sửa hoặc xóa dòng trước khi xuất/lưu/phân tích.':'';
   const teaserDraftError=hasEditPlan?timing.parts.filter(p=>p.teaserEnabled!==false).map(p=>teaserDraftErrors[p.id]).find(d=>d?.sourceKey===mainEditorSourceKey&&d.message)?.message||'':'';
-  const effectiveTiming = { plan: { ...plan, parts: timing.parts, analysis:timing.analysis }, error: timing.error||draftError||teaserDraftError };
-  const previewPlan: EditPlan = {...effectiveTiming.plan,musicSpeech:plan.musicSpeech?.sourceId===preparedSource?.id?plan.musicSpeech:undefined};
+  const captionState=useMemo(()=>{
+    if(!preparedSource)return{track:undefined,error:''};
+    try{return{track:effectiveCaptionTrack(plan,preparedSource,sourceCaptions?.sourceId===preparedSource.id?sourceCaptions:undefined),error:''};}
+    catch(e){return{track:undefined,error:e instanceof Error?e.message:'Phụ đề không hợp lệ.'};}
+  },[plan.captionCues,preparedSource,sourceCaptions]);
+  const effectiveTiming = { plan: { ...plan, parts: timing.parts, analysis:timing.analysis }, error: timing.error||draftError||teaserDraftError||captionState.error };
+  const previewPlan: EditPlan = {...effectiveTiming.plan,captionCues:captionState.track,musicSpeech:plan.musicSpeech?.sourceId===preparedSource?.id?plan.musicSpeech:undefined};
   const previewVisualStyle = useMemo(() => resolvePlanVisualStyle({ visualStyle: previewPlan.visualStyle, subtitles: subtitleSettings }), [previewPlan.visualStyle, subtitleSettings]);
   const videoColorFilter = browserFilterStyle(previewVisualStyle.filter, { contrast: workerHealth?.render?.contrast ?? DEFAULT_VISUAL_STYLE.filter.contrast, saturation: workerHealth?.render?.saturation ?? DEFAULT_VISUAL_STYLE.filter.saturation });
   const activePart = previewPlan.parts[activePartIndex];
   const playbackSegments = useMemo(() => presentationSegments(activePart), [activePart]);
   const transitionWindows = useMemo(() => hasEditPlan ? partTransitionWindows(activePart, previewVisualStyle.cutTransition, previewPlan.hookTransition) : [], [hasEditPlan, previewVisualStyle.cutTransition, activePart,previewPlan.hookTransition]);
-  const subtitleCues = useMemo(() => sourceCaptions?.sourceId === preparedSource?.id ? sourceCaptions?.cues || [] : [], [sourceCaptions, preparedSource?.id]);
+  const subtitleCues = useMemo(() => captionState.track?.cues || [], [captionState.track]);
   const previewCaptions = useMemo(() => partCaptions(previewPlan.captionCues?.cues || subtitleCues, activePart, previewVisualStyle.subtitle), [previewPlan.captionCues, subtitleCues, activePart, previewVisualStyle.subtitle]);
   const previewCaption = previewCaptions.find((cue) => previewCurrentTime * PREVIEW_RATE >= cue.start && previewCurrentTime * PREVIEW_RATE < cue.end);
   const partDuration = presentationDuration(activePart)/PREVIEW_RATE;
   const previewEffectTime=previewToExportTime(previewCurrentTime);
-  const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined, customTeaser: undefined })), cues: sourceCaptions?.cues });
-  const teaserIssues=useMemo(()=>teaserReadiness(previewPlan,preparedSource?.duration||previewDuration||Infinity,previewPlan.captionCues?.cues||subtitleCues),[previewPlan.parts,preparedSource?.duration,previewDuration,previewPlan.captionCues?.cues,subtitleCues]);
+  const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined, customTeaser: undefined })), cues: subtitleCues });
+  const basicTeaserIssues=useMemo(()=>teaserReadiness(previewPlan,preparedSource?.duration||previewDuration||Infinity,previewPlan.captionCues?.cues||subtitleCues),[previewPlan.parts,preparedSource?.duration,previewDuration,previewPlan.captionCues?.cues,subtitleCues]);
+  const [freshnessState,setFreshnessState]=useState<{key:string;issues:{partId:number;reason:string}[]}>({key:'',issues:[]});
+  const freshnessKey=JSON.stringify({source:preparedSource?{id:preparedSource.id,duration:preparedSource.duration,title:preparedSource.title}:null,parts:previewPlan.parts,cues:subtitleCues,transcript:transcript||preparedSource?.transcript||'',instruction,supplementalPrompt});
+  useEffect(()=>{
+    if(!preparedSource||!hasEditPlan)return;
+    let current=true;const source=preparedSource,content=transcript||source.transcript||'',plan=previewPlan,cues=subtitleCues;
+    void Promise.all(plan.parts.filter(p=>p.teaserEnabled!==false&&p.teaser?.status==='selected'&&['ai','external-import'].includes(p.teaser.selection)).map(async part=>{
+      try{await assertTeaserContexts({...plan,parts:plan.parts.map(p=>p.id===part.id?p:{...p,teaserEnabled:false})},source,cues,content,{instruction,supplementalPrompt});return null;}
+      catch(e){return{partId:part.id,reason:e instanceof Error?e.message:'Teaser AI đã cũ; cần chọn lại.'};}
+    })).then(values=>{if(current)setFreshnessState({key:freshnessKey,issues:values.filter((v):v is {partId:number;reason:string}=>v!==null)});});
+    return()=>{current=false;};
+    // Serialized content identity excludes visual style/music and raw custom draft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[freshnessKey,hasEditPlan]);
+  const teaserIssues=[...basicTeaserIssues,...(freshnessState.key===freshnessKey?freshnessState.issues.filter(i=>!basicTeaserIssues.some(b=>b.partId===i.partId)):[])];
   const latestMainSignature = useRef(mainSignature);
   useEffect(() => { latestMainSignature.current = mainSignature; }, [mainSignature]);
-  const hookIdentity = JSON.stringify({ sourceId: preparedSource?.id, provider, transcript, instruction, mainSignature });
+  const hookIdentity = JSON.stringify({ sourceId: preparedSource?.id, provider, transcript, instruction, supplementalPrompt, mainSignature });
   const latestHookIdentity = useRef(hookIdentity);
   useEffect(() => { latestHookIdentity.current = hookIdentity; }, [hookIdentity]);
   const timelineDuration = hasEditPlan ? partDuration : previewDuration;
@@ -1239,7 +1260,8 @@ export default function Home() {
 
   async function checkTeasersForExport(nextPlan:EditPlan,source:WorkerSource){
     requireBothTeasers(nextPlan,source.duration,nextPlan.captionCues?.cues||subtitleCues);
-    if(["gemini","muse"].includes(nextPlan.providerUsed)&&!await externalHooksCurrent(nextPlan,source,transcript))throw new Error("Teaser import đã cũ; tạo prompt/import lại trước khi xuất, không tự chuyển provider.");
+    await assertTeaserContexts(nextPlan,source,nextPlan.captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
+    if(!await externalHooksCurrent(nextPlan,source,transcript||source.transcript||''))throw new Error("Teaser import đã cũ; tạo prompt/import lại trước khi xuất, không tự chuyển provider.");
   }
 
   // A custom proposal is not installed until the per-part editor confirms it.
@@ -1249,16 +1271,16 @@ export default function Home() {
     if(timing.error||draftError)throw new Error(timing.error||draftError);
     const source=preparedSource;
     if(!source)throw new Error("Chuẩn bị nguồn video trước khi chọn teaser.");
-    const signature=latestMainSignature.current,sourceId=source.id;
+    const signature=latestMainSignature.current,requestIdentity=latestHookIdentity.current,sourceId=source.id;
     const captionCues=sourceCaptions?.sourceId===sourceId?sourceCaptionTrack(sourceCaptions,source):previewPlan.captionCues;
     const requestPlan={...previewPlan,parts:previewPlan.parts.map(p=>p.id===partId?{...p,teaser:undefined,customTeaser:undefined}:p),...(captionCues?{captionCues}:{})};
     const response=await fetch(`${WORKER_ORIGIN}/api/sources/${sourceId}/teaser-hooks`,{
       method:'POST',signal,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({plan:requestPlan,partId,transcript:transcript.slice(0,100_000),...(input?{customInstruction:input}:{})})
+      body:JSON.stringify({plan:requestPlan,partId,instruction,supplementalPrompt,transcript:transcript.slice(0,100_000),...(input?{customInstruction:input}:{})})
     });
     const result=await response.json() as {plan?:EditPlan;error?:string};
     if(!response.ok||!result.plan)throw new Error(result.error||"Không chọn được teaser.");
-    if(signal.aborted||signature!==latestMainSignature.current||subtitleSourceRef.current!==sourceId)throw new Error("Nguồn/main đã thay đổi. Chuẩn bị teaser lại.");
+    if(signal.aborted||signature!==latestMainSignature.current||requestIdentity!==latestHookIdentity.current||subtitleSourceRef.current!==sourceId)throw new Error("Nguồn/main đã thay đổi. Chuẩn bị teaser lại.");
     const part=result.plan.parts.find(p=>p.id===partId);
     if(!part?.teaser)throw new Error("Provider không trả kết quả teaser cho part này.");
     validateTeaser(part,source.duration);
@@ -1362,11 +1384,13 @@ export default function Home() {
         return locked?structuredClone(context.lockedPlan!.parts[i]):{...p,smartCutApplied:true,...(typeof previous?.teaserEnabled==='boolean'?{teaserEnabled:previous.teaserEnabled}:{}),...(previous?.teaserEnabled===false?{teaser:previous.teaser,customTeaser:previous.customTeaser}:{} )};
       })};
       const selections = context.hookPlan ? parseExternalHookOnly(webAiResult, preparedSource, context.requestId, context.hookPlan) : imported!.hookSelections || [];
-      let nextPlan = await attachExternalHooks(refined, selections, preparedSource, context.transcript, context.provider, sourceCaptions?.cues);
+      let nextPlan = await attachExternalHooks({...refined,captionCues:previewPlan.captionCues}, selections, preparedSource, context.transcript, context.provider, subtitleCues,{instruction:context.instruction,supplementalPrompt:context.supplementalPrompt});
       if(context.analysisKey&&!context.hookPlan){
         const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,plan:nextPlan})});
         const data=await response.json() as {plan?:EditPlan;error?:string};if(!response.ok||!data.plan)throw new Error(data.error||"Import context đã thay đổi.");nextPlan=data.plan;
       }
+      const verified=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/teaser-hooks`,{method:'POST',signal:ticket.controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'validate-import',plan:nextPlan,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt})});
+      const checked=await verified.json() as {plan?:EditPlan;error?:string};if(!verified.ok||!checked.plan)throw Error(checked.error||'Không xác nhận được hook import.');nextPlan=checked.plan;
       if (latestHookIdentity.current !== identity) throw new Error("Nội dung/provider đã đổi trong lúc kiểm tra. Tạo prompt mới; kết quả cũ không được áp dụng.");
       if (!analysisRequests.current.isCurrent(ticket) || selectionEpoch !== sourceSelectionEpoch.current) return;
 
@@ -1579,7 +1603,7 @@ export default function Home() {
       if(selectionEpoch!==sourceSelectionEpoch.current)return;
       for (const part of submittedPlan.parts) {
         for (const segment of part.segments) {
-          if (segment.end > source.duration + 0.05) {
+          if (!validSourceRange(segment,source.duration)) {
             throw new Error(`Part ${part.id} có timestamp ${formatTime(segment.end)} vượt quá video source (${formatTime(source.duration)}). Hãy sửa timestamp hoặc Generate plan lại.`);
           }
         }
@@ -1587,7 +1611,7 @@ export default function Home() {
       const response = await fetch(`${WORKER_ORIGIN}/api/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId: source.id, plan: snapshotPlanVisualStyle({ ...submittedPlan, subtitles: subtitleSettings, ...(subtitleSettings.enabled && sourceCaptions?.sourceId === source.id ? { captionCues: sourceCaptionTrack(sourceCaptions, source) } : {}) }) }),
+        body: JSON.stringify({ sourceId: source.id, transcript:transcript||source.transcript||'',instruction,supplementalPrompt, plan: snapshotPlanVisualStyle({ ...submittedPlan, subtitles: subtitleSettings, ...(submittedPlan.captionCues ? { captionCues: sourceCaptionTrack(submittedPlan.captionCues, source) } : {}) }) }),
       });
       const data = (await response.json()) as { job?: RenderJob; error?: string };
       if (!response.ok || !data.job) throw new Error(data.error || "Không thể bắt đầu render.");
@@ -2053,7 +2077,7 @@ export default function Home() {
               onInvalidate={()=>{invalidateAnalysis();setRenderJob(null);}}
               onDraft={(id,key,invalid)=>setMainDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.invalid===invalid?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,invalid}})}
               onEdit={(id,rows:MainRangeRow[],expectedKey)=>{invalidateAnalysis();setRenderJob(null);setPlan(current=>{
-                const base={...current,parts:current.parts.map(trimPartStart)},target=base.parts.find(p=>p.id===id);
+                const base=effectiveCutPlan(current),target=base.parts.find(p=>p.id===id);
                 if(!target||hookRangeKey(target)!==expectedKey)return current;
                 try{return applyMainRanges(base,id,rows,preparedSource?.duration||previewDuration||Infinity);}catch{return current;}
               });}}
@@ -2067,7 +2091,7 @@ export default function Home() {
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
               onAudition={()=>{stopTeaserAuditions(part.id);setActivePartIndex(index);previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();}}
               onChange={next=>{invalidateAnalysis();setPlan(current=>{
-                try{const base={...current,parts:current.parts.map(trimPartStart)};
+                try{const base=effectiveCutPlan(current);
                   const effective=base;
                   const target=effective.parts.find(p=>p.id===next.id);
                   if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
@@ -2077,7 +2101,7 @@ export default function Home() {
 
           {part.teaser && <details className="mt-3 w-full max-w-[520px] rounded-xl border border-white/10 p-3 text-xs text-zinc-400">
             <summary className="cursor-pointer">Teaser Part {part.id} · {part.teaser.status === "selected" ? `${((part.teaser.end - part.teaser.start) / PREVIEW_RATE).toFixed(2)}s preview 1× · ${part.teaser.selection === "ai" ? "AI API" : part.teaser.selection === "external-import" ? "External import · API chưa xác minh" : part.teaser.selection === "manual" ? "Chọn tay · cần xem lại" : "Fallback — chưa xác minh biên tập"}` : "Không có đoạn phù hợp"}</summary>
-            <p className="mt-2">{explainInVietnamese(part.teaser.reason)}</p>
+            <p className="mt-2">{explainInVietnamese(part.teaser.reason)}</p>{part.teaser.status==='selected'&&<><p className="mt-1">Nội dung part: {explainInVietnamese(part.teaser.partUnderstanding)}</p><p className="mt-1">Lời trích / bằng chứng: {explainInVietnamese(part.teaser.observed)}</p><p className="mt-1">Ngữ cảnh mở đầu: {explainInVietnamese(part.teaser.startContext)}</p></>}
             {part.teaser.status === "selected" && <><p className="mt-1">{explainInVietnamese(part.teaser.relation)}</p>{part.teaser.ending && <p className="mt-1">Điểm kết: {explainInVietnamese(part.teaser.ending)}</p>}{part.teaser.heatmapEvidence && <p className="mt-1">Most Replayed: {explainInVietnamese(part.teaser.heatmapEvidence.reason)}</p>}<p className="mt-1">{part.teaser.provider} / {part.teaser.model} · {part.teaser.limitations.map(line=>explainInVietnamese(line,"Giới hạn bằng chứng chưa có diễn giải tiếng Việt; xem dữ liệu plan gốc.")).join(" · ")}</p></>}
           </details>}
               </TeaserEditor>
@@ -2124,7 +2148,7 @@ export default function Home() {
               {subtitleCues.length > 0 && <details><summary className="cursor-pointer text-xs text-zinc-400">Xem / sửa phụ đề · {subtitleCues.length} câu</summary><div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
                 {subtitleCues.map((cue, index) => <label key={index} className="block text-[10px] text-zinc-500">{formatTime(cue.start)} – {formatTime(cue.end)}<Textarea aria-label={`Câu phụ đề ${index + 1}`} value={cue.text} onChange={(event) => {
                   const text = event.target.value;
-                  setSourceCaptions((current) => current ? { ...current, cues: current.cues.map((item, itemIndex) => itemIndex === index ? { ...item, text } : item) } : null);
+                  setSourceCaptions((current) => {const track=current||captionState.track;return track?{...track,origin:'user-edited',cues:track.cues.map((item,itemIndex)=>itemIndex===index?{...item,text}:item)}:null;});
                 }} className="studio-textarea mt-1 min-h-[48px] text-xs" /></label>)}
               </div></details>}
             </div>}

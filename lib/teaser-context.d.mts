@@ -1,0 +1,12 @@
+import type {EditPlan,EditPart} from './edit-plan';
+import type {Caption} from './subtitles.mjs';
+type Source={id:string;duration:number;title?:string};
+export type TeaserBinding={version:1;sourceId:string;transcriptKey:string;contextKey:string;requestKey:string;evidenceKey:string;sourceFingerprint?:string};
+export type SelectionRequest={instruction?:string;supplementalPrompt?:string;customInstruction?:string};
+export function selectionRequestValue(request?:SelectionRequest,part?:EditPart):string;
+export function transcriptValue(value:unknown):string;
+export function selectionDigest(value:string):Promise<string>;
+export function teaserEvidenceValue(source:Source):string;
+export function teaserContextValue(part:EditPart,source:Source,cues:Caption[],transcriptKey:string,requestKey?:string):string;
+export function bindTeaserContext(part:EditPart,source:Source,cues:Caption[],transcript:string,sourceFingerprint?:string,request?:SelectionRequest):Promise<TeaserBinding>;
+export function assertTeaserContexts(plan:EditPlan,source:Source,cues:Caption[],transcript:string,request?:SelectionRequest):Promise<void>;

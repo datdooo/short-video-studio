@@ -49,6 +49,7 @@ export type EditPlan = {
   visualStyle?: VisualStyle;
   subtitles?: import("./subtitles.mjs").SubtitleStyle;
   captionCues?: CaptionTrack;
+  teaserTranscriptKey?: string;
   originalTitle: string;
   language: "de" | "en" | "fr" | "ja" | "ko";
   providerUsed: PlanSource;
@@ -126,7 +127,8 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
   if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => part.hashtags.length !== 10)) {
     throw new Error("AI chưa trả về đủ 10 hashtag khác nhau cho mỗi part. Hãy Generate lại.");
   }
-  if (!["mock", "manual"].includes(providerUsed)) parts = parts.map(trimPartStart);
+  parts = ["mock", "manual"].includes(providerUsed)
+    ? parts.map(part=>({...part,startTrimApplied:true,smartCutApplied:true})) : parts.map(trimPartStart);
   parts.forEach((part) => validateTeaser(part));
   if (!["mock", "manual"].includes(providerUsed) && parts.some((part) => durationOf(part) / PLAYBACK_RATE <= 60)) {
     throw new Error("Mỗi part phải trên 1 phút sau bỏ 1 giây đầu và tua 1.25×: cần hơn 76 giây footage gốc. Nếu nội dung chính ngắn, yêu cầu AI chọn footage thật phù hợp và thêm segment isPadding: true ở cuối để đủ thời lượng.");
@@ -142,6 +144,8 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
     ...(plan.music ? {music:structuredClone(plan.music)} : {}),
     ...(plan.musicSpeech ? {musicSpeech:structuredClone(plan.musicSpeech)} : {}),
     ...(plan.analysis ? { analysis: structuredClone(plan.analysis) } : {}),
+    ...(plan.teaserTranscriptKey ? {teaserTranscriptKey:plan.teaserTranscriptKey} : {}),
+    ...(plan.captionCues ? {captionCues:structuredClone(plan.captionCues)} : {}),
     ...(plan.teaserPolicy ? { teaserPolicy: plan.teaserPolicy } : {}),
     visualStyle: resolvePlanVisualStyle(plan),
     originalTitle: plan.originalTitle,

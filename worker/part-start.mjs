@@ -1,5 +1,15 @@
 export const PART_START_TRIM_SECONDS = 1;
 
+// Resolve compatibility once, before preview/snapshot. Manual ranges are exact;
+// old AI ranges keep their historical one-second trim, never a second Smart Cut.
+export function effectiveCutPlan(plan) {
+  const exact = ['manual','mock'].includes(plan.providerUsed);
+  return {...plan, parts: plan.parts.map(part => {
+    const next = exact || part.mainEdited ? {...part, startTrimApplied:true} : trimPartStart(part);
+    return {...next, smartCutApplied:true};
+  })};
+}
+
 // Work on a copy: AI/manual plans continue to refer to the original source.
 export function trimPartStart(part) {
   if (part.startTrimApplied === true) return part;

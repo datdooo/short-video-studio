@@ -1,3 +1,4 @@
+import {hookFailure,hookFailureNotice} from './teaser-selection.mjs';
 import {captureAiMainRanges} from '../lib/main-ranges.mjs';
 import {externalPlanAnalysis,modelSelectionInput} from '../lib/auto-cut/main-content.mjs';
 import {assertMainLocks} from '../lib/auto-cut/locks.mjs';
@@ -20,23 +21,23 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
       return{plan:captureAiMainRanges(externalPlanAnalysis(plan,source,context,options,input),body.currentPlan)};
     }
     let plan=await mainContent.select(source,context,options);
-    if(body.captionCues)plan.captionCues=structuredClone(body.captionCues);
+    if(options.captionTrack)plan.captionCues=structuredClone(options.captionTrack);
     for(const part of plan.parts){
       const previous=body.currentPlan?.parts?.find(p=>p.id===part.id);
       if(typeof previous?.teaserEnabled==='boolean')part.teaserEnabled=previous.teaserEnabled;
       if(previous?.teaserEnabled===false){part.teaser=structuredClone(previous.teaser);part.customTeaser=structuredClone(previous.customTeaser);}
       else if(previous?.customTeaser){part.customTeaser=structuredClone(previous.customTeaser);part.teaser=hookRangeKey(previous)===hookRangeKey(part)?structuredClone(previous.teaser):unavailableHook(part,'Main đã đổi; Custom Teaser cần kiểm tra lại. Không tự chọn đoạn thay thế.');}
     }
-    if(plan.analysis?.method==='deterministic-fallback'&&/provider-/.test(plan.analysis.fallbackReason||'')){
-      plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"vr-light-leak-v2"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>p.teaserEnabled===false?p:({...p,teaser:(p.customTeaser||p.manualLocked)&&p.teaser?p.teaser:unavailableHook(p,'Chưa chọn được teaser bằng ChatGPT: AI chưa đánh giá được sức hấp dẫn/bằng chứng. Dùng Custom Teaser hoặc chọn lại; không tự lấy một đoạn chung chung.')}))};
+    if(plan.analysis?.method==='deterministic-fallback'&&/provider-(auth|rate-limited|model-unavailable)/.test(plan.analysis.fallbackReason||'')&&!body.currentPlan?.parts?.every(p=>p.manualLocked)){
+      plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"vr-light-leak-v2"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>p.teaserEnabled===false?p:({...p,teaser:(p.customTeaser||p.manualLocked)&&p.teaser?p.teaser:unavailableHook(p,'Bước phân tích main: '+hookFailureNotice(plan.analysis.fallbackReason))}))};
     }else try{
-      plan=await selectHooks(plan,{...source,sourceContext:context},signal,body.transcript);
-    }catch{
+      plan=await selectHooks(plan,{...source,sourceContext:context},signal,body.transcript,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
+    }catch(error){
       signal?.throwIfAborted();
       // A failure preparing optional teaser context must not discard new main
       // ranges or rerun main selection. Enabled parts still require valid hooks.
-      plan={...plan,teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>p.teaserEnabled===false?p:({...p,teaser:p.customTeaser&&p.teaser?p.teaser:unavailableHook(p,'Chưa chọn được teaser bằng ChatGPT: bước chuẩn bị/chọn teaser bị lỗi. Main và khóa được giữ; chọn lại bằng AI hoặc Custom Teaser tại Timeline.')}))};
+      plan={...plan,teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>p.teaserEnabled===false?p:({...p,teaser:p.customTeaser&&p.teaser?p.teaser:unavailableHook(p,'Bước chuẩn bị/chọn teaser: '+hookFailureNotice(hookFailure(error)))}))};
     }
-    plan=captureAiMainRanges(plan,body.currentPlan);validatePlan(plan,source);assertMainLocks(plan,body.currentPlan);signal?.throwIfAborted();return{plan};
+    plan=captureAiMainRanges(plan,body.currentPlan);validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);signal?.throwIfAborted();return{plan};
   };
 }
