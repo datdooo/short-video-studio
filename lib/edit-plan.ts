@@ -27,6 +27,7 @@ export type EditPart = {
   aiMainRanges?: import('./main-ranges.mjs').AiMainRanges;
   mainEdited?: boolean;
   teaserNeedsReselection?: boolean;
+  teaserEnabled?: boolean; // Missing in legacy plans means enabled.
   customTeaser?: import("./custom-teaser.mjs").CustomTeaser;
   manualLocked?: boolean;
   teaser?: import("./teaser-hooks.mjs").Teaser;

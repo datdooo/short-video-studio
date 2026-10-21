@@ -1,3 +1,115 @@
+# Source delivery checkpoint — UI/framing/optional teaser (2026-10-21)
+
+User authorized normal push of all current project source to origin on
+`recovery/visual-dev-reconstructed`. Remote was fetched and matched local base
+`87c3135c5ff176028f378c9f1d32833569e6c75c` before this checkpoint. Includes all
+preserved normalized framing, local OFL UI font/controls, manual opening override,
+per-part teaser enable/disable persistence/mapping and delivery documentation.
+`docs/video-cut-logic-audit-20261021.md` is a REVIEW with proposed fixes, not an
+implementation of those fixes. Do not report its findings as resolved.
+Latest DEV package build remains the successful combined build recorded below;
+no test/render/provider/YouTube/build run for this push. Current source tree
+scanned for credential patterns without printing values: no findings. No outgoing
+commits existed before this checkpoint; its staged blobs are reviewed separately.
+Required font asset/license/provenance included; ignored media/music, exports,
+credentials, dependencies, QA payloads, caches/apps/builds and recovery bundles
+remain local. No app/worker restart, production changes, force push or main merge.
+Use final Git refs/delivery response for the new SHA and remote verification;
+this document does not assume a push has succeeded before it actually runs.
+
+---
+
+# Active update — manual teaser opening + per-part toggle (2026-10-21)
+
+Same branch/base87c3135; all pending framing/font/UI work retained. Read
+`docs/teaser-manual-toggle.md`. User now permits manual opening source timestamps
+and adds per-part Bật/Tắt teaser. This supersedes mandatory hooks on both parts:
+only enabled parts require valid teasers; explicit off means main-only. Persisted
+optional boolean defaults to on for legacy plans. Shared presentation/transition/
+caption/music/ducking mapping, preview mix key, readiness, autosave and AI/import
+preservation updated. No main edits or queued-job mutation; no renderer rewrite.
+Added/updated focused regression assertions, NOT run. No test/render/provider/
+YouTube/browser QA. Browser Use still disabled despite user approval; no bypass.
+Combined Node22 DEV build succeeded once (exit0), app
+`release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-ui-audit-teaser-toggle-build-20261021.log`. Read-only packaged-source/font checks match. Only docs changed afterward.
+Current web/worker PIDs27107/27106 still use `.build-iLQdbs/previous-build.app`
+(lsof confirmed); reopen the new app normally once jobs finish. No restart, job
+interruption, commit, push/merge or production/credentials/media/exports/backups
+changes.
+
+---
+
+# Active update — detailed UI audit (2026-10-21)
+
+Read `docs/ui-detail-audit.md`. Same branch/base87c3135; ALL pending UI/font/framing
+work preserved. Source fixes include select-arrow padding, base control token
+conflicts, nested Inspector indentation, timecode/gap alignment, long controls,
+Copy header wrap, native details ownership and a non-scrolling Render action area.
+No business handler/API/schema/engine changes. User approved viewing/screenshots,
+workspace tabs and panel/disclosure toggles ONLY; no Generate/Render/provider/
+download/delete/plan changes. CUA still reports Browser Use disabled in Work
+settings; user said they will enable it. NO screenshots obtained yet; no visual
+QA claim. No unit/render/provider tests. Final combined DEV build succeeded once (exit0),
+including manual teaser/toggle changes: `release/dev/ShortCut Studio Dev.app`;
+log `/tmp/shortcut-dev-ui-audit-teaser-toggle-build-20261021.log`. No app/worker restart, active-job interruption or new commit/push/merge.
+
+---
+
+# Active update — Grok-like Vietnamese font + UI polish (2026-10-21)
+
+Read `docs/ui-font-spacing-polish.md`. Same87c3135 base; preserve all dirty
+height-normalized framing and UI changes. Primary UI font is now local OFL
+Plus Jakarta Sans (Vietnamese in official metadata),176288B variable asset with
+license/source hashes under public/fonts/ui. It approximates Outfit's geometric
+style; not identical Outfit and no live glyph QA. Inter/Noto fallback retained;
+video fonts unchanged. Active UI audit fixes action-row indentation, Timeline
+action width, text-field padding, long-heading wrap, label association, menu
+viewport limits and portaled new-session controls; existing callbacks unchanged.
+Google/web references bounded to official font/Radix/WAI docs. No tests/browser/
+render/provider/ASR. Combined Node22 DEV build succeeded once, exit0; app:
+`release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-ui-jakarta-spacing-polish-build-20261021.log`. Bundled font/OFL
+and framing source match local files; only docs changed afterward. No app/worker
+restart, job mutation or push/merge. Running DEV PIDs25664/25663 still use
+`.build-ZulbHx/previous-build.app` (lsof after build); reopen the new app normally
+when jobs finish. User performs manual acceptance.
+
+---
+
+# Active update — restore height-normalized framing (2026-10-21)
+
+Same branch/base87c3135. All newer uncommitted font/dropdown/UI changes retained.
+Read `docs/foreground-height-normalized-framing.md`; this supersedes contain-fit
+and direct CSS scale guidance below. Geometry now fixes base height1080 then
+zoom1.25 once: every16:9 resolution ->2400×1350 centered/cropped inside1080×1350.
+Both preview decks use shared geometry percentages without CSS scale; export
+filter and transition masks use the same height/aspect/even-pixel rule. No viewport,
+text/background positions, clocks, engine scheduling or quality changes.
+No tests/browser/render/provider QA. Node22 DEV build succeeded once, exit0;
+app `release/dev/ShortCut Studio Dev.app`; log:
+`/tmp/shortcut-dev-height-normalized-framing-build-20261021.log`. Packaged shared
+geometry files match source. Only docs changed after build. Current DEV web/worker
+PIDs24526/24525 still run from `.build-Z7enLa/previous-build.app` (lsof confirmed);
+new framing requires normal quit/reopen when jobs finish. No restart/stop/job mutation.
+Manual visual acceptance still required. No commit/push/merge or production changes.
+
+---
+
+# Active update — UI font / dropdown consistency (2026-10-21)
+
+Starting clean at87c3135 on recovery/visual-dev-reconstructed; that checkpoint
+was confirmed on origin. Read `docs/ui-typography-disclosures.md`. Actual bundled
+Studio Inter name, shared13/12/11/14/20 typography, consistent16px chevrons and
+portaled-menu styling. Source-tab inline overrides removed; shared36/40/32 controls
+remain. Presentation only; no business handlers/engine/schema/preview geometry or
+media changes. NO tests/lint/typecheck/browser/render/provider/ASR. Node22 DEV
+package succeeded once, exit0; app `release/dev/ShortCut Studio Dev.app`, log
+`/tmp/shortcut-dev-ui-typography-disclosures-build-20261021.log`. Native packaging/
+signing only; no runtime QA. Only docs changed afterward; app/worker not restarted. User accepts manually; no new push/merge.
+
+---
+
 # Source delivery checkpoint — 2026-10-21
 
 User authorized normal push of all current source on

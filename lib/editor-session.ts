@@ -36,6 +36,7 @@ function readPlan(raw:unknown):EditPlan|undefined{
   if(p.segments.some(s=>!object(s)||!finite(s.start)||!finite(s.end)||Number(s.end)<=Number(s.start)||typeof s.label!=='string'||typeof s.reason!=='string'))return;
   const part={...pick(p,['id','title','hook','hashtags','aiMainRanges','mainEdited','manualLocked','startTrimApplied','smartCutApplied','teaserNeedsReselection']),segments:p.segments.map(s=>pick(s,['start','end','label','reason','type','holdDuration','text','focus','isPadding']))} as EditPlan['parts'][number];
   if(!isChronological(part))return;
+  if(typeof p.teaserEnabled==='boolean')part.teaserEnabled=p.teaserEnabled;
   if(object(p.teaser)&&['selected','unavailable'].includes(String(p.teaser.status))&&typeof p.teaser.reason==='string'){
    if(p.teaser.status==='unavailable'||(finite(p.teaser.start)&&finite(p.teaser.end)&&Array.isArray(p.teaser.limitations)&&p.teaser.limitations.every(v=>typeof v==='string')&&Array.isArray(p.teaser.evidenceTimes)&&p.teaser.evidenceTimes.every(finite))){
     part.teaser=pick(p.teaser,['version','rangeKey','reason','status','start','end','selection','candidateId','kind','partUnderstanding','contentTypes','observed','startContext','standalone','complete','endingBasis','cueIds','replayUse','heatmapEvidence','alternatives','ending','relation','evidenceTimes','limitations','provider','model','promptVersion','inputKey','transition','selectionPolicy']) as unknown as NonNullable<typeof part.teaser>;

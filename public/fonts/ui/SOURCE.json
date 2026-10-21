@@ -1,0 +1,22 @@
+{
+  "family": "Plus Jakarta Sans",
+  "usage": "Application UI only; not a VisualStyle preset/font",
+  "source": "https://raw.githubusercontent.com/google/fonts/47d54ca1ebb14fd864695f1d39dc734f39017c33/ofl/plusjakartasans/",
+  "googleFontsCommit": "47d54ca1ebb14fd864695f1d39dc734f39017c33",
+  "upstreamRepository": "https://github.com/tokotype/PlusJakartaSans",
+  "license": "SIL Open Font License 1.1",
+  "files": {
+    "PlusJakartaSans-Variable.ttf": {
+      "bytes": 176288,
+      "sha256": "89b3fb38aa0d275d7a731d0d817a4f1622b316b4d7fbdedcf02ee9099ff68bc8"
+    },
+    "OFL.txt": {
+      "bytes": 4402,
+      "sha256": "995c7199cab65954f545996326755daee7b63cc6b42b06c13da1f9502ab08a99"
+    },
+    "METADATA.pb": {
+      "bytes": 1396,
+      "sha256": "e7953d66e52a1e09235d75fc7aef7139c2733c0b5507afcf6e9afbe0fcef1de6"
+    }
+  }
+}

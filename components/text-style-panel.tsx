@@ -24,7 +24,7 @@ export function TextStylePanel({ style, onPreset }: { style: VisualStyle; onPres
 export function TextFontSelector({ style, onFont }: { style: VisualStyle; onFont: (id: string) => void }) {
   return <div>
     <label htmlFor="text-font" className="sr-only">Font</label>
-    <select id="text-font" value={style.originalTitle.font} onChange={(event) => onFont(event.target.value)} className="studio-input mt-1 w-full text-sm" style={{ fontFamily: fontFamilyForStyle(style.originalTitle.font, "Aa", { browser: true }) }}>
+    <select id="text-font" value={style.originalTitle.font} onChange={(event) => onFont(event.target.value)} className="studio-input mt-1 w-full text-sm">
       {["Recommended", "Japanese", "Korean"].map((group) => <optgroup key={group} label={group}>{fonts.filter((font) => font.group === group).map((font) => <option key={font.id} value={font.id} style={{ fontFamily: fontFamilyForStyle(font.id, font.group === "Japanese" ? "トマト" : font.group === "Korean" ? "토마토" : "Aa", { browser: true }) }}>{font.label}</option>)}</optgroup>)}
     </select>
   </div>;

@@ -1,5 +1,6 @@
 'use client';
 import {Fragment,useEffect,useRef} from 'react';
+import {X} from 'lucide-react';
 import {useEditorDraft} from './editor-draft-context';
 import type {ReactNode} from 'react';
 import type {EditPlan,EditPart} from '@/lib/edit-plan';
@@ -36,7 +37,7 @@ export function MainRangesEditor({active=true,plan,part,duration,locked,onEdit,o
    <div className="studio-main-range-row grid min-w-0 grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_4.5rem] items-center gap-1.5">
    <span className="text-xs text-zinc-400">{i+1}</span>
    {(['start','end'] as const).map(boundary=><input key={boundary} aria-label={`Part ${part.id} đoạn ${i+1} ${boundary==='start'?'Bắt đầu':'Kết thúc'}`} aria-invalid={Boolean(checked.errors[i])} aria-describedby={checked.errors[i]?`main-${part.id}-${i}-error`:undefined} inputMode="text" placeholder="00:00:00:00" title="HH:MM:SS:FF · 30 FPS" autoComplete="off" spellCheck={false} className="studio-input w-full min-w-0 px-1.5 py-2 font-mono text-xs" value={row[boundary]} onChange={e=>edit(rows.map((r,j)=>i===j?{...r,[boundary]:e.target.value,[boundary==='start'?'exactStart':'exactEnd']:undefined,timecode:true}:r))}/>)}
-   <div className="flex justify-end gap-1">{onSeek&&<button type="button" disabled={invalid} className="studio-ghost" title="Tới đoạn này trong preview 1×" onClick={()=>onSeek(i)}>Xem</button>}<button type="button" aria-label={`Xóa đoạn ${i+1} Part ${part.id}`} title="Xóa đoạn" data-control-size="icon" className="rounded border border-white/15 py-2 text-sm focus-visible:outline-2 focus-visible:outline-white" onClick={()=>edit(rows.filter((_,j)=>j!==i))}>×</button></div>
+   <div className="studio-main-range-actions flex items-center justify-start gap-1">{onSeek&&<button type="button" disabled={invalid} className="studio-ghost" title="Tới đoạn này trong preview 1×" onClick={()=>onSeek(i)}>Xem</button>}<button type="button" aria-label={`Xóa đoạn ${i+1} Part ${part.id}`} title="Xóa đoạn" data-control-size="icon" className="rounded border border-white/15 py-2 text-sm focus-visible:outline-2 focus-visible:outline-white" onClick={()=>edit(rows.filter((_,j)=>j!==i))}><X size={16} aria-hidden="true"/></button></div>
    {checked.errors[i]&&<p id={`main-${part.id}-${i}-error`} role="alert" className="col-span-4 text-xs text-red-300">{checked.errors[i]}</p>}
   </div></Fragment>)}
   {checked.error&&<p role="alert" className="text-xs text-red-300">{checked.error}</p>}

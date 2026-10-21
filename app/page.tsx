@@ -84,7 +84,7 @@ import {MainRangesEditor} from '@/components/main-ranges-editor';
 import {applyMainRanges,captureAiMainRanges,restoreAiMainRanges} from '@/lib/main-ranges.mjs';
 import type {MainRangeRow} from '@/lib/main-ranges.mjs';
 import { partCaptions, subtitleY, sourceCaptionTrack, isCurrentCaptionRequest, type CaptionTrack, type SubtitleStyle } from "@/lib/subtitles.mjs";
-import { FOREGROUND_SCALE, FOREGROUND_HEIGHT, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH } from '@/lib/render-config.mjs';
+import { CANVAS_WIDTH, foregroundGeometry, FOREGROUND_SCALE, FOREGROUND_HEIGHT, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH } from '@/lib/render-config.mjs';
 import {
   AiProvider,
   AnalyzeRequest,
@@ -552,7 +552,7 @@ export default function Home() {
     } catch (caught) { return { parts: base.parts, analysis:base.analysis, error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ." }; }
   }, [plan.parts, plan.providerUsed, plan.analysis, preparedSource?.duration]);
   const draftError=hasEditPlan&&timing.parts.some(p=>mainDraftErrors[p.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[p.id]?.key===hookRangeKey(p)&&mainDraftErrors[p.id]?.invalid)?'Timeline có dòng chưa hợp lệ; sửa hoặc xóa dòng trước khi xuất/lưu/phân tích.':'';
-  const teaserDraftError=hasEditPlan?timing.parts.map(p=>teaserDraftErrors[p.id]).find(d=>d?.sourceKey===mainEditorSourceKey&&d.message)?.message||'':'';
+  const teaserDraftError=hasEditPlan?timing.parts.filter(p=>p.teaserEnabled!==false).map(p=>teaserDraftErrors[p.id]).find(d=>d?.sourceKey===mainEditorSourceKey&&d.message)?.message||'':'';
   const effectiveTiming = { plan: { ...plan, parts: timing.parts, analysis:timing.analysis }, error: timing.error||draftError||teaserDraftError };
   const previewPlan: EditPlan = {...effectiveTiming.plan,musicSpeech:plan.musicSpeech?.sourceId===preparedSource?.id?plan.musicSpeech:undefined};
   const previewVisualStyle = useMemo(() => resolvePlanVisualStyle({ visualStyle: previewPlan.visualStyle, subtitles: subtitleSettings }), [previewPlan.visualStyle, subtitleSettings]);
@@ -609,10 +609,11 @@ export default function Home() {
     () => (sourceMode === "local" && localVideoUrl) || (preparedSource ? `${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media` : ""),
     [localVideoUrl, preparedSource, sourceMode],
   );
-  // The visible video itself uses a 100% contain-fit box, then one centered
-  // FOREGROUND_SCALE transform. It must not depend on measured canvas pixels.
+  // Canvas-normalized height1080 -> zoom125% is already in the shared geometry.
+  // Relative dimensions follow the foreground viewport; never add a second scale.
   const decodedVideo=deckVideos.current.find(video=>!!video&&video.getAttribute('src')===previewVideoUrl&&video.readyState>=1&&video.videoWidth>0);
   const foregroundSourceWidth=decodedVideo?.videoWidth||preparedSource?.width||sourceSize.width,foregroundSourceHeight=decodedVideo?.videoHeight||preparedSource?.height||sourceSize.height;
+  const foregroundImage=foregroundGeometry(foregroundSourceWidth,foregroundSourceHeight);
   const titleShineStyle = { maskImage: 'linear-gradient(to right, transparent, #000 50%, transparent)', maskRepeat: 'no-repeat', maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`, maskPosition: `${((1080 - TITLE_SHINE_WIDTH) * (previewEffectTime % TITLE_SHINE_SECONDS) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0` };
 
   const previewSourceEpoch=sourceSelectionEpoch.current;
@@ -1183,7 +1184,7 @@ export default function Home() {
       replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
       const missingTeasers=teaserReadiness(data.plan,source.duration);
       const mainNotice=data.plan.analysis?.method==='deterministic-fallback'?`Main dự phòng · ${explainInVietnamese(data.plan.analysis.fallbackReason,"AI chưa khả dụng; main dự phòng chưa được AI xác minh ngữ nghĩa.")}. `:'';
-      setAnalysisNotice(mainNotice+(missingTeasers.length?`Main đã lưu; chưa hoàn tất teaser. ${missingTeasers.map(issue=>`Part ${issue.partId}: ${issue.reason}`).join(' ')} Chọn lại bằng AI hoặc Custom Teaser tại Timeline; chưa thể xuất.`:'Đã tạo main và teaser hợp lệ cho cả hai part. Có thể xem/chỉnh trong Timeline.'));
+      setAnalysisNotice(mainNotice+(missingTeasers.length?`Main đã lưu; chưa hoàn tất teaser. ${missingTeasers.map(issue=>`Part ${issue.partId}: ${issue.reason}`).join(' ')} Chọn lại, nhập mốc tay hoặc tắt teaser tại Timeline.`:'Đã tạo main; các teaser đang bật hợp lệ. Có thể xem/chỉnh trong Timeline.'));
     }catch(caught){if(analysisRequests.current.isCurrent(ticket))setError(caught instanceof Error?caught.message:"Không tạo được Smart Auto Cut.");}
     finally{if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);}}
   }
@@ -1357,7 +1358,8 @@ export default function Home() {
       const normalized=context.hookPlan||normalizePlan(imported!,provider);
       const refined=context.hookPlan||{...normalized,parts:normalized.parts.map((p,i)=>{
         const locked=context.lockedPlan&&lockedParts(context.lockedPlan)[i];
-        return locked?structuredClone(context.lockedPlan!.parts[i]):{...p,smartCutApplied:true};
+        const previous=context.lockedPlan?.parts[i];
+        return locked?structuredClone(context.lockedPlan!.parts[i]):{...p,smartCutApplied:true,...(typeof previous?.teaserEnabled==='boolean'?{teaserEnabled:previous.teaserEnabled}:{}),...(previous?.teaserEnabled===false?{teaser:previous.teaser,customTeaser:previous.customTeaser}:{} )};
       })};
       const selections = context.hookPlan ? parseExternalHookOnly(webAiResult, preparedSource, context.requestId, context.hookPlan) : imported!.hookSelections || [];
       let nextPlan = await attachExternalHooks(refined, selections, preparedSource, context.transcript, context.provider, sourceCaptions?.cues);
@@ -1705,7 +1707,7 @@ export default function Home() {
             <p className="mt-2 text-[11px] leading-5 text-zinc-600">Đóng tab không dừng xử lý. Thoát app sẽ tạm dừng. Bấm Tiếp tục/thử lại để dùng source/plan đã lưu; part render hoàn tất không bị render lại. Gemini/Muse chờ import từng item trong editor, không chạy AI unattended.</p>
             {batchError && <p className="mt-3 text-xs leading-5 text-red-300">{batchError}</p>}
             {batchNotice && <p role="status" className="mt-3 text-xs leading-5 text-emerald-300">{batchNotice}</p>}
-            {(batch || pastBatches.length > 0) && <div className="mt-4 max-h-[480px] space-y-3 overflow-y-auto">
+            {(batch || pastBatches.length > 0) && <div className="studio-batch-item-list mt-4 max-h-[480px] space-y-3 overflow-y-auto">
               {[...(batch ? [batch] : []), ...pastBatches.filter((group) => group.id !== batch?.id)].map((group) => <div key={group.id} className="space-y-3">
               <p className="text-[10px] uppercase tracking-wider text-zinc-500">{group.id === batch?.id ? "Hàng đợi hiện tại" : "Video đã xử lý trước đó"}</p>
               {group.items.filter((item) => !deletedBatchItems.current.has(item.id)).map((item, index) => (
@@ -1755,9 +1757,9 @@ export default function Home() {
        <EditorWorkspace visible={workspace==='editor'}
         source={<>
           <Tabs value={sourceMode} onValueChange={(value) => { resetSourceSelection(); setSourceMode(value as "youtube" | "local"); }} className="mt-4">
-            <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1" style={{ height: 40 }}>
-              <TabsTrigger value="youtube" className="min-w-0 rounded-lg text-xs" style={{ height: 32, paddingBlock: 0, fontSize: 12, lineHeight: '16px' }}>YouTube</TabsTrigger>
-              <TabsTrigger value="local" className="min-w-0 rounded-lg text-xs" style={{ height: 32, paddingBlock: 0, fontSize: 12, lineHeight: '16px' }}>Local video</TabsTrigger>
+            <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
+              <TabsTrigger value="youtube" className="min-w-0 rounded-lg text-xs">YouTube</TabsTrigger>
+              <TabsTrigger value="local" className="min-w-0 rounded-lg text-xs">Local video</TabsTrigger>
             </TabsList>
             <TabsContent value="youtube" className="pt-3">
               <label htmlFor="youtube-url" className="field-label">YouTube URL</label>
@@ -1821,9 +1823,9 @@ export default function Home() {
 
             <TabsContent value="ai" className="space-y-4 pt-4">
               <div>
-                <label className="field-label">AI provider</label>
+                <label htmlFor="editor-ai-provider" className="field-label">AI provider</label>
                 <Select value={provider} onValueChange={changeProvider}>
-                  <SelectTrigger aria-label="AI provider" className="studio-input mt-2 w-full">
+                  <SelectTrigger id="editor-ai-provider" aria-label="AI provider" className="studio-input mt-2 w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="border-white/10 bg-[#17181d] text-zinc-200">
@@ -1928,7 +1930,7 @@ export default function Home() {
         </>}
         preview={<>
           <div className="studio-part-switcher" role="group" aria-label="Part cho preview và Timeline">
-           {plan.parts.map((part,index)=>{const issue=hasEditPlan&&teaserIssues.find(issue=>issue.partId===part.id),invalidMain=mainDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[part.id]?.invalid,invalidTeaser=teaserDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&teaserDraftErrors[part.id]?.message;return <button type="button" key={part.id} aria-pressed={activePartIndex===index} data-part={part.id} onClick={()=>setActivePartIndex(index)}>Part {part.id}{hasEditPlan&&<small>{(presentationDuration(previewPlan.parts[index])/PREVIEW_RATE).toFixed(1)}s{part.manualLocked?' · Khóa':''}</small>}{(issue||invalidMain||invalidTeaser)&&<span className="studio-missing-teaser" title={issue?issue.reason:invalidTeaser||'Timeline có mốc chưa hợp lệ'} aria-label={`Part ${part.id}: thiếu teaser hoặc lỗi mốc`}>!</span>}</button>;})}
+           {plan.parts.map((part,index)=>{const issue=hasEditPlan&&teaserIssues.find(issue=>issue.partId===part.id),invalidMain=mainDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[part.id]?.invalid,invalidTeaser=part.teaserEnabled!==false&&teaserDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&teaserDraftErrors[part.id]?.message;return <button type="button" key={part.id} aria-pressed={activePartIndex===index} data-part={part.id} onClick={()=>setActivePartIndex(index)}>Part {part.id}{hasEditPlan&&<small>{(presentationDuration(previewPlan.parts[index])/PREVIEW_RATE).toFixed(1)}s{part.manualLocked?' · Khóa':''}</small>}{(issue||invalidMain||invalidTeaser)&&<span className="studio-missing-teaser" title={issue?issue.reason:invalidTeaser||'Timeline có mốc chưa hợp lệ'} aria-label={`Part ${part.id}: thiếu teaser hoặc lỗi mốc`}>!</span>}</button>;})}
            {hasEditPlan&&<span className="studio-active-title" title={activePart.title}>{activePart.title}</span>}
           </div>
           <div className="studio-preview-stage">
@@ -1952,7 +1954,7 @@ export default function Home() {
                   data-preview-deck={slot} data-preview-active={visibleDeck===slot} data-visual-scale={FOREGROUND_SCALE}
                   crossOrigin="anonymous"
                   className="native-preview-video cursor-pointer"
-                  style={{ width:'100%', height:'100%', maxWidth:'none', maxHeight:'none', objectFit:'contain', objectPosition:'center', transform:`translate(-50%, -50%) scale(${FOREGROUND_SCALE})`, transformOrigin:'center center', filter:videoColorFilter, visibility:visibleDeck===slot?'visible':'hidden' }}
+                  style={{ width:`${foregroundImage.scaledWidth/CANVAS_WIDTH*100}%`, height:`${foregroundImage.scaledHeight/FOREGROUND_HEIGHT*100}%`, maxWidth:'none', maxHeight:'none', objectFit:'contain', objectPosition:'center', transform:'translate(-50%, -50%)', filter:videoColorFilter, visibility:visibleDeck===slot?'visible':'hidden' }}
                   src={previewVideoUrl}
                   preload="metadata"
                   playsInline
@@ -2058,10 +2060,11 @@ export default function Home() {
               onLock={(id,locked)=>{invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===id?{...p,...(!p.aiMainRanges&&part.aiMainRanges?{aiMainRanges:structuredClone(part.aiMainRanges)}:{}),manualLocked:locked}:p)}));}}
               onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
             >
-            {teaserIssues.filter(issue=>issue.partId===part.id).map(issue=><p key={issue.partId} role="alert" className="text-xs text-amber-200">{issue.reason} Bắt buộc có teaser hợp lệ trước khi xuất.</p>)}
+            {teaserIssues.filter(issue=>issue.partId===part.id).map(issue=><p key={issue.partId} role="alert" className="text-xs text-amber-200">{issue.reason}</p>)}
             <TeaserEditor onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={exportActivity} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id&&!exportActivity} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
               onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
+              onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
               onAudition={()=>{stopTeaserAuditions(part.id);setActivePartIndex(index);previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();}}
               onChange={next=>{invalidateAnalysis();setPlan(current=>{
                 try{const base={...current,parts:current.parts.map(trimPartStart)};
@@ -2134,7 +2137,7 @@ export default function Home() {
           </div>
 
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-            <div className="flex items-center justify-between gap-3">
+            <div className="studio-field-header flex items-center justify-between gap-3">
               <label htmlFor="final-title" className="field-label">TITLE SAU CÙNG</label>
               <CopyButton text={`${plan.originalTitle} | ${activePart.title} (${activePart.id}/${plan.parts.length})\n\n${activePart.hashtags.join(" ")}`} className="py-1.5" />
             </div>

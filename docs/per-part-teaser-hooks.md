@@ -1,3 +1,14 @@
+# Latest user override — 2026-10-21
+
+Read `docs/teaser-manual-toggle.md`: manual timestamps may include the first10
+export seconds of main; AI selection still excludes them. Per-part Timeline
+Bật/Tắt teaser persists as optional `teaserEnabled` (legacy default enabled).
+Explicitly disabled parts export main-only; enabled parts require valid teasers.
+Old mandatory-both/opening-exclusion statements below are historical. No new
+runtime/provider/render QA was performed for this change.
+
+---
+
 # Current adaptive/editorial selection — 2026-10-20
 
 New selections use `same-part-hook-v3-editorial` / `adaptive-editorial-v3`.

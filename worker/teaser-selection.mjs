@@ -129,12 +129,13 @@ export function createTeaserSelector({cacheRoot,resolveProvider,frames=async()=>
     },signal));
   }
   return async function select(plan,source,{cues=[],boundaryCues=cues,supporting={},signal,targetPartId,maxAttempts=2,customInstruction,forceRefresh=false}={}){
+    if(!plan.parts.some(p=>p.teaserEnabled!==false&&(targetPartId===undefined||targetPartId===p.id)&&(!p.customTeaser||customInstruction))){signal?.throwIfAborted();return structuredClone(plan);}
     signal?.throwIfAborted();let provider,providerFailure;
     try{provider=await resolveProvider(signal);}catch(error){signal?.throwIfAborted();providerFailure=hookFailure(error);}
     const sourceHash=await fingerprint(source,signal),result=structuredClone(plan);
     if(plan.teaserPolicy===undefined&&!plan.parts.some(p=>p.teaser)&&plan.hookTransition===undefined)result.hookTransition='vr-light-leak-v2';
     result.teaserPolicy=TEASER_POLICY;
-    for(const part of result.parts)if((targetPartId===undefined||targetPartId===part.id)&&(!part.customTeaser||customInstruction)){
+    for(const part of result.parts)if(part.teaserEnabled!==false&&(targetPartId===undefined||targetPartId===part.id)&&(!part.customTeaser||customInstruction)){
       signal?.throwIfAborted();part.teaserNeedsReselection=false;
       try{
         part.teaser=await selectPart(part,source,cues,boundaryCues,supporting,provider,sourceHash,signal,providerFailure,Number.isFinite(maxAttempts)?Math.min(2,Math.max(1,Math.trunc(maxAttempts))):2,customInstruction,forceRefresh);
