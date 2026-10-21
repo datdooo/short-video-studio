@@ -11,7 +11,7 @@ import { VideoFilterDefinition } from "./video-filter-panel";
 const templates = listVisualTemplates().map((recipe) => ({ ...recipe, style: applyVisualTemplate(undefined, recipe.id) }));
 export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle; onTemplate: (id: string) => void }) {
   const selected = matchVisualTemplate(style);
-  return <details aria-labelledby="visual-template-heading" className="group/template mt-5 rounded-2xl border border-white/15 bg-white/[.04] p-4">
+  return <details aria-labelledby="visual-template-heading" className="studio-disclosure group/template mt-5 rounded-2xl border border-white/15 bg-white/[.04] p-4">
     <summary id="visual-template-heading" className="group flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-webkit-details-marker]:hidden"><span className="min-w-0 break-words">Visual Template · <span role="status" aria-label="Visual template status">{templates.find(template=>template.id===selected)?.label??'Custom'}</span></span><ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform group-open/template:rotate-180" /></summary>
     <p className="mt-1 text-xs leading-5 text-zinc-500">Chọn một giao diện đầy đủ, rồi tùy chỉnh bên dưới.</p>
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">

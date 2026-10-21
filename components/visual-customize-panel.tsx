@@ -23,7 +23,7 @@ export function VisualCustomizePanel({ style, controls,include }: { style: Visua
     { id: "animation", label: "Text Animation", value: getTitleAnimation(style.titleAnimation).label },
     { id: "transition", label: "Cut Transition", value: getCutTransition(style.cutTransition).label },
   ];
-  return <details data-visual-customize className="visual-customize mt-5 min-w-0 rounded-2xl border border-white/10 bg-white/[.025]">
+  return <details data-visual-customize className="studio-disclosure visual-customize mt-5 min-w-0 rounded-2xl border border-white/10 bg-white/[.025]">
     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
       Customize<ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform" />
     </summary>

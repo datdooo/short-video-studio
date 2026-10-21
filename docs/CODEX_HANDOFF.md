@@ -1,3 +1,158 @@
+# HANDOFF NOW — user paused implementation for quota (2026-10-21)
+
+**Stop new implementation. Preserve all work.** User requested immediate handoff.
+DEV `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Actual branch `recovery/visual-dev-reconstructed`; base HEAD
+`ff4b6b7c5d2caa3549be89f94ffc6c9e715c83b9` before this handoff checkpoint.
+Origin `https://github.com/datdooo/short-video-studio.git`, upstream
+`origin/recovery/visual-dev-reconstructed`. No push/merge this turn; remote SHA
+NOT rechecked live. Cached upstream comparison before checkpoint: local ahead2,
+behind0 (not live remote verification). Use actual `git log -1` after checkpoint
+for current HEAD.
+
+## Current saved source / work in progress
+
+All current dirty changes belong to this UI follow-up; preserve all12 files:
+`app/globals.css`, `app/page.tsx`, `components/media-library-panel.tsx`,
+`components/music-panel.tsx`, `components/studio-render-status.tsx`,
+`components/teaser-candidate-review.tsx`, `components/teaser-editor.tsx`,
+`components/visual-customize-panel.tsx`, `components/visual-template-panel.tsx`,
+`lib/editor-session.ts`, this file, `docs/teaser-candidate-review-ui.md`.
+Planned checkpoint is explicitly unverified UI work, not acceptance completion.
+
+Implemented in SOURCE, no runtime acceptance:
+- Candidate panel always open, 9:16 player LEFT/options RIGHT; no toggle/closeX.
+  Removed lower duplicate view/details/help and Apply/Discard buttons. Upper
+  Apply remains canonical. New/retried choices append to bounded24 UI catalog,
+  Apply does not reorder; source/part/context SHA and restore whitelist included.
+- Main transport centered under its own portrait column, slider own row. Space
+  toggles MAIN via existing Play/Pause/BGM lifecycle (no typing/button hijack).
+  User withdrew arrow-key issue: DO NOT change arrow/seek behavior for that report.
+- Removed main “Đang giải mã đoạn kế…” row. **Latest edit also removes candidate
+  “Đang tải đoạn nguồn…” dark overlay.** Actual buffering/audio/error handling
+  retained. Do not remove transition presets based on this UI-loading request.
+- URL/search icon padding specificity fixed. Success restore notice clears4s;
+  corrupt/save/source warnings retained. Header/footer compact controls; footer
+  blockers reflect actual worker/analysis/subtitle/part validation states.
+- Inspector4 disclosure headers common padding/min36px. Normal actions36px,
+  chrome/Timeline/icon compact variants retained; no force sizing of video cards.
+- Full-width Batch: setup ABOVE queue in main column, real preview on right,
+  independent scroll; advanced requirements folded, callbacks/state unchanged.
+- Full-width Kho:4 tabs remain. Fixed search/tabs, only selected content scrolls,
+  compact file/job rows, existing preview; no extra thumbnail loads or mock data.
+- User ZIP design reference `PLWhL13ZgwoMsXXn-grok-workspace.zip`: read batch/library
+  TSX + relevant CSS and viewed bundled screenshots. DESIGN ONLY, no copied
+  mock/context/model/auth code/assets/dependencies. Editor geometry/rates, worker,
+  render lag fixes, provider algorithms and data handlers preserved.
+
+## Build / app state — distinguish from source
+
+App target `release/dev/ShortCut Studio Dev.app`.
+Several earlier builds completed before incoming user refinements; they do NOT
+prove newest source. A sandbox build compiled frontend but failed at bundled
+`yt-dlp --version` semaphore probe (Operation not permitted); elevated packaging
+succeeded afterward. No AI/download/ASR/render QA occurred.
+
+Most recent packaging command was already running when user requested pause:
+Node22 `npm run package:mac:dev`, log
+`/tmp/shortcut-dev-grok-workspaces-final-20261021.log`, exec session16561.
+At handoff preparation log reached “Compiling macOS launcher…”. It includes
+Grok Batch/Kho design, but **does NOT include latest candidate loading-overlay
+removal made after frontend compilation**. Do not call app source-current even if
+this packaging finishes successfully. Do not start another build during handoff.
+Final build state: packaging completed exit0 during documentation preparation.
+Latest overlay removal remains SOURCE ONLY, not in this app. No more build run.
+Next session must finish diff review
+then build once ONLY when user resumes; no runtime tests/QA/provider calls.
+
+Read-only lsof: DEV web/worker PIDs39230/39231 still running. Earlier confirmed cwd
+`release/dev/.build-8Qtejy/previous-build.app/Contents/Resources/app`; app not
+restarted, jobs not interrupted. User normally closes/reopens latest app once
+jobs finish. Do not kill app/worker to refresh UI.
+
+## First actions for next session
+
+1. Read this entire file and actual Git/status. Preserve checkpoint + any newer
+   modifications; no reset/clean/stash/branch switch. No push unless newly asked.
+2. Ask for/receive resume scope; user currently paused implementation. Do not
+   silently resume features just because handoff is read.
+3. If resumed: inspect the12-file checkpoint, especially CSS breakpoints/scroll
+   ownership and candidate catalog/draft restoration. Review source only; user
+   manually accepts. No tests/lint/typecheck/browser/render/AI/YouTube/ASR.
+4. Latest source needs a final DEV package build because overlay edit postdates
+   compilation. Use Node22. Do not interrupt live jobs/restart worker. No bundles,
+   production/data/credential/media/export/backup operations.
+
+Not verified: runtime sizing/scroll/focus, media playback/audio, candidate reload/
+stable order/Apply and Space behavior. Build success is NOT visual QA.
+
+---
+
+# Active follow-up — compact chrome / preview controls (2026-10-21)
+
+Preserves all pending candidate layout/catalog changes below, base `ff4b6b7`.
+- Removed main-preview “Đang giải mã đoạn kế…” presentation. The same bool is
+  raised during ordinary seeking too, so it was misleading and added/removed a
+  row while scrubbing. Keep actual buffering/BGM synchronization, timeout/error
+  handling and all transition presets; no decoder/engine change. Candidate player
+  loading text/dark overlay also removed; internal buffering flag retained so it
+  does not flash a Play overlay while waiting. Actual media errors still visible.
+- Search/YouTube icon overlap: generic input padding had higher CSS specificity
+  than icon field overrides. Explicit icon-input class wins that rule, reserves
+  36px left inset; search icon vertically centered. Source/search handlers unchanged.
+- Successful restore notice clears after 4s; corrupt/missing-source/save errors
+  remain visible. Cleanup cancels old timeout; no draft or job data discarded.
+- Header/footer use compact 32px controls / 40px base bar; small panel toggles.
+  Footer reports actual worker/analysis/subtitle/validation state, correct part
+  for teaser issues and still shows real job errors/progress/download actions.
+- Space toggles MAIN preview via existing Play/Pause coordination, ignores key
+  repeat/IME/text entry/buttons/menus/dialogs; works on main seek slider too.
+  User withdrew arrow-key bug report: left/right behavior deliberately unchanged.
+- Inspector Template/Customize/Subtitle/Music use common disclosure padding and
+  36px minimum header; normal text actions share36px across Editor/Batch/Kho,
+  compact chrome/Timeline/icons retain compact variants. No handler changes.
+- Kho workspace no longer scrolls globally: search/tabs fixed, only selected
+  TabsContent scrolls; removed nested file/job-list scroll cap within Kho only.
+- Batch now fills viewport: setup / queue / existing preview, independent pane
+  scroll and responsive stacking. Queue JSX moved only; callbacks/state/job IDs
+  unchanged. Latest Grok ZIP reference uses setup ABOVE queue in the wide main
+  column and existing preview on the right. Advanced batch controls grouped in a
+  disclosure. Kho removes max-width and uses compact file/job list rows plus its
+  existing preview. Only selected tab content scrolls, not whole workspace.
+- Design reference only: user ZIP `PLWhL13ZgwoMsXXn-grok-workspace.zip`,
+  read batch-view/library-view/styles and viewed bundled batch/library screenshots.
+  No mock/provider/model/auth code, sample images, new dependency or upstream
+  code copied. Existing data/actions retained; no thumbnail fetches introduced.
+- No tests/lint/typecheck/browser/render/provider/ASR/YouTube. First combined build
+  compiled frontend but sandbox denied bundled yt-dlp semaphore probe; final
+  package retry succeeded before late Batch/Kho steering; final full-source build
+  pending; no app/worker restart, job interruption or push.
+
+---
+
+# Active update — remove duplicate teaser presentation (2026-10-21)
+
+Base `ff4b6b7`, same DEV branch. Removed lower “Xem ứng viên và phát thử” button,
+“Teaser Part … · AI API” accordion and “Trợ giúp teaser”. The upper review panel
+remains authoritative for viewing choices/explanations; Timeline edit controls,
+validation, source timings, stable candidate order and all handlers preserved.
+Follow-up layout: inside candidate area, portrait9:16 player LEFT; options and
+explanations RIGHT. Main clock/transport now lives in the main portrait's own left
+column, seek slider in its own centered row under that video. Candidate area is
+ALWAYS OPEN: no toggle/close X. Compact center<680px stacks the two areas with
+internal scrolling, never hides main behind a closeable overlay.
+Retry/new proposals append to a bounded24-choice source/part/context UI catalog,
+including AI alternatives; Apply never reorders it. One Apply in the upper review,
+no lower Apply/Discard buttons. Manual Timeline edits enter the upper review too.
+Catalog/focus UI draft keys are included in the existing restore whitelist.
+Catalog context is a local SHA of source/main/cues/request; stored parts are
+validated and only chosen teaser/custom fields go through the existing parent
+Apply handler. No source crop/zoom/rate/engine changes. No tests/browser/AI/render.
+Earlier small UI-removal builds finished before additional user instructions;
+final combined layout build pending. No app/worker restart or push.
+
+---
+
 # Active update — candidate cards + audition player (2026-10-21)
 
 - Starting clean at `0ef1399672d0a3ea37eefadfd1804718c33f9b94`, same DEV branch.

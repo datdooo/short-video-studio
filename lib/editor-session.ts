@@ -87,7 +87,7 @@ export function readEditorSession():{draft?:Partial<EditorSession>;notice?:strin
   if(object(r.webAiContext)&&r.webAiContext.sourceId===d.sourceId&&managedId(r.webAiContext.requestId)){
    d.webAiContext={...pick(r.webAiContext,['sourceId','transcript','instruction','provider','requestId','analysisKey','supplementalPrompt','mainSignature']),lockedPlan:readPlan(r.webAiContext.lockedPlan),hookPlan:readPlan(r.webAiContext.hookPlan)} as EditorSession['webAiContext'];
   }
-  d.controls=object(r.controls)?Object.fromEntries(Object.entries(r.controls).filter(([key])=>/:(?:main-[12]|teaser-(?:times|input|candidate)-[12]|music-(?:catalog|search|mood))$/.test(key)).slice(0,32)):{};d.interrupted=Array.isArray(r.interrupted)?[...new Set(r.interrupted.filter((s):s is string=>typeof s==='string').map(s=>s.slice(0,200)))].slice(0,12):[];
+  d.controls=object(r.controls)?Object.fromEntries(Object.entries(r.controls).filter(([key])=>/:(?:main-[12]|teaser-(?:times|input|candidate|review-(?:catalog|focus))-[12]|music-(?:catalog|search|mood))$/.test(key)).slice(0,32)):{};d.interrupted=Array.isArray(r.interrupted)?[...new Set(r.interrupted.filter((s):s is string=>typeof s==='string').map(s=>s.slice(0,200)))].slice(0,12):[];
   return{draft:d,notice:d.plan||!r.hasEditPlan?'Đã khôi phục phiên chỉnh sửa':'Đã khôi phục phần hợp lệ; plan hỏng chưa được áp dụng. Bản nháp gốc được giữ đến khi bạn chỉnh tiếp.',blocked:!!r.hasEditPlan&&!d.plan};
  }catch{return{blocked:true,notice:'Không đọc được bản nháp; app vẫn sử dụng được. Bản nháp chưa bị xóa/ghi đè. Chọn Phiên mới để bỏ.'};}
 }

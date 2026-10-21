@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Download, Loader2, Play, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Download, Film, FolderOpen, Loader2, Play, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -102,13 +102,13 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
   const files = (tab === "renders" ? [] : library?.[tab] || []).filter((file) => `${file.title} ${file.filename}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const selectedFiles = files.filter((file) => selected.has(file.id) && !file.busy).slice(0, 500);
   const available = files.filter((file) => !file.busy).slice(0, 500);
-  return <section className="studio-library mx-auto max-w-6xl px-5 py-6">
+  return <section className="studio-library px-5 py-6">
     <Tabs value={tab} onValueChange={(value) => { previewVideo.current?.pause(); setTab(value as typeof tab); setSelected(new Set()); }}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="flex items-center gap-2 text-2xl font-semibold"><Trash2 className="size-6 text-[#ff806a]" /> Kho</h1><p className="mt-2 text-sm leading-6 text-zinc-400">Quản lý riêng video gốc và các part. Không tự xoá sau render, không xoá bản đã tải về Downloads.</p></div>
+      <div><h1 className="flex items-center gap-2 text-2xl font-semibold"><FolderOpen className="size-6 text-[#ff806a]" /> Kho</h1><p className="mt-2 text-sm leading-6 text-zinc-400">Quản lý riêng video gốc và các part. Không tự xoá sau render, không xoá bản đã tải về Downloads.</p></div>
       <Button variant="outline" onClick={() => void refresh()} disabled={!ready || loading || working} className="border-white/15 bg-white/5">{loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Làm mới</Button>
     </div>
-    <div className="relative mt-5 min-w-0"><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" /><Input aria-label="Tìm trong Kho" value={search} onChange={(event) => { setSearch(event.target.value); setSelected(new Set()); }} placeholder="Tìm theo title, tên file hoặc mã render…" className="studio-input pl-9" /></div>
+    <div className="relative mt-5 min-w-0"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input aria-label="Tìm trong Kho" value={search} onChange={(event) => { setSearch(event.target.value); setSelected(new Set()); }} placeholder="Tìm theo title, tên file hoặc mã render…" className="studio-input studio-icon-input pl-9" /></div>
     <TabsList className="studio-library-tabs mt-3" aria-label="Nội dung Kho">
       <TabsTrigger value="renders">Danh sách render <span className="studio-count">{renderCount}</span></TabsTrigger>
       <TabsTrigger value="originals">Nguồn <span className="studio-count">{library ? library.originals.length : '…'}</span></TabsTrigger>
@@ -127,10 +127,10 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
       <Button variant="outline" onClick={() => setSelected(new Set(available.map((file) => file.id)))} disabled={!available.length || working} className="border-white/15 bg-white/5">Chọn tất cả {available.length > 1 ? `(${available.length})` : ""}</Button>
       {selectedFiles.length > 0 && <Button onClick={() => void action(tab === "trash" ? "purge" : "move", selectedFiles)} disabled={working} className="bg-red-500/15 text-red-200 hover:bg-red-500/25">{working ? <Loader2 className="animate-spin" /> : <Trash2 />} {tab === "trash" ? "Xoá vĩnh viễn" : "Chuyển vào thùng rác"} ({selectedFiles.length})</Button>}
     </div>
-    <div className="mt-4 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="studio-library-content-grid mt-4 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="studio-library-file-list max-h-[65vh] space-y-3 overflow-y-auto pr-1">
-        {files.map((file) => <div key={file.id} className="rounded-2xl border border-white/10 bg-white/[.025] p-4">
-          <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Chọn ${file.title} ${file.filename}`} checked={selected.has(file.id)} disabled={file.busy || working} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(file.id); else next.delete(file.id); return next; })} className="mt-1 size-4 shrink-0 accent-[#ff4d2e]" /><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold leading-6">{file.title}</p><p className="mt-1 break-all text-xs text-zinc-400">{file.kind === "original" ? "Video gốc" : file.kind === "parts" ? "Bộ Part" : `Part ${file.part}`} · {file.filename} · {sizeLabel(file.size)}</p><p className="mt-1 text-[11px] text-zinc-500">{library?.storages.find((store) => store.id === file.storageId)?.label}{file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}</p>{file.busy && <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>}</div></div>
+        {files.map((file) => <div key={file.id} className="studio-library-card rounded-2xl border border-white/10 bg-white/[.025] p-4">
+          <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Chọn ${file.title} ${file.filename}`} checked={selected.has(file.id)} disabled={file.busy || working} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(file.id); else next.delete(file.id); return next; })} className="mt-1 size-4 shrink-0 accent-[#ff4d2e]" /><span className="studio-library-file-icon" aria-hidden="true"><Film size={20}/></span><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold leading-6">{file.title}</p><p className="mt-1 break-all text-xs text-zinc-400">{file.kind === "original" ? "Video gốc" : file.kind === "parts" ? "Bộ Part" : `Part ${file.part}`} · {file.filename} · {sizeLabel(file.size)}</p><p className="mt-1 text-[11px] text-zinc-500">{library?.storages.find((store) => store.id === file.storageId)?.label}{file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}</p>{file.busy && <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>}</div></div>
           <div className="mt-3 flex flex-wrap gap-2">
             {tab !== "trash" ? <><Button variant="outline" size="sm" onClick={() => { setPreview(file); setPreviewError(""); }} className="border-white/15 bg-transparent"><Play className="size-3.5" /> Xem</Button><a href={`${workerOrigin}/api/storage/media/${encodeURIComponent(file.id)}?download=1`} download={file.filename} className="studio-control studio-download flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs"><Download className="size-3.5" /> Tải file</a><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("move", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Chuyển vào thùng rác</Button></> : <><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("restore", [file])} className="border-emerald-400/20 bg-transparent text-emerald-300"><RotateCcw className="size-3.5" /> Khôi phục</Button><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("purge", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Xoá vĩnh viễn</Button></>}
           </div>

@@ -44,7 +44,7 @@
   --selection-bg: color-mix(in srgb, var(--primary) 16%, var(--surface));
   --selection-text: #ffb199;
   --control-height: 36px;
-  --control-action-height: 40px;
+  --control-action-height: var(--control-height);
   --control-compact-height: 32px;
   --control-icon-size: 32px;
   --ui-font: "Studio UI Jakarta", "Studio Inter", "Studio Noto Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -427,7 +427,7 @@ button, input, textarea { font: inherit; }
 .studio-library [data-slot=tabs-content][hidden] { display:none; }
 .studio-library .studio-input.pl-9 { padding-left:36px; }
 
-/* Shared size variants: normal 36 / action 40 / compact and icon 32. Native
+/* Shared size variants: normal/action 36 / compact and icon 32. Native
    controls inherit the same variables as shadcn controls, without new state. */
 .prototype-shell :is([data-slot=button],.studio-control,.studio-primary,.studio-ghost,.studio-cancel,.studio-workspaces button,.studio-header-status button,.studio-part-switcher button),
 .prototype-shell :is(.studio-source-panel,.studio-inspector-body,.studio-timeline-scroll,.studio-batch-workspace,.studio-library-workspace) :where(button:not([data-slot]):not([aria-pressed]):not([role])) {
@@ -675,31 +675,40 @@ button, input, textarea { font: inherit; }
 
 /* One candidate audition beside the portrait; the Timeline keeps its own height. */
 .studio-preview-stage { position:relative; display:grid; grid-template-columns:minmax(0,1fr); gap:12px; }
-.studio-main-preview-stage { min-width:0; min-height:0; height:100%; display:flex; align-items:center; justify-content:center; container-type:size; }
-.studio-preview-stage[data-review-visible=true][data-review-compact=false] { grid-template-columns:minmax(0,1fr) minmax(260px,340px); }
-.studio-teaser-review-host { height:100%; min-width:0; min-height:0; }
+.studio-main-preview-column { height:100%; min-width:0; min-height:0; display:flex; flex-direction:column; align-items:center; gap:5px; }
+.studio-main-preview-stage { width:100%; flex:1; min-width:0; min-height:0; display:flex; align-items:center; justify-content:center; container-type:size; }
+.studio-main-preview-column > .studio-clock-labels,
+.prototype-shell .studio-main-preview-column > .preview-controls { width:100%; max-width:340px; align-self:center; }
+.studio-main-preview-column > .studio-clock-labels { justify-content:center; gap:3px 8px; text-align:center; }
+.prototype-shell .studio-main-preview-column > .preview-controls { grid-template-columns:32px 32px 32px minmax(0,1fr) auto; grid-template-rows:auto auto; row-gap:4px; }
+.studio-main-preview-column .preview-controls > span:first-of-type { grid-column:4; grid-row:1; justify-self:end; }
+.studio-main-preview-column .preview-controls > span:last-of-type { grid-column:5; grid-row:1; }
+.studio-main-preview-column .preview-controls > .preview-seek { grid-column:1 / -1; grid-row:2; width:100%; margin:0; }
+.studio-preview-stage[data-review-visible=true][data-review-compact=false] { grid-template-columns:minmax(260px,.85fr) minmax(0,1.35fr); }
+.studio-teaser-review-host { height:100%; min-width:0; min-height:0; container-type:size; }
 .studio-teaser-review-host[hidden] { display:none; }
-.studio-preview-stage[data-review-visible=true][data-review-compact=true] > .studio-teaser-review-host { position:absolute; inset:0; z-index:40; }
-.studio-preview-stage[data-review-visible=true][data-review-compact=true] > .studio-main-preview-stage { visibility:hidden; }
+.studio-preview-stage[data-review-visible=true][data-review-compact=true] { display:flex; flex-direction:column; align-items:stretch; overflow:auto; overscroll-behavior:contain; }
+.studio-preview-stage[data-review-visible=true][data-review-compact=true] > .studio-main-preview-column { flex:0 0 280px; height:280px; }
+.studio-preview-stage[data-review-visible=true][data-review-compact=true] > .studio-teaser-review-host { flex:0 0 320px; height:320px; }
 .studio-part-switcher .studio-active-title { flex:1; max-width:none; }
-.prototype-shell .studio-part-switcher .studio-review-toggle { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; min-height:32px; padding:4px 10px; }
-.prototype-shell .studio-part-switcher .studio-review-toggle[aria-expanded=true] { border-color:var(--primary); color:var(--selection-text); background:var(--selection-bg); }
-.studio-teaser-review { height:100%; min-height:0; min-width:0; display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--border); border-radius:12px; background:var(--card); color:var(--foreground); font-size:var(--ui-text-body); }
-.studio-teaser-review-heading { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 10px; border-bottom:1px solid var(--border); }
+.studio-teaser-review { height:100%; min-height:0; min-width:0; display:grid; grid-template-columns:clamp(80px,calc((100cqh - 100px) * 9 / 16),260px) minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto; column-gap:10px; padding:8px; overflow:hidden; border:1px solid var(--border); border-radius:12px; background:var(--card); color:var(--foreground); font-size:var(--ui-text-body); }
+.studio-teaser-review[data-has-choice=false] { grid-template-columns:minmax(0,1fr); }
+.studio-teaser-review-heading { grid-column:2; grid-row:1; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 0 6px; border-bottom:1px solid var(--border); }
+.studio-teaser-review[data-has-choice=false] .studio-teaser-review-heading { grid-column:1; }
 .studio-teaser-review-heading > div { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; min-width:0; }
 .studio-teaser-review-heading strong { font-size:var(--ui-text-body); font-weight:600; }
 .studio-teaser-review-heading span { font-size:var(--ui-text-caption); color:var(--muted-foreground); }
-.studio-teaser-player { flex-shrink:0; min-width:0; background:var(--background); }
-.studio-teaser-player-picture { position:relative; display:grid; place-items:center; height:clamp(64px,25cqh,120px); overflow:hidden; background:#080808; }
+.studio-teaser-player { grid-column:1; grid-row:1 / -1; align-self:center; min-width:0; min-height:0; max-height:100%; background:var(--background); border-radius:8px; overflow:hidden; }
+.studio-teaser-player-picture { position:relative; display:grid; place-items:center; width:100%; aspect-ratio:9/16; overflow:hidden; background:#080808; }
 .studio-teaser-player-picture video { width:100%; height:100%; object-fit:contain; }
-.studio-teaser-player-start { width:100%; height:100%; display:flex; align-items:center; justify-content:center; gap:8px; color:var(--selection-text); font-size:var(--ui-text-body); background:transparent; }
+.studio-teaser-player-start { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:8px; color:var(--selection-text); font-size:var(--ui-text-caption); background:transparent; }
 .studio-teaser-player-overlay { position:absolute; inset:0; display:grid; place-items:center; color:var(--foreground); background:rgb(0 0 0 / 20%); }
-.studio-teaser-player-loading { position:absolute; inset:0; display:grid; place-items:center; color:var(--muted-foreground); background:rgb(0 0 0 / 55%); font-size:var(--ui-text-caption); pointer-events:none; }
-.studio-teaser-player-controls { display:flex; align-items:center; gap:4px; padding:3px 8px; border-bottom:1px solid var(--border); }
-.studio-teaser-player-controls input { min-width:0; flex:1; accent-color:var(--primary); }
-.studio-teaser-player-controls span { flex-shrink:0; color:var(--muted-foreground); font-size:var(--ui-text-caption); font-variant-numeric:tabular-nums; }
+.studio-teaser-player-controls { display:grid; grid-template-columns:32px minmax(0,1fr) 32px; align-items:center; gap:2px; padding:3px 4px; border-top:1px solid var(--border); }
+.studio-teaser-player-controls > button:nth-of-type(2) { grid-column:3; }
+.studio-teaser-player-controls input { grid-row:2; grid-column:1 / -1; width:100%; min-width:0; accent-color:var(--primary); }
+.studio-teaser-player-controls span { grid-row:3; grid-column:1 / -1; text-align:center; color:var(--muted-foreground); font-size:var(--ui-text-caption); font-variant-numeric:tabular-nums; }
 .studio-teaser-player .studio-inline-error { padding:4px 10px; }
-.studio-teaser-review-content { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:8px; }
+.studio-teaser-review-content { grid-column:2; grid-row:2; min-height:0; min-width:0; overflow:auto; overscroll-behavior:contain; padding:8px 0; }
 .studio-teaser-options { display:flex; flex-direction:column; gap:5px; }
 .prototype-shell .studio-teaser-option { width:100%; display:flex; align-items:center; justify-content:flex-start; gap:8px; height:auto; min-height:46px; padding:6px 8px; text-align:left; border:1px solid var(--border); border-radius:8px; color:var(--foreground); background:var(--secondary); }
 .prototype-shell .studio-teaser-option:hover:not(:disabled) { border-color:var(--primary); }
@@ -708,14 +717,86 @@ button, input, textarea { font: inherit; }
 .studio-teaser-option-copy { display:flex; flex:1; min-width:0; flex-direction:column; gap:2px; }
 .studio-teaser-option-copy strong { font-size:var(--ui-text-caption); font-weight:600; }
 .studio-teaser-option-copy > span { color:var(--muted-foreground); font-family:var(--ui-font-mono); font-size:10px; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
-.studio-teaser-option-status { flex-shrink:0; display:inline-flex; align-items:center; gap:3px; font-size:10px; color:var(--selection-text); }
+.studio-teaser-option-status { flex-shrink:0; min-width:64px; display:inline-flex; align-items:center; justify-content:flex-end; gap:3px; font-size:10px; color:var(--selection-text); }
 .studio-teaser-review-reason { padding:8px 2px 0; color:var(--muted-foreground); line-height:1.5; overflow-wrap:anywhere; }
 .studio-teaser-review-reason p { margin:0 0 7px; }
 .prototype-shell .studio-teaser-review-reason details > summary { min-height:30px; font-size:var(--ui-text-caption); }
 .studio-teaser-review-reason details p { margin-top:6px; font-size:var(--ui-text-caption); }
-.studio-teaser-review-footer { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; padding:6px 8px; border-top:1px solid var(--border); background:var(--card); }
+.studio-teaser-review-footer { grid-column:2; grid-row:3; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; padding:6px 0 0; border-top:1px solid var(--border); background:var(--card); }
 .studio-teaser-review-footer > span { color:var(--muted-foreground); font-size:var(--ui-text-caption); }
 .prototype-shell .studio-teaser-review-footer .studio-primary { min-height:32px; height:32px; padding:4px 10px; }
-.studio-teaser-review-empty { flex:1; display:flex; align-items:center; justify-content:center; flex-direction:column; padding:14px; gap:8px; text-align:center; color:var(--muted-foreground); }
+.studio-teaser-review-empty { grid-row:2; grid-column:1 / -1; display:flex; align-items:center; justify-content:center; flex-direction:column; padding:14px; gap:8px; text-align:center; color:var(--muted-foreground); }
 .studio-teaser-review-empty strong { color:var(--foreground); font-size:var(--ui-text-body); }
 .studio-teaser-review-empty p { max-width:28ch; margin:0; font-size:var(--ui-text-caption); line-height:1.5; }
+
+/* Icon-bearing fields must override the common input padding rule above. */
+.prototype-shell input.studio-input.studio-icon-input:not([type=color]):not([type=checkbox]):not([type=range]):not([type=file]) { padding-inline-start:36px; }
+/* Shared compact chrome; editor controls keep their existing sizes. */
+.prototype-shell :is(.studio-header,.studio-statusbar) { min-height:40px; padding:4px 12px; gap:8px; }
+.prototype-shell :is(.studio-workspaces button,.studio-header-status > button,.studio-statusbar > .studio-render-button,.studio-statusbar > .studio-cancel) { height:32px; min-height:32px; padding:0 10px; font-size:12px; }
+.prototype-shell .studio-header-status { gap:8px; }
+.prototype-shell .studio-header-status > span { padding:3px 6px; font-size:11px; }
+.prototype-shell .studio-brand-logo { width:28px; height:28px; flex-basis:28px; }
+.prototype-shell .studio-statusbar > .studio-render-state { max-height:48px; padding:0; }
+.prototype-shell .studio-statusbar .studio-panel-toggles button { width:28px; height:28px; min-width:28px; min-height:28px; }
+
+/* All Inspector section headers share one box model. Outer padding used to
+   double the hit area of Template/Subtitle/Music but not Customize. */
+.prototype-shell .studio-inspector-body details.studio-disclosure { padding:0; margin-top:10px; }
+.prototype-shell .studio-inspector-body details.studio-disclosure:first-child { margin-top:0; }
+.prototype-shell .studio-inspector-body details.studio-disclosure > summary { display:flex; align-items:center; min-height:var(--control-height); padding:6px 36px 6px 12px; margin:0; font-size:var(--control-font-size); line-height:1.5; box-sizing:border-box; }
+.prototype-shell .studio-inspector-body details.studio-disclosure > summary::after { right:12px; }
+.prototype-shell .studio-inspector-body details.studio-disclosure > :not(summary) { margin-left:12px; margin-right:12px; }
+.prototype-shell .studio-inspector-body details.studio-disclosure > :last-child:not(summary) { margin-bottom:12px; }
+.prototype-shell .studio-inspector-body details.studio-disclosure.visual-customize > div { margin-inline:0; }
+/* Existing text actions, including Batch/Kho native and shadcn buttons, use
+   the same normal size. Cards, icon controls and compact chrome stay distinct. */
+.prototype-shell :is(.studio-source-panel,.studio-inspector-body) button[aria-pressed]:not([aria-label^="Visual template:"]) { min-height:var(--control-height); padding:6px 12px; font-size:var(--control-font-size); }
+.prototype-shell :is(.studio-batch-workspace,.studio-library-workspace) :is(.studio-action-row button,a.studio-download) { height:var(--control-height); min-height:var(--control-height); padding:0 var(--control-padding); gap:var(--control-gap); font-size:var(--control-font-size); }
+
+/* Kho owns one scroll area below its search and tabs, never a workspace scroll. */
+.prototype-shell > .studio-library-workspace { overflow:hidden; display:flex; flex-direction:column; }
+.prototype-shell .studio-library-workspace > .studio-library { flex:1; min-height:0; width:100%; overflow:hidden; display:flex; flex-direction:column; }
+.prototype-shell .studio-library > [data-slot=tabs] { flex:1; min-height:0; overflow:hidden; }
+.prototype-shell .studio-library > [data-slot=tabs] > :not([data-slot=tabs-content]) { flex-shrink:0; }
+.prototype-shell .studio-library > [data-slot=tabs] > [data-slot=tabs-content] { min-height:0; overflow:auto; overscroll-behavior:contain; padding:2px 4px 8px; scroll-padding:8px; }
+.prototype-shell .studio-library > [data-slot=tabs] > [data-slot=tabs-content][hidden] { display:none; }
+.prototype-shell .studio-library :is(.studio-library-file-list,.studio-render-job-list) { max-height:none; overflow:visible; }
+
+/* Full workspace layouts, using existing job/media components and callbacks. */
+.prototype-shell > .studio-batch-workspace { max-width:none; margin:0; min-width:0; overflow:hidden; display:flex; flex-direction:column; padding:12px; }
+.studio-batch-grid { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(240px,300px); grid-template-rows:minmax(180px,.9fr) minmax(180px,1.1fr); gap:12px; margin-top:12px; }
+.studio-batch-grid > * { min-width:0; min-height:0; }
+.studio-batch-setup { grid-column:1; grid-row:1; }
+.studio-batch-queue { grid-column:1; grid-row:2; }
+.studio-batch-preview { grid-column:2; grid-row:1 / -1; }
+.studio-batch-setup,.studio-batch-preview { overflow:auto; overscroll-behavior:contain; }
+.studio-batch-setup > :first-child { margin-top:0; }
+.studio-batch-queue { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; padding:12px; background:var(--surface); }
+.prototype-shell .studio-batch-queue .studio-batch-item-list { flex:1; min-height:0; max-height:none; overflow:auto; overscroll-behavior:contain; }
+.prototype-shell .studio-library-workspace .studio-library { max-width:none; margin:0; padding:0; }
+.prototype-shell .studio-library-workspace .studio-library-content-grid { grid-template-columns:minmax(0,1fr) clamp(260px,25vw,360px); }
+.prototype-shell .studio-library-content-grid > aside { top:0; }
+.prototype-shell .studio-library-file-list,.prototype-shell .studio-library .studio-render-job-list { display:flex; flex-direction:column; gap:8px; }
+.prototype-shell :is(.studio-library-file-list,.studio-library .studio-render-job-list) > * { margin-top:0; min-width:0; }
+@media(max-width:760px) {
+ .prototype-shell > .studio-batch-workspace { overflow:auto; }
+ .studio-batch-grid { display:flex; flex-direction:column; flex:none; }
+ .studio-batch-setup,.studio-batch-preview { overflow:visible; }
+ .studio-batch-queue { min-height:220px; max-height:60dvh; }
+ .prototype-shell .studio-library-workspace .studio-library-content-grid { grid-template-columns:minmax(0,1fr); }
+}
+
+/* Grok ZIP design reference: compact list rows and a persistent preview aside.
+   Uses real files/jobs only; no prototype thumbnail URLs or mock data. */
+.studio-library-card { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; }
+.prototype-shell .studio-library-card { padding:10px 12px; border-radius:12px; background:var(--surface); }
+.studio-library-card > .flex:first-child { align-items:center; }
+.studio-library-card > .flex:last-child { margin-top:0; justify-content:flex-end; }
+.studio-library-file-icon { flex-shrink:0; width:40px; height:52px; border:1px solid var(--border); border-radius:8px; display:grid; place-items:center; background:var(--panel); color:var(--muted-foreground); }
+.prototype-shell .studio-batch-options > summary { min-height:36px; }
+.prototype-shell .studio-batch-setup > div:last-child { margin-top:10px; }
+@media(max-width:1200px) {
+ .studio-library-card { grid-template-columns:minmax(0,1fr); gap:8px; }
+ .studio-library-card > .flex:last-child { justify-content:flex-start; padding-left:calc(16px + 12px); }
+}

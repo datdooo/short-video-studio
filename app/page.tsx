@@ -402,12 +402,10 @@ export default function Home() {
   const [reviewTarget,setReviewTarget]=useState<HTMLDivElement|null>(null);
   const [previewStage,setPreviewStage]=useState<HTMLDivElement|null>(null);
   const [reviewCompact,setReviewCompact]=useState(true);
-  const [reviewPreference,setReviewPreference]=useState<boolean|null>(null);
-  const reviewToggle=useRef<HTMLButtonElement|null>(null);
-  const reviewVisible=hasEditPlan&&(reviewPreference??!reviewCompact);
+  const reviewVisible=hasEditPlan;
   useEffect(()=>{
     if(!previewStage)return;
-    const update=()=>setReviewCompact(previewStage.clientWidth<580);
+    const update=()=>setReviewCompact(previewStage.clientWidth<680);
     update();const observer=new ResizeObserver(update);observer.observe(previewStage);
     return()=>observer.disconnect();
   },[previewStage]);
@@ -456,11 +454,6 @@ export default function Home() {
     if(next!==workspace){stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewTicker.current?.stop();previewVideoRef.current?.pause();batchPreviewRef.current?.pause();musicPlaybackControl.current?.pause();}
     setWorkspace(next);
   }
-  function openTeaserReview(){
-    if(reviewCompact){previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();}
-    setReviewPreference(true);
-  }
-  function closeTeaserReview(){stopTeaserAuditions();setReviewPreference(false);reviewToggle.current?.focus({preventScroll:true});}
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
   const exportActivity=isStartingRender||renderJob?.state==='queued'||renderJob?.state==='rendering'||Boolean(workerHealth?.render?.resources?.renderBusy)||editorRenderJobs.some(job=>job.state==='queued'||job.state==='rendering');
   const pauseForExport=useCallback(()=>{
@@ -475,6 +468,11 @@ export default function Home() {
   const [sessionReady,setSessionReady]=useState(false),[saveEnabled,setSaveEnabled]=useState(false);
   const [sessionNotice,setSessionNotice]=useState(''),[saveError,setSaveError]=useState('');
   const [saveState,setSaveState]=useState<SaveState>('restoring');
+  useEffect(()=>{
+    if(sessionNotice!=='Đã khôi phục phiên chỉnh sửa')return;
+    const timer=setTimeout(()=>setSessionNotice(current=>current==='Đã khôi phục phiên chỉnh sửa'?'':current),4000);
+    return()=>clearTimeout(timer);
+  },[sessionNotice]);
   const [interruptedTasks,setInterruptedTasks]=useState<string[]>([]);
   const [restorePassive,setRestorePassive]=useState(false),[musicIntent,setMusicIntent]=useState(false);
   const [retainedSourceId,setRetainedSourceId]=useState(''),[restoredJobId,setRestoredJobId]=useState('');
@@ -1468,7 +1466,6 @@ export default function Home() {
     if(exportActivity){setPreviewError("Đang xuất video; preview và nhạc tạm dừng. Bấm Play sau khi xuất.");return;}
     const video = previewVideoRef.current;
     if (!video || !previewVideoUrl) return;
-    if(reviewCompact&&reviewVisible)setReviewPreference(false);
     stopTeaserAuditions();setRenderHold(false);setMusicIntent(true);
     const epoch=previewEpoch.current,controller=decks.current;
     setPreviewError("");
@@ -1502,7 +1499,6 @@ export default function Home() {
   const seekPreview = useCallback((value: number) => {
     const video = previewVideoRef.current;
     if (!video || !Number.isFinite(value)) return;
-    if(reviewCompact&&reviewVisible)setReviewPreference(false);
     stopTeaserAuditions();setPreviewSaveVersion(v=>v+1);
     if(decks.current){decks.current.seek(value);return;}
     let sourceTime = value;
@@ -1514,11 +1510,18 @@ export default function Home() {
     }
     video.currentTime = sourceTime;
     setPreviewCurrentTime(value);
-  }, [hasEditPlan, playbackSegments,stopTeaserAuditions,reviewCompact,reviewVisible]);
+  }, [hasEditPlan, playbackSegments,stopTeaserAuditions]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const target = event.target;
+      if(event.defaultPrevented||event.isComposing)return;
+      if(event.code==='Space'||event.key===' '){
+        const seek=target instanceof HTMLInputElement&&target.classList.contains('preview-seek');
+        const editing=target instanceof HTMLElement&&(target.isContentEditable||target.closest('input, textarea, select, button, a, summary, [role="textbox"], [role="combobox"], [role="dialog"], [role="menu"], .studio-teaser-review'));
+        if(workspace!=='editor'||!previewVideoUrl||event.altKey||event.ctrlKey||event.metaKey||(!seek&&editing))return;
+        event.preventDefault();if(!event.repeat)void togglePreview();return;
+      }
       if (workspace !== 'editor' || !previewVideoUrl || event.altKey || event.ctrlKey || event.metaKey || (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="textbox"], [role="combobox"], .studio-teaser-review')))) return;
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
@@ -1526,7 +1529,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [workspace, previewVideoUrl, timelineDuration, previewCurrentTime, seekPreview]);
+  }, [workspace, previewVideoUrl, timelineDuration, previewCurrentTime, seekPreview, togglePreview]);
 
   function updatePreviewClock() {
     const video = previewVideoRef.current;
@@ -1709,11 +1712,11 @@ export default function Home() {
       {workspace==='storage'&&<section className="studio-library-workspace">
         <MediaLibraryPanel workerOrigin={WORKER_ORIGIN} ready={Boolean(workerHealth?.ok)} onMoved={libraryMoved} onRestored={libraryRestored} renderCount={editorRenderJobs.length} renderList={(query) => <EditorRenderList query={query} jobs={editorRenderJobs} stopping={stoppingRenderIds} deleting={deletingRenderIds} deletingAll={deletingAllRenders} error={editorRenderError} notice={editorRenderNotice} origin={WORKER_ORIGIN} onStop={(job) => void stopRender(job)} onDelete={(job) => void deleteEditorRender(job)} onDeleteAll={() => void deleteAllEditorRenders()} />} />
       </section>}
-      {workspace === "batch" && <section className="studio-batch-workspace mx-auto max-w-6xl px-5 py-6">
+      {workspace === "batch" && <section className="studio-batch-workspace px-5 py-6">
         <h1 className="text-2xl font-semibold">Xử lý hàng loạt</h1>
         <p className="mt-2 text-sm text-zinc-400">Nhập nhiều link. App tự lấy transcript, chia part, tạo title/hashtag và render.</p>
-        <div className="grid items-start gap-5 md:grid-cols-[minmax(0,1fr)_240px]">
-        <div className="min-w-0">
+        <div className="studio-batch-grid">
+        <div className="studio-batch-setup min-w-0">
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Select value={provider === "muse" ? "muse" : provider === "gemini" ? "gemini" : "chatgpt"} onValueChange={changeProvider}>
             <SelectTrigger aria-label="AI provider hàng loạt" className="studio-input w-[220px]"><SelectValue /></SelectTrigger>
@@ -1723,6 +1726,8 @@ export default function Home() {
           {provider === "chatgpt" && !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
           {isWebAi && <p className="w-full text-xs leading-5 text-amber-200/80">{webAiName} cần nhập JSON từng video. <button onClick={() => changeWorkspace("editor")} className="underline">Về tab chỉnh từng video</button>, hoặc chọn ChatGPT để chạy hàng loạt tự động.</p>}
         </div>
+        <details className="studio-batch-options mt-3 rounded-xl border border-white/8 p-3">
+          <summary>Yêu cầu và cấu hình lượt mới</summary>
         <details className="mt-4 rounded-xl border border-white/8 p-4">
           <summary className="cursor-pointer text-sm text-zinc-300">Quy tắc chia part · xem / sửa</summary>
           <Textarea aria-label="Quy tắc chia part hàng loạt" value={instruction} onChange={(event) => {invalidateAnalysis();setInstruction(event.target.value);}} className="studio-textarea studio-transcript mt-3" />
@@ -1731,6 +1736,7 @@ export default function Home() {
         <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">Prompt bổ sung (không bắt buộc)</label>
         <Textarea id="batch-extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…" />
         <label className="mt-3 flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => setSubtitleSettings((current) => ({ ...current, enabled: event.target.checked }))} /> Auto Subtitle cho lượt chạy mới · dùng style ở tab chỉnh từng video</label>
+        </details>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {isWebAi ? `${webAiName} · chuẩn bị + import từng item` : "ChatGPT Auto"}</label>
             <Textarea id="batch-urls" value={batchUrls} onChange={(event) => setBatchUrls(event.target.value)} placeholder={"https://www.youtube.com/watch?v=...\nhttps://youtu.be/..."} className="studio-textarea mt-2 min-h-[100px] text-xs leading-6" />
@@ -1751,6 +1757,10 @@ export default function Home() {
             <p className="mt-2 text-[11px] leading-5 text-zinc-600">Đóng tab không dừng xử lý. Thoát app sẽ tạm dừng. Bấm Tiếp tục/thử lại để dùng source/plan đã lưu; part render hoàn tất không bị render lại. Gemini/Muse chờ import từng item trong editor, không chạy AI unattended.</p>
             {batchError && <p className="mt-3 text-xs leading-5 text-red-300">{batchError}</p>}
             {batchNotice && <p role="status" className="mt-3 text-xs leading-5 text-emerald-300">{batchNotice}</p>}
+          </div>
+        </div>
+        <section className="studio-batch-queue" aria-label="Hàng đợi video">
+          <h2 className="text-sm font-semibold">Hàng đợi video</h2>
             {(batch || pastBatches.length > 0) && <div className="studio-batch-item-list mt-4 max-h-[480px] space-y-3 overflow-y-auto">
               {[...(batch ? [batch] : []), ...pastBatches.filter((group) => group.id !== batch?.id)].map((group) => <div key={group.id} className="space-y-3">
               <p className="text-[10px] uppercase tracking-wider text-zinc-500">{group.id === batch?.id ? "Hàng đợi hiện tại" : "Video đã xử lý trước đó"}</p>
@@ -1783,9 +1793,9 @@ export default function Home() {
               {!group.items.length && <p className="py-4 text-center text-xs text-zinc-500">Không còn video trong hàng đợi.</p>}
               </div>)}
             </div>}
-          </div>
-        </div>
-        <aside aria-label="Preview hàng loạt" className="mt-4 rounded-2xl border border-white/10 bg-[#111216] p-4 md:sticky md:top-5">
+          {!batch&&!pastBatches.length&&<p className="studio-empty-state">Chưa có video trong hàng đợi. Thêm link ở cột bên trái.</p>}
+        </section>
+        <aside aria-label="Preview hàng loạt" className="studio-batch-preview rounded-2xl border border-white/10 bg-[#111216] p-4">
           <p className="eyebrow">PREVIEW RENDER</p>
           <p className="mt-2 text-xs leading-5 text-zinc-400">Xem Part đã cắt và render. Có play/pause và thanh tua.</p>
           {batchPreviewOutput ? <>
@@ -1809,7 +1819,7 @@ export default function Home() {
               <label htmlFor="youtube-url" className="field-label">YouTube URL</label>
               <div className="relative mt-2">
                 <Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
-                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { resetSourceSelection(); setSourceUrl(event.target.value); }} placeholder="youtube.com/watch?v=..." className="studio-input pl-10" />
+                <Input id="youtube-url" value={sourceUrl} onChange={(event) => { resetSourceSelection(); setSourceUrl(event.target.value); }} placeholder="youtube.com/watch?v=..." className="studio-input studio-icon-input pl-10" />
               </div>
               <p className="mt-2 text-[11px] leading-5 text-zinc-600">
                 {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
@@ -1976,10 +1986,10 @@ export default function Home() {
           <div className="studio-part-switcher" role="group" aria-label="Part cho preview và Timeline">
            {plan.parts.map((part,index)=>{const issue=hasEditPlan&&teaserIssues.find(issue=>issue.partId===part.id),invalidMain=mainDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[part.id]?.invalid,invalidTeaser=part.teaserEnabled!==false&&teaserDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&teaserDraftErrors[part.id]?.message;return <button type="button" key={part.id} aria-pressed={activePartIndex===index} data-part={part.id} onClick={()=>setActivePartIndex(index)}>Part {part.id}{hasEditPlan&&<small>{(presentationDuration(previewPlan.parts[index])/PREVIEW_RATE).toFixed(1)}s{part.manualLocked?' · Khóa':''}</small>}{(issue||invalidMain||invalidTeaser)&&<span className="studio-missing-teaser" title={issue?issue.reason:invalidTeaser||'Timeline có mốc chưa hợp lệ'} aria-label={`Part ${part.id}: thiếu teaser hoặc lỗi mốc`}>!</span>}</button>;})}
            {hasEditPlan&&<span className="studio-active-title" title={activePart.title}>{activePart.title}</span>}
-           {hasEditPlan&&<button ref={reviewToggle} type="button" className="studio-review-toggle" aria-expanded={reviewVisible} aria-controls="studio-teaser-review-host" onClick={()=>reviewVisible?closeTeaserReview():openTeaserReview()}><Film size={14}/>Ứng viên</button>}
           </div>
           <div ref={setPreviewStage} className="studio-preview-stage" data-review-visible={reviewVisible} data-review-compact={reviewCompact}>
-          <div className="studio-main-preview-stage" inert={reviewVisible&&reviewCompact} aria-hidden={reviewVisible&&reviewCompact}>
+          <div className="studio-main-preview-column">
+          <div className="studio-main-preview-stage">
           <div
             ref={setPreviewElement}
             aria-busy={needsMeasuredTitleFit(previewVisualStyle) && measuredTitlePair?.input !== titleFitInput}
@@ -2064,9 +2074,7 @@ export default function Home() {
           </div>
 
           </div>
-          <div id="studio-teaser-review-host" ref={setReviewTarget} className="studio-teaser-review-host" hidden={!reviewVisible}/>
-          </div>
-          <div className="studio-clock-labels"><span>{reviewVisible&&reviewCompact?'Preview chính · 1×':'Preview 1×'}</span><span title="Timestamp gốc, không phải thời gian sau khi nối đoạn">Mốc nguồn · <strong className="font-mono">{formatSourceTimecode(hasEditPlan?locateTimelineTime(playbackSegments,previewCurrentTime,PREVIEW_RATE).sourceTime:previewCurrentTime)}</strong></span></div>
+          <div className="studio-clock-labels"><span>Preview 1×</span><span title="Timestamp gốc, không phải thời gian sau khi nối đoạn">Mốc nguồn · <strong className="font-mono">{formatSourceTimecode(hasEditPlan?locateTimelineTime(playbackSegments,previewCurrentTime,PREVIEW_RATE).sourceTime:previewCurrentTime)}</strong></span></div>
           <div className="preview-controls w-full max-w-[520px]">
             <button type="button" aria-label="Tua lùi 5 giây" title="← · Lùi 5 giây" disabled={!previewVideoUrl} onClick={() => seekPreview(Math.max(0, previewCurrentTime - 5))}><ArrowLeft className="size-3" /></button>
             <button type="button" onClick={() => void togglePreview()} disabled={!previewVideoUrl} aria-label={isPreviewPlaying ? "Pause preview" : "Play preview"}>
@@ -2087,8 +2095,10 @@ export default function Home() {
             />
             <span>{formatTime(timelineDuration)}</span>
           </div>
-          {previewBuffering&&<p role="status" className="studio-inline-notice">Đang giải mã đoạn kế…</p>}
           {previewError && <p className="mt-2 max-w-[520px] text-center text-[11px] leading-5 text-red-300">{previewError}</p>}
+          </div>
+          <div id="studio-teaser-review-host" ref={setReviewTarget} className="studio-teaser-review-host" hidden={!reviewVisible}/>
+          </div>
 
 
         </>}
@@ -2109,7 +2119,7 @@ export default function Home() {
               onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
             >
             {teaserIssues.filter(issue=>issue.partId===part.id).map(issue=><p key={issue.partId} role="alert" className="text-xs text-amber-200">{issue.reason}</p>)}
-            <TeaserEditor reviewTarget={reviewTarget} reviewVisible={reviewVisible} onOpenReview={openTeaserReview} onCloseReview={closeTeaserReview} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={exportActivity} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id&&!exportActivity} cues={previewPlan.captionCues?.cues||subtitleCues}
+            <TeaserEditor reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={exportActivity} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id&&!exportActivity} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
               onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
@@ -2121,14 +2131,7 @@ export default function Home() {
                   if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
                   return {...current,teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:p)};
                 }catch{return current;}
-              });}}>
-
-          {part.teaser && <details className="mt-3 w-full max-w-[520px] rounded-xl border border-white/10 p-3 text-xs text-zinc-400">
-            <summary className="cursor-pointer">Teaser Part {part.id} · {part.teaser.status === "selected" ? `${((part.teaser.end - part.teaser.start) / PREVIEW_RATE).toFixed(2)}s preview 1× · ${part.teaser.selection === "ai" ? "AI API" : part.teaser.selection === "external-import" ? "External import · API chưa xác minh" : part.teaser.selection === "manual" ? "Chọn tay · cần xem lại" : "Fallback — chưa xác minh biên tập"}` : "Không có đoạn phù hợp"}</summary>
-            <p className="mt-2">{explainInVietnamese(part.teaser.reason)}</p>{part.teaser.status==='selected'&&<><p className="mt-1">Nội dung part: {explainInVietnamese(part.teaser.partUnderstanding)}</p><p className="mt-1">Lời trích / bằng chứng: {explainInVietnamese(part.teaser.observed)}</p><p className="mt-1">Ngữ cảnh mở đầu: {explainInVietnamese(part.teaser.startContext)}</p></>}
-            {part.teaser.status === "selected" && <><p className="mt-1">{explainInVietnamese(part.teaser.relation)}</p>{part.teaser.ending && <p className="mt-1">Điểm kết: {explainInVietnamese(part.teaser.ending)}</p>}{part.teaser.heatmapEvidence && <p className="mt-1">Most Replayed: {explainInVietnamese(part.teaser.heatmapEvidence.reason)}</p>}<p className="mt-1">{part.teaser.provider} / {part.teaser.model} · {part.teaser.limitations.map(line=>explainInVietnamese(line,"Giới hạn bằng chứng chưa có diễn giải tiếng Việt; xem dữ liệu plan gốc.")).join(" · ")}</p></>}
-          </details>}
-              </TeaserEditor>
+              });}}/>
             </MainRangesEditor>)}
           </div>}
           {!hasEditPlan&&<p className="studio-muted text-xs">Chưa có plan — chuẩn bị nguồn rồi Generate hoặc dùng Manual cut trong Nâng cao.</p>}
@@ -2144,7 +2147,7 @@ export default function Home() {
           <VisualCustomizePanel style={previewVisualStyle} include={['text','font','animation']} controls={visualControls} />
 
 
-          <details className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
+          <details className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}</summary>
             <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => {
               const enabled = event.target.checked;
@@ -2204,7 +2207,7 @@ export default function Home() {
 
         </>} music={<>
           <MusicPanel suspended={exportActivity} autoPrepare={sessionReady&&!exportActivity&&!renderHold&&(!restorePassive||musicIntent)} previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>{setMusicIntent(true);setPlan(current=>({...current,music}));}} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}} />        </>}/>}
-        status={<StudioRenderStatus job={renderJob} submitting={isStartingRender} canRender={hasEditPlan&&!teaserIssues.length&&!isStartingRender&&!subtitleBusy&&!isAnalyzing&&!effectiveTiming.error&&renderJob?.state!=='queued'&&renderJob?.state!=='rendering'&&!!workerHealth?.ok} hasPlan={hasEditPlan} validation={effectiveTiming.error} issues={teaserIssues} stopping={!!renderJob&&stoppingRenderIds.includes(renderJob.id)} worker={WORKER_ORIGIN} onRender={()=>void startRender()} onCancel={()=>{if(renderJob)void stopRender(renderJob);}} onPart={id=>setActivePartIndex(id-1)} hold={renderHold} busy={exportActivity}/>}
+        status={<StudioRenderStatus job={renderJob} submitting={isStartingRender} canRender={hasEditPlan&&!teaserIssues.length&&!isStartingRender&&!subtitleBusy&&!isAnalyzing&&!effectiveTiming.error&&renderJob?.state!=='queued'&&renderJob?.state!=='rendering'&&!!workerHealth?.ok} hasPlan={hasEditPlan} blockedReason={!workerHealth?.ok?'Worker chưa kết nối':subtitleBusy?'Đang tạo phụ đề…':isAnalyzing?'Đang phân tích…':''} validation={effectiveTiming.error} issues={teaserIssues} stopping={!!renderJob&&stoppingRenderIds.includes(renderJob.id)} worker={WORKER_ORIGIN} onRender={()=>void startRender()} onCancel={()=>{if(renderJob)void stopRender(renderJob);}} onPart={id=>setActivePartIndex(id-1)} hold={renderHold} busy={exportActivity}/>}
 
        />
       </div>
