@@ -42,10 +42,9 @@ export function EditorRenderList({ query = "", jobs, stopping, deleting, deletin
         <button type="button" onClick={onDeleteAll} disabled={deletingAll || deleting.length > 0 || stopping.length > 0 || !completedRenderJobs(jobs).length} title="Chuyển tất cả render đã kết thúc vào Thùng rác; giữ video gốc và tác vụ đang chạy" className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 hover:bg-red-400/10 disabled:opacity-40">{deletingAll ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}{deletingAll ? 'Đang xoá…' : 'Xoá tất cả'}</button>
       </div>
     </div>
-    <p className="mt-2 text-xs leading-6 text-zinc-500">Cứ nhập link mới để chuẩn bị và chia part. Render cũ tiếp tục ở nền; các video render lần lượt để tránh quá tải GPU. Mỗi part tự bỏ 1 giây đầu.</p>
     {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}
     {notice && <p role="status" className="mt-3 text-xs text-emerald-300">{notice}</p>}
-    {!jobs.length && <p className="mt-4 text-sm text-zinc-500">Chưa có tác vụ render. Title sau cùng, hashtag và file tải về sẽ được giữ tại đây.</p>}
+    {!jobs.length && <p className="mt-4 text-sm text-zinc-500">Chưa có tác vụ render.</p>}
     {!!jobs.length && !visibleJobs.length && <p className="studio-empty-state mt-4 text-sm text-muted-foreground">Không có tác vụ khớp tìm kiếm.</p>}
     <div className="studio-render-job-list mt-4 max-h-[640px] space-y-4 overflow-y-auto overscroll-contain pr-1">
       {visibleJobs.map((job) => {

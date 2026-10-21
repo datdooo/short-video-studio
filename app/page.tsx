@@ -12,6 +12,10 @@ import {EditorWorkspace,EditorInspector} from '@/components/editor-workspace';
 import {EditorDraftContext} from '@/components/editor-draft-context';
 import {SESSION_KEY,readEditorSession,writeEditorSession,managedId,type EditorSession,type Controls} from '@/lib/editor-session';
 import {MusicPanel} from '@/components/music-panel';
+import {AiOperationStatus} from '@/components/ai-operation-status';
+import {WebAiPromptCopy} from '@/components/web-ai-prompt-copy';
+import {SourceOptionsSection} from '@/components/source-options-section';
+import {readAiOperation,type AiDiagnostics} from '@/lib/ai-progress';
 
 import { ChangeEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -88,7 +92,6 @@ import { CANVAS_WIDTH, foregroundGeometry, FOREGROUND_SCALE, FOREGROUND_HEIGHT, 
 import {
   AiProvider,
   AnalyzeRequest,
-  buildPrompt,
   EDIT_PLAN_SCHEMA,
   EditPlan,
   durationOf,
@@ -103,10 +106,10 @@ import { collectBatchDownloads, createBatchDownloadQueue } from "@/lib/batch-dow
 import { clearSubmittedBatchInput } from "@/lib/batch-submission.mjs";
 import {assertTeaserContexts} from "@/lib/teaser-context.mjs";
 import {validSourceRange} from "@/lib/source-ranges.mjs";
-import { attachExternalHooks, externalHooksCurrent, buildExternalHookOnlyPrompt, parseExternalHookOnly } from "@/lib/teaser-import.mjs";
+import { externalHooksCurrent } from "@/lib/teaser-import.mjs";
 import {createAnalysisRequestGuard} from "@/lib/auto-cut/request.mjs";
 import {lockedParts} from "@/lib/auto-cut/locks.mjs";
-import { buildMusePrompt, parseMusePlan } from "@/lib/muse-plan.mjs";
+import { buildMusePrompt, parseMusePlan, WEB_AI_PROMPT_VERSION } from "@/lib/muse-plan.mjs";
 import { locateTimelineTime, timelineTimeForSegment } from "@/lib/preview-timeline.mjs";
 
 const WORKER_ORIGIN = resolveWorkerOrigin(process.env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN);
@@ -380,12 +383,19 @@ export default function Home() {
   const [activePartIndex, setActivePartIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const analysisRequests = useRef(createAnalysisRequestGuard());
+  const activeAnalysis=useRef<AbortController|null>(null);
+  const activeTeaserRequests=useRef(new Map<number,{controller:AbortController;identity:string}>());
+  const [analysisDiagnostics,setAnalysisDiagnostics]=useState<AiDiagnostics|null>(null);
+  const [analysisStartedAt,setAnalysisStartedAt]=useState(0);
+  const [analysisFinishedAt,setAnalysisFinishedAt]=useState(0);
+  const [analysisFinishedStage,setAnalysisFinishedStage]=useState<'complete'|'error'|'cancelled'>('complete');
+  const [teaserOperations,setTeaserOperations]=useState<Record<number,{diagnostics:AiDiagnostics|null;startedAt:number;running:boolean;finishedAt?:number;finishedStage?:'complete'|'error'|'cancelled'}>>({});
   const [analysisNotice,setAnalysisNotice] = useState("");
   useEffect(()=>{const guard=analysisRequests.current;return()=>guard.invalidate();},[]);
-  function invalidateAnalysis(){analysisRequests.current.invalidate();setIsAnalyzing(false);setAnalysisNotice("");}
+  function invalidateAnalysis(){if(activeAnalysis.current){setAnalysisFinishedStage('cancelled');setAnalysisFinishedAt(Date.now());}analysisRequests.current.invalidate();activeAnalysis.current=null;setIsAnalyzing(false);setAnalysisNotice("");}
   const [webAiPrompt, setWebAiPrompt] = useState("");
   const [webAiResult, setWebAiResult] = useState("");
-  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider; requestId: string; analysisKey?:string; supplementalPrompt?:string; lockedPlan?:EditPlan; hookPlan?: EditPlan; mainSignature?: string } | null>(null);
+  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider; requestId: string; analysisKey?:string; supplementalPrompt?:string; lockedPlan?:EditPlan; hookPlan?: EditPlan; mainSignature?: string; promptVersion?:string; captionTrack?:CaptionTrack } | null>(null);
   const [webAiNotice, setWebAiNotice] = useState("");
   const [webAiError, setWebAiError] = useState("");
   const [error, setError] = useState("");
@@ -408,6 +418,7 @@ export default function Home() {
   const deletedEditorJobs = useRef(new Set<string>());
   const editorMutationEpoch = useRef(0);
   const [stoppingRenderIds, setStoppingRenderIds] = useState<string[]>([]);
+  const [editorRenderPollError,setEditorRenderPollError]=useState("");
   const sourceSelectionEpoch = useRef(0);
   const sourceRequests = useRef(new Set<AbortController>());
   const sourcePreparation = useRef<AbortController | null>(null);
@@ -415,7 +426,6 @@ export default function Home() {
   useEffect(()=>{const requests=sourceRequests.current;return()=>{for(const request of requests)request.abort();requests.clear();};},[]);
   const renderSubmissionPending = useRef(false);
   const [isStartingRender, setIsStartingRender] = useState(false);
-  const [renderHold,setRenderHold]=useState(false);
   const [batchUrls, setBatchUrls] = useState("");
   const [batch, setBatch] = useState<BatchJob | null>(null);
   const [batchEditing,setBatchEditing]=useState<{batchId:string;itemId:string;sourceId:string}|null>(null);
@@ -479,12 +489,12 @@ export default function Home() {
     jobRestoreEpoch.current++;setRestorePassive(false);setMusicIntent(false);setRetainedSourceId('');setRestoredJobId('');setControls({});setInterruptedTasks([]);setSourceRestoreNotice('');restoringSource.current=false;pendingPreviewRestore.current=null;
     sourceSelectionEpoch.current++; previewEpoch.current++; invalidateAnalysis();
     for(const request of sourceRequests.current)request.abort();
-    sourceRequests.current.clear(); sourcePreparation.current=null;
+    sourceRequests.current.clear();activeTeaserRequests.current.clear(); sourcePreparation.current=null;
     previewPlayingRef.current=false; musicPlaybackControl.current?.pause();
     decks.current?.dispose(); decks.current=null;
     for(const video of deckVideos.current)video?.pause();
     setIsPreviewPlaying(false);setPreviewBuffering(false);setPreviewCurrentTime(0);setPreviewDuration(0);setPreviewError("");
-    setPreparedSource(null);setRenderJob(null);setHasEditPlan(false);setIsPreparingSource(false);setSourcePreparationProgress(null);
+    setPreparedSource(null);setRenderJob(null);setHasEditPlan(false);setIsPreparingSource(false);setSourcePreparationProgress(null);setAnalysisDiagnostics(null);setAnalysisStartedAt(0);setTeaserOperations({});
     setTranscript("");setTranscriptStatus("");setSourceCaptions(null);subtitleRequestSerial.current++;subtitleSourceRef.current=undefined;
     setSubtitleBusy(false);setSubtitleNotice("");setMainDraftErrors({});setTeaserDraftErrors({});setBatchEditing(null);setActivePartIndex(0);
     setWebAiPrompt("");setWebAiResult("");setWebAiContext(null);setWebAiNotice("");setWebAiError("");setError("");
@@ -499,12 +509,6 @@ export default function Home() {
   }
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
   const exportActivity=isStartingRender||renderJob?.state==='queued'||renderJob?.state==='rendering'||Boolean(workerHealth?.render?.resources?.renderBusy)||editorRenderJobs.some(job=>job.state==='queued'||job.state==='rendering');
-  const pauseForExport=useCallback(()=>{
-    stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);musicPlaybackControl.current?.pause();
-    decks.current?.pause();previewTicker.current?.stop();batchPreviewRef.current?.pause();for(const video of deckVideos.current)video?.pause();
-    setRenderHold(true);setMusicIntent(false);
-  },[stopTeaserAuditions]);
-  useEffect(()=>{if(exportActivity)pauseForExport();},[exportActivity,pauseForExport]);
 
 
   const [previewSaveVersion,setPreviewSaveVersion]=useState(0);
@@ -652,6 +656,15 @@ export default function Home() {
   const hookIdentity = JSON.stringify({ sourceId: preparedSource?.id, provider, transcript, instruction, supplementalPrompt, mainSignature });
   const latestHookIdentity = useRef(hookIdentity);
   useEffect(() => { latestHookIdentity.current = hookIdentity; }, [hookIdentity]);
+  const partHookIdentities=Object.fromEntries(previewPlan.parts.map(part=>[part.id,JSON.stringify({sourceId:preparedSource?.id,provider,transcript,instruction,supplementalPrompt,title:previewPlan.originalTitle,part:{id:part.id,title:part.title,hook:part.hook,segments:part.segments,teaserEnabled:part.teaserEnabled},cues:subtitleCues})]));
+  const latestPartHookIdentities=useRef(partHookIdentities);latestPartHookIdentities.current=partHookIdentities;
+  const partHookIdentityKey=JSON.stringify(partHookIdentities);
+  const priorAnalysisInput=useRef(hookIdentity);
+  useEffect(()=>{
+    if(priorAnalysisInput.current!==hookIdentity&&activeAnalysis.current){invalidateAnalysis();setAnalysisNotice('Dữ liệu phân tích đã đổi; đã dừng lượt cũ.');}
+    priorAnalysisInput.current=hookIdentity;
+    for(const[id,request]of activeTeaserRequests.current)if(request.identity!==latestPartHookIdentities.current[id])request.controller.abort(new Error('Nguồn, main hoặc yêu cầu đã đổi; đã dừng lượt teaser cũ.'));
+  },[hookIdentity,partHookIdentityKey]);
   const timelineDuration = hasEditPlan ? partDuration : previewDuration;
   const fontStack = useMemo(
     () => fontFamilyForStyle(previewVisualStyle.originalTitle.font, `${plan.originalTitle} ${activePart.title}`, { browser: true }).split(", "),
@@ -725,7 +738,7 @@ export default function Home() {
     if(pendingPreviewRestore.current!==null){const position=Math.max(0,Math.min(pendingPreviewRestore.current,presentationDuration(activePart)/PREVIEW_RATE));pendingPreviewRestore.current=null;controller.seek(position);controller.pause();}
     const tick=()=>{if(!current())return;controller.tick();frame=requestAnimationFrame(tick);};
     const ticker={start:()=>{cancelAnimationFrame(frame);if(current())frame=requestAnimationFrame(tick);},stop:()=>cancelAnimationFrame(frame)};
-    previewTicker.current=ticker;if(!exportActivity)ticker.start();
+    previewTicker.current=ticker;ticker.start();
     queueMicrotask(()=>{if(current()){setIsPreviewPlaying(false);setPreviewBuffering(false);}});
     return()=>{active=false;cancelAnimationFrame(frame);if(previewTicker.current===ticker)previewTicker.current=null;controller.dispose();if(decks.current===controller)decks.current=null;};
   },[hasEditPlan,playbackSegments,previewVideoUrl]);
@@ -825,10 +838,10 @@ export default function Home() {
           const jobs = data.jobs.filter((job) => !deletedEditorJobs.current.has(job.id)).map((job) => ({ ...job, outputs: job.outputs.filter((output) => !removedMediaUrls.current.has(output.url)) }));
           setEditorRenderJobs(jobs);
           setRenderJob((current) => current ? jobs.find((job) => job.id === current.id) || current : null);
-          setEditorRenderError("");
+          setEditorRenderPollError("");
         }
       } catch (caughtError) {
-        if (active) setEditorRenderError(caughtError instanceof Error ? caughtError.message : "Mất kết nối với media worker.");
+        if (active) setEditorRenderPollError(caughtError instanceof Error ? caughtError.message : "Mất kết nối với media worker.");
       } finally { pending = false; }
     };
     void poll();
@@ -1090,6 +1103,7 @@ export default function Home() {
 
   async function stopRender(job: RenderJob) {
     if (stoppingRenderIds.includes(job.id)) return;
+    setEditorRenderError("");
     setStoppingRenderIds((ids) => [...ids, job.id]);
     try {
       const response = await fetch(`${WORKER_ORIGIN}/api/jobs/${job.id}/cancel`, { method: "POST" });
@@ -1247,8 +1261,10 @@ export default function Home() {
   }
 
   async function analyze() {
-    if (isWebAi) return;
+    if (isWebAi||isAnalyzing||activeAnalysis.current&&!activeAnalysis.current.signal.aborted) return;
+    if([...activeTeaserRequests.current.values()].some(request=>!request.controller.signal.aborted)){setAnalysisNotice('Đang chọn teaser; dừng hoặc chờ lượt đó trước khi phân tích lại main.');return;}
     const selectionEpoch=sourceSelectionEpoch.current,ticket=analysisRequests.current.begin();
+    activeAnalysis.current=ticket.controller;setAnalysisDiagnostics(null);setAnalysisStartedAt(Date.now());setAnalysisFinishedAt(0);setAnalysisFinishedStage('complete');
     setInterruptedTasks(current=>current.filter(s=>!s.includes('AI')));setError("");setAnalysisNotice("Đang chuẩn bị source…");setIsAnalyzing(true);
     try {
       if(provider==="mock") {replacePlan(mockPlan({provider:"mock",originalTitle:sourceTitle,transcript,instruction}));setHasEditPlan(true);if(!preparedSource)await prepareSource(ticket.controller.signal);return;}
@@ -1256,17 +1272,17 @@ export default function Home() {
       if(effectiveTiming.error)throw new Error(effectiveTiming.error);
       const source=preparedSource||await prepareSource(ticket.controller.signal);
       if(!source||!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
-      setAnalysisNotice("Đang phân tích nội dung + scene/audio, chọn main và hook từng part… Có thể dừng mà không mất plan cũ.");
-      const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({transcript:transcript||source.transcript,instruction,supplementalPrompt,...(hasEditPlan?{currentPlan:previewPlan}:{}),...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
-      const data=await response.json() as {plan?:EditPlan;error?:string};
+      setAnalysisNotice("");
+      const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({progress:true,transcript:transcript||source.transcript,instruction,supplementalPrompt,...(hasEditPlan?{currentPlan:previewPlan}:{}),...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
+      const data=await readAiOperation<{plan?:EditPlan}>(response,diagnostics=>{if(analysisRequests.current.isCurrent(ticket)&&selectionEpoch===sourceSelectionEpoch.current)setAnalysisDiagnostics(diagnostics);});
       if(!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
       if(!response.ok||!data.plan)throw new Error(data.error||"Không tạo được Smart Auto Cut.");
       replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
       const missingTeasers=teaserReadiness(data.plan,source.duration);
       const mainNotice=data.plan.analysis?.method==='deterministic-fallback'?`Main dự phòng · ${explainInVietnamese(data.plan.analysis.fallbackReason,"AI chưa khả dụng; main dự phòng chưa được AI xác minh ngữ nghĩa.")}. `:'';
       setAnalysisNotice(mainNotice+(missingTeasers.length?`Main đã lưu; chưa hoàn tất teaser. ${missingTeasers.map(issue=>`Part ${issue.partId}: ${issue.reason}`).join(' ')} Chọn lại, nhập mốc tay hoặc tắt teaser tại Timeline.`:'Đã tạo main; các teaser đang bật hợp lệ. Có thể xem/chỉnh trong Timeline.'));
-    }catch(caught){if(analysisRequests.current.isCurrent(ticket))setError(caught instanceof Error?caught.message:"Không tạo được Smart Auto Cut.");}
-    finally{if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);}}
+    }catch(caught){if(analysisRequests.current.isCurrent(ticket)){setAnalysisFinishedStage('error');setError(caught instanceof Error?caught.message:"Không tạo được Smart Auto Cut.");}}
+    finally{if(activeAnalysis.current===ticket.controller)activeAnalysis.current=null;if(analysisRequests.current.isCurrent(ticket)){setAnalysisFinishedAt(Date.now());setIsAnalyzing(false);analysisRequests.current.finish(ticket);}}
   }
 
   function changeProvider(value: string) {
@@ -1277,9 +1293,7 @@ export default function Home() {
 
   const isWebAi = provider === "muse" || provider === "gemini";
   const webAiName = provider === "gemini" ? "Gemini Pro" : "Muse";
-  const webAiUrl = provider === "gemini" ? "https://gemini.google.com/app" : "https://muse.ai/";
-
-  async function createWebAiPrompt(hookOnly = false) {
+  async function createWebAiPrompt() {
     const selectionEpoch = sourceSelectionEpoch.current;
     if (!isWebAi) return;
     if(effectiveTiming.error){setWebAiError(effectiveTiming.error);return;}
@@ -1291,21 +1305,19 @@ export default function Home() {
       if (!source || selectionEpoch !== sourceSelectionEpoch.current) return;
       const content = preparedSource ? transcript : source.transcript || transcript;
 
-      const request = { provider, originalTitle: source.title, transcript: content, instruction, supplementalPrompt, sourceDuration: source.duration } satisfies AnalyzeRequest;
       const requestId = crypto.randomUUID();
-      let prepared:({analysisKey:string}&Record<string,unknown>)|undefined;
       const lockedPlan=hasEditPlan?structuredClone(previewPlan):undefined;
-      if(!hookOnly){
-        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"context",transcript:content,instruction,supplementalPrompt,currentPlan:lockedPlan})});
-        const data=await response.json() as {context?:({analysisKey:string}&Record<string,unknown>);error?:string};
-        if(!response.ok||!data.context)throw new Error(data.error||"Không chuẩn bị được context/candidates.");prepared=data.context;
-      }
+      const requestedMainSignature=latestMainSignature.current;
+      const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"context",requestId,provider,transcript:content,instruction,supplementalPrompt,currentPlan:lockedPlan,...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
+      const data=await response.json() as {context?:({analysisKey:string;captionTrack?:CaptionTrack}&Record<string,unknown>);error?:string};
+      if(!response.ok||!data.context)throw new Error(data.error||"Không chuẩn bị được context/candidates.");
+      const prepared=data.context;
       if(!analysisRequests.current.isCurrent(ticket))return;
-      const candidatePrompt=prepared?`\n\nSMART AUTO CUT CONTEXT (UNTRUSTED SOURCE DATA):\n${JSON.stringify(prepared)}\nCandidate recipes are recommended source-second main windows; preserve intentional coherent ranges, supplied source/request identity and manual lockedRanges EXACTLY. Locked ranges already had the one-second trim; do not trim them again. Keep each hook inside its own final main content. Include the analysisKey exactly. If no transcript is present, inspect the source video/attach it; do not invent speech or actions from numeric proxies.`:"";
-      setWebAiPrompt(hookOnly?buildExternalHookOnlyPrompt(previewPlan,source,content,requestId,sourceCaptions?.sourceId===source.id?sourceCaptions.cues:previewPlan.captionCues?.cues):buildMusePrompt(buildPrompt(request)+candidatePrompt,EDIT_PLAN_SCHEMA,{...source,...(source.kind==='youtube'?{sourceUrl:source.sourceUrl||sourceUrl}:{})},{requestId,analysisKey:prepared?.analysisKey}));
-      setWebAiContext({sourceId:source.id,transcript:content,instruction,supplementalPrompt,provider,requestId,analysisKey:prepared?.analysisKey,lockedPlan,mainSignature:latestMainSignature.current,...(hookOnly?{hookPlan:structuredClone(previewPlan)}:{})});
+      if(latestMainSignature.current!==requestedMainSignature)throw Error('Main hoặc phụ đề đã đổi trong lúc tạo prompt. Tạo lại prompt cho bản hiện tại.');
+      setWebAiPrompt(buildMusePrompt('',EDIT_PLAN_SCHEMA,source,{requestId,analysisKey:prepared.analysisKey,context:prepared}));
+      setWebAiContext({sourceId:source.id,transcript:content,instruction,supplementalPrompt,provider,requestId,analysisKey:prepared.analysisKey,lockedPlan,mainSignature:requestedMainSignature,promptVersion:WEB_AI_PROMPT_VERSION,captionTrack:prepared.captionTrack});
       setWebAiResult("");
-      setWebAiNotice(`Prompt đã sẵn sàng. Copy rồi mở ${webAiName}, dán vào cuộc trò chuyện và gửi. App chưa gửi dữ liệu tới ${webAiName}.`);
+      setWebAiNotice('Đã tạo prompt.');
     } catch (caughtError) {
       if (analysisRequests.current.isCurrent(ticket) && selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không tạo được prompt ${webAiName}.`);
     } finally { if(analysisRequests.current.isCurrent(ticket)){setIsAnalyzing(false);analysisRequests.current.finish(ticket);} }
@@ -1314,7 +1326,7 @@ export default function Home() {
 
   // Transcript retrieval / editing rules cannot change the identity of a video.
   // The imported JSON's sourceId is validated separately by parseMusePlan.
-  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && webAiContext.supplementalPrompt === supplementalPrompt && webAiContext.mainSignature === mainSignature);
+  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext?.promptVersion===WEB_AI_PROMPT_VERSION && !webAiContext.hookPlan && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && webAiContext.supplementalPrompt === supplementalPrompt && webAiContext.mainSignature === mainSignature);
 
 
   async function checkTeasersForExport(nextPlan:EditPlan,source:WorkerSource){
@@ -1330,20 +1342,30 @@ export default function Home() {
     if(timing.error||draftError)throw new Error(timing.error||draftError);
     const source=preparedSource;
     if(!source)throw new Error("Chuẩn bị nguồn video trước khi chọn teaser.");
-    const signature=latestMainSignature.current,requestIdentity=latestHookIdentity.current,sourceId=source.id;
+    const requestIdentity=latestPartHookIdentities.current[partId],sourceId=source.id,epoch=sourceSelectionEpoch.current;
+    if(isAnalyzing)throw new Error('Đang phân tích main; dừng hoặc chờ lượt hiện tại trước khi chọn lại teaser.');
+    const previous=activeTeaserRequests.current.get(partId);previous?.controller.abort();
+    const controller=new AbortController(),combined=AbortSignal.any([signal,controller.signal]);
+    const operation={controller,identity:requestIdentity};activeTeaserRequests.current.set(partId,operation);sourceRequests.current.add(controller);
+    const current=()=>activeTeaserRequests.current.get(partId)===operation&&epoch===sourceSelectionEpoch.current;
+    setTeaserOperations(current=>({...current,[partId]:{diagnostics:null,startedAt:Date.now(),running:true}}));
+    let selected=false;
+    try{
     const captionCues=sourceCaptions?.sourceId===sourceId?sourceCaptionTrack(sourceCaptions,source):previewPlan.captionCues;
     const requestPlan={...previewPlan,parts:previewPlan.parts.map(p=>p.id===partId?{...p,teaser:undefined,customTeaser:undefined}:p),...(captionCues?{captionCues}:{})};
     const response=await fetch(`${WORKER_ORIGIN}/api/sources/${sourceId}/teaser-hooks`,{
-      method:'POST',signal,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({plan:requestPlan,partId,instruction,supplementalPrompt,transcript:transcript.slice(0,100_000),...(input?{customInstruction:input}:{})})
+      method:'POST',signal:combined,headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({progress:true,plan:requestPlan,partId,instruction,supplementalPrompt,transcript,...(input?{customInstruction:input}:{})})
     });
-    const result=await response.json() as {plan?:EditPlan;error?:string};
+    const result=await readAiOperation<{plan?:EditPlan}>(response,diagnostics=>{if(current())setTeaserOperations(previous=>({...previous,[partId]:{...previous[partId],diagnostics}}));});
     if(!response.ok||!result.plan)throw new Error(result.error||"Không chọn được teaser.");
-    if(signal.aborted||signature!==latestMainSignature.current||requestIdentity!==latestHookIdentity.current||subtitleSourceRef.current!==sourceId)throw new Error("Nguồn/main đã thay đổi. Chuẩn bị teaser lại.");
+    if(combined.aborted||!current()||requestIdentity!==latestPartHookIdentities.current[partId]||subtitleSourceRef.current!==sourceId)throw new Error("Nguồn/main đã thay đổi. Chuẩn bị teaser lại.");
     const part=result.plan.parts.find(p=>p.id===partId);
     if(!part?.teaser)throw new Error("Provider không trả kết quả teaser cho part này.");
     validateTeaser(part,source.duration);
+    selected=true;
     return part.teaser;
+    }finally{sourceRequests.current.delete(controller);if(current()){activeTeaserRequests.current.delete(partId);setTeaserOperations(previous=>({...previous,[partId]:{...previous[partId],running:false,finishedAt:Date.now(),finishedStage:combined.aborted?'cancelled':selected?'complete':'error'}}));}}
   }
 
 
@@ -1435,17 +1457,18 @@ export default function Home() {
       if (!webAiPromptIsCurrent || !webAiContext) throw new Error("Source, transcript, quy tắc hoặc provider đã đổi. Tạo prompt mới trước khi nhập JSON.");
       const context = webAiContext;
       const identity = hookIdentity;
-      const imported = context.hookPlan ? null : parseMusePlan(webAiResult, preparedSource, webAiName, { requestId: context.requestId,analysisKey:context.analysisKey,lockedPlan:context.lockedPlan });
-      const normalized=context.hookPlan||normalizePlan(imported!,provider);
-      const refined=context.hookPlan||{...normalized,parts:normalized.parts.map((p,i)=>{
+      const imported = parseMusePlan(webAiResult, preparedSource, webAiName, { requestId: context.requestId,analysisKey:context.analysisKey,lockedPlan:context.lockedPlan });
+      const normalized=normalizePlan(imported,provider);
+      const refined={...normalized,parts:normalized.parts.map((p,i)=>{
         const locked=context.lockedPlan&&lockedParts(context.lockedPlan)[i];
         const previous=context.lockedPlan?.parts[i];
         return locked?structuredClone(context.lockedPlan!.parts[i]):{...p,smartCutApplied:true,...(typeof previous?.teaserEnabled==='boolean'?{teaserEnabled:previous.teaserEnabled}:{}),...(previous?.teaserEnabled===false?{teaser:previous.teaser,customTeaser:previous.customTeaser}:{} )};
       })};
-      const selections = context.hookPlan ? parseExternalHookOnly(webAiResult, preparedSource, context.requestId, context.hookPlan) : imported!.hookSelections || [];
-      let nextPlan = await attachExternalHooks({...refined,captionCues:previewPlan.captionCues}, selections, preparedSource, context.transcript, context.provider, subtitleCues,{instruction:context.instruction,supplementalPrompt:context.supplementalPrompt});
-      if(context.analysisKey&&!context.hookPlan){
-        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,plan:nextPlan})});
+      const selections = imported.hookSelections || [];
+      const importTrack=context.captionTrack||previewPlan.captionCues;
+      let nextPlan:EditPlan = {...refined,captionCues:importTrack};
+      if(context.analysisKey){
+        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,...(context.captionTrack?{captionCues:context.captionTrack}:{}),hookSelections:selections,plan:nextPlan})});
         const data=await response.json() as {plan?:EditPlan;error?:string};if(!response.ok||!data.plan)throw new Error(data.error||"Import context đã thay đổi.");nextPlan=data.plan;
       }
       const verified=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/teaser-hooks`,{method:'POST',signal:ticket.controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'validate-import',plan:nextPlan,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt})});
@@ -1458,7 +1481,7 @@ export default function Home() {
       setActivePartIndex(0);
       setRenderJob(null);
       setError("");
-      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}, hook external-import đã kiểm tra range, bỏ 1 giây theo contract; giữ nguyên lựa chọn main có chủ ý. Có thể sửa Timeline trước khi render.`);
+      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}.`);
     } catch (caughtError) {
       if (analysisRequests.current.isCurrent(ticket) && selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không nhập được JSON ${webAiName}.`);
     }
@@ -1506,10 +1529,9 @@ export default function Home() {
 
   async function togglePreview() {
     if(previewSourceEpoch!==sourceSelectionEpoch.current)return;
-    if(exportActivity){setPreviewError("Đang xuất video; preview và nhạc tạm dừng. Bấm Play sau khi xuất.");return;}
     const video = previewVideoRef.current;
     if (!video || !previewVideoUrl) return;
-    stopTeaserAuditions();setRenderHold(false);setMusicIntent(true);
+    stopTeaserAuditions();setMusicIntent(true);
     const epoch=previewEpoch.current,controller=decks.current;
     setPreviewError("");
     if (!previewPlayingRef.current) {
@@ -1662,7 +1684,7 @@ export default function Home() {
       setError("Edit plan có timestamp không hợp lệ.");
       return;
     }
-    pauseForExport();setIsStartingRender(true);
+    setIsStartingRender(true);
     renderSubmissionPending.current = true;
     try {
       const source = preparedSource || await prepareSource();
@@ -1687,8 +1709,8 @@ export default function Home() {
       setEditorRenderJobs((jobs) => [data.job!, ...jobs.filter((job) => job.id !== data.job!.id)]);
       if (selectionEpoch === sourceSelectionEpoch.current) {
         jobRestoreEpoch.current++;setRestoredJobId('');setRenderJob(data.job);
-        const renderedPlan = data.job.plan;
-        if (renderedPlan && submittedPlan.teaserPolicy === TEASER_POLICY && latestMainSignature.current === mainSignature) setPlan((current) => ({ ...current, parts: renderedPlan.parts, teaserPolicy: TEASER_POLICY }));
+        // The queued job owns its submitted snapshot. Its response must not
+        // write over teaser/range edits made while submission was in flight.
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Không thể bắt đầu render.");
@@ -1756,11 +1778,10 @@ export default function Home() {
        {retainedSourceId&&!preparedSource&&<button type="button" onClick={()=>setSourceRestoreVersion(v=>v+1)}>Nối lại source</button>}
       </div>}
       {workspace==='storage'&&<section className="studio-library-workspace">
-        <MediaLibraryPanel workerOrigin={WORKER_ORIGIN} ready={Boolean(workerHealth?.ok)} onMoved={libraryMoved} onRestored={libraryRestored} renderCount={editorRenderJobs.length} renderList={(query) => <EditorRenderList query={query} jobs={editorRenderJobs} stopping={stoppingRenderIds} deleting={deletingRenderIds} deletingAll={deletingAllRenders} error={editorRenderError} notice={editorRenderNotice} origin={WORKER_ORIGIN} onStop={(job) => void stopRender(job)} onDelete={(job) => void deleteEditorRender(job)} onDeleteAll={() => void deleteAllEditorRenders()} />} />
+        <MediaLibraryPanel workerOrigin={WORKER_ORIGIN} ready={Boolean(workerHealth?.ok)} onMoved={libraryMoved} onRestored={libraryRestored} renderCount={editorRenderJobs.length} renderList={(query) => <EditorRenderList query={query} jobs={editorRenderJobs} stopping={stoppingRenderIds} deleting={deletingRenderIds} deletingAll={deletingAllRenders} error={editorRenderError||editorRenderPollError} notice={editorRenderNotice} origin={WORKER_ORIGIN} onStop={(job) => void stopRender(job)} onDelete={(job) => void deleteEditorRender(job)} onDeleteAll={() => void deleteAllEditorRenders()} />} />
       </section>}
       {workspace === "batch" && <section className="studio-batch-workspace px-5 py-6">
         <h1 className="text-2xl font-semibold">Xử lý hàng loạt</h1>
-        <p className="mt-2 text-sm text-zinc-400">Nhập nhiều link. App tự lấy transcript, chia part, tạo title/hashtag và render.</p>
         <div className="studio-batch-grid">
         <div className="studio-batch-setup min-w-0">
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -1770,37 +1791,33 @@ export default function Home() {
           </Select>
           <Badge variant="outline" className={provider === "chatgpt" && chatGPTSession?.sharing ? "text-emerald-300" : "text-zinc-400"}>{isWebAi ? `${webAiName} bán tự động` : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
           {provider === "chatgpt" && !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
-          {isWebAi && <p className="w-full text-xs leading-5 text-amber-200/80">{webAiName} cần nhập JSON từng video. <button onClick={() => changeWorkspace("editor")} className="underline">Về tab chỉnh từng video</button>, hoặc chọn ChatGPT để chạy hàng loạt tự động.</p>}
+          {isWebAi && <p className="w-full text-xs leading-5 text-amber-200/80">{webAiName} cần import từng video. <button onClick={() => changeWorkspace("editor")} className="underline">Mở Editor</button></p>}
         </div>
         <details className="studio-batch-options mt-3 rounded-xl border border-white/8 p-3">
           <summary>Yêu cầu và cấu hình lượt mới</summary>
         <details className="mt-4 rounded-xl border border-white/8 p-4">
           <summary className="cursor-pointer text-sm text-zinc-300">Quy tắc chia part · xem / sửa</summary>
           <Textarea aria-label="Quy tắc chia part hàng loạt" value={instruction} onChange={(event) => {invalidateAnalysis();setInstruction(event.target.value);}} className="studio-textarea studio-transcript mt-3" />
-          <p className="mt-2 text-xs text-zinc-500">Dùng chung quy tắc với tab chỉnh từng video. Thay đổi chỉ áp dụng cho lượt chạy mới.</p>
         </details>
         <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">Prompt bổ sung (không bắt buộc)</label>
         <Textarea id="batch-extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…" />
         <label className="mt-3 flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => setSubtitleSettings((current) => ({ ...current, enabled: event.target.checked }))} /> Auto Subtitle cho lượt chạy mới · dùng style ở tab chỉnh từng video</label>
         </details>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-            <label htmlFor="batch-urls" className="field-label">Xử lý nhiều link · {isWebAi ? `${webAiName} · chuẩn bị + import từng item` : "ChatGPT Auto"}</label>
+            <label htmlFor="batch-urls" className="field-label">Link video (tối đa 20, mỗi dòng một link) · {isWebAi ? `${webAiName} · chuẩn bị + import từng item` : "ChatGPT Auto"}</label>
             <Textarea id="batch-urls" value={batchUrls} onChange={(event) => setBatchUrls(event.target.value)} placeholder={"https://www.youtube.com/watch?v=...\nhttps://youtu.be/..."} className="studio-textarea mt-2 min-h-[100px] text-xs leading-6" />
-            <p className="mt-2 text-[11px] leading-5 text-zinc-500">Tối đa 20 link mỗi lần thêm, mỗi dòng một link. Ô link tự xoá khi thêm thành công. Có thể thêm link vào cuối hàng đợi đang chạy; chuẩn bị video tiếp theo trong lúc render video trước, chỉ render một video mỗi lần.</p>
             <Button size="action" onClick={() => void startBatch()} disabled={!["chatgpt","gemini","muse"].includes(provider) || isStartingBatch || isStoppingBatch || !batchUrls.trim() || !workerHealth?.ok || (provider==="chatgpt"&&!chatGPTSession?.sharing)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
               {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />} {isStartingBatch ? "Đang thêm link…" : batch && !batch.finished ? "Thêm vào hàng đợi đang chạy" : isWebAi?"Chuẩn bị nguồn · chờ import thủ công":"Chạy hàng đợi tự động"}
             </Button>
             <Button variant="outline" onClick={() => void stopBatch()} disabled={!batch || batch.finished || isStoppingBatch || isStartingBatch} className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10">
               {isStoppingBatch ? <Loader2 className="animate-spin" /> : <Square />} {isStoppingBatch ? "Đang dừng…" : "Dừng hàng đợi"}
             </Button>
-            <p className="mt-2 text-[11px] leading-5 text-zinc-500">Dừng tác vụ đang chạy và các link còn chờ. File đã xuất hoàn tất vẫn được giữ.</p>
             <div className="mt-3 rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-xs leading-5 text-emerald-200">
               <p className="font-semibold">Tự động tải từng part khi render xong</p>
-              <p className="mt-1 text-zinc-400">Giữ trang mở để tự tải. Nếu trình duyệt hỏi, cho phép tải nhiều file. Nút Tải lại luôn có bên dưới; refresh không tự tải trùng những file đã gửi yêu cầu.</p>
+              <p className="mt-1 text-zinc-400">Giữ trang mở và cho phép tải nhiều file.</p>
               {autoDownloadRequests > 0 && <p className="mt-1">Đã gửi {autoDownloadRequests} yêu cầu tải trong phiên này. Kiểm tra mục Downloads của trình duyệt.</p>}
               {autoDownloadError && <p className="mt-1 text-red-300">{autoDownloadError}</p>}
             </div>
-            <p className="mt-2 text-[11px] leading-5 text-zinc-600">Đóng tab không dừng xử lý. Thoát app sẽ tạm dừng. Bấm Tiếp tục/thử lại để dùng source/plan đã lưu; part render hoàn tất không bị render lại. Gemini/Muse chờ import từng item trong editor, không chạy AI unattended.</p>
             {batchError && <p className="mt-3 text-xs leading-5 text-red-300">{batchError}</p>}
             {batchNotice && <p role="status" className="mt-3 text-xs leading-5 text-emerald-300">{batchNotice}</p>}
           </div>
@@ -1843,13 +1860,12 @@ export default function Home() {
         </section>
         <aside aria-label="Preview hàng loạt" className="studio-batch-preview rounded-2xl border border-white/10 bg-[#111216] p-4">
           <p className="eyebrow">PREVIEW RENDER</p>
-          <p className="mt-2 text-xs leading-5 text-zinc-400">Xem Part đã cắt và render. Có play/pause và thanh tua.</p>
           {batchPreviewOutput ? <>
-            <video ref={batchPreviewRef} onPlay={event=>{if(exportActivity)event.currentTarget.pause();}} key={batchPreviewOutput.url} src={`${WORKER_ORIGIN}${batchPreviewOutput.url}?preview=1`} aria-label={`Preview Part ${batchPreviewOutput.part}`} controls playsInline preload="metadata" onLoadedMetadata={() => setBatchPreviewError("")} onError={() => setBatchPreviewError("Không mở được video. Kiểm tra worker hoặc chọn Part khác.")} className="mx-auto mt-3 aspect-[9/16] w-full max-w-[200px] rounded-xl bg-black object-contain" />
+            <video ref={batchPreviewRef} key={batchPreviewOutput.url} src={`${WORKER_ORIGIN}${batchPreviewOutput.url}?preview=1`} aria-label={`Preview Part ${batchPreviewOutput.part}`} controls playsInline preload="metadata" onLoadedMetadata={() => setBatchPreviewError("")} onError={() => setBatchPreviewError("Không mở được video. Kiểm tra worker hoặc chọn Part khác.")} className="mx-auto mt-3 aspect-[9/16] w-full max-w-[200px] rounded-xl bg-black object-contain" />
             <p className="mt-3 break-words text-xs font-semibold leading-5">{batchPreviewOutput.title}</p>
             <p className="mt-1 break-all text-[11px] text-[#ff806a]">Part {batchPreviewOutput.part} · {batchPreviewOutput.filename}</p>
             {batchPreviewError && <p className="mt-2 text-xs leading-5 text-red-300">{batchPreviewError}</p>}
-          </> : <div className="mx-auto mt-3 flex aspect-[9/16] w-full max-w-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 bg-black/30 px-5 text-center text-xs leading-5 text-zinc-500"><Play className="size-7 text-zinc-600" /><p>Part render xong sẽ hiện ở đây.<br />Chọn Xem Part trong danh sách để đổi video.</p></div>}
+          </> : <div className="mx-auto mt-3 flex aspect-[9/16] w-full max-w-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 bg-black/30 px-5 text-center text-xs leading-5 text-zinc-500"><Play className="size-7 text-zinc-600" /><p>Chưa chọn Part đã xuất.</p></div>}
         </aside>
         </div>
       </section>}
@@ -1864,15 +1880,13 @@ export default function Home() {
             <TabsContent value="youtube" className="pt-3">
               <label htmlFor="youtube-url" className="field-label">YouTube URL</label>
               <div className="relative mt-2">
-                <Link2 className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
+                <Link2 aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
                 <Input id="youtube-url" value={sourceUrl} onChange={(event) => { resetSourceSelection(); setSourceUrl(event.target.value); }} placeholder="youtube.com/watch?v=..." className="studio-input studio-icon-input pl-10" />
               </div>
-              <p className="mt-2 text-[11px] leading-5 text-zinc-600">
+              {(youtubeState === "loading" || youtubeState === "error") && <p className="mt-2 text-[11px] leading-5 text-zinc-600">
                 {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
-                {youtubeState === "ready" && "Đã tự động lấy title gốc từ YouTube."}
                 {youtubeState === "error" && youtubeError}
-                {youtubeState === "idle" && "Paste URL để app tự lấy original title."}
-              </p>
+              </p>}
             </TabsContent>
             <TabsContent value="local" className="pt-3">
               <label className="flex h-[84px] cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-white/12 bg-white/[.02] text-sm text-zinc-400 transition hover:border-[#ff4d2e]/40 hover:bg-[#ff4d2e]/5 hover:text-white">
@@ -1882,15 +1896,15 @@ export default function Home() {
               </label>
             </TabsContent>
           </Tabs>
-          <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className="studio-primary w-full" aria-busy={isPreparingSource}>{isPreparingSource?<><Loader2 size={14} className="animate-spin"/><span aria-live="polite">{sourcePreparationLabel(sourcePreparationProgress)}</span></>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
-          {preparedSource?<div className="studio-source-status"><strong>{preparedSource.title}</strong><span>{formatTime(preparedSource.duration)} · {preparedSource.width}×{preparedSource.height}</span></div>:<p className="studio-muted text-xs">{isPreparingSource?(sourcePreparationProgress?.phase==='download'?'Tiến độ tải từng luồng; còn bước hoàn tất nguồn.':sourcePreparationLabel(sourcePreparationProgress)):localFileName||'Chưa có nguồn'}</p>}
+          <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className={`studio-primary w-full${preparedSource&&!isPreparingSource?' studio-source-ready':''}`} aria-busy={isPreparingSource}>{isPreparingSource?<><Loader2 size={14} className="animate-spin"/><span aria-live="polite">{sourcePreparationLabel(sourcePreparationProgress)}</span></>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
+          {preparedSource?<div className="studio-source-status"><span>{formatTime(preparedSource.duration)} · {preparedSource.width}×{preparedSource.height}</span></div>:<p className="studio-muted text-xs">{isPreparingSource?(sourcePreparationProgress?.phase==='download'?'Tiến độ tải từng luồng; còn bước hoàn tất nguồn.':sourcePreparationLabel(sourcePreparationProgress)):localFileName||'Chưa có nguồn'}</p>}
           <div className="mt-1">
             <div className="flex items-center justify-between">
-              <label htmlFor="source-title" className="field-label">Original title</label>
+              <label htmlFor="source-title" className="field-label">Tiêu đề gốc</label>
               {sourceMode === "youtube" && (
                 <span className="flex items-center gap-1.5 text-[10px] text-zinc-600">
                   {youtubeState === "loading" ? <Loader2 className="size-3 animate-spin" /> : youtubeState === "ready" ? <Check className="size-3 text-emerald-400" /> : null}
-                  Auto from YouTube
+                  Từ YouTube
                 </span>
               )}
             </div>
@@ -1907,13 +1921,44 @@ export default function Home() {
             <label htmlFor="extra-prompt" className="field-label">Yêu cầu bổ sung</label>
             <Textarea id="extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Ví dụ: Bỏ đoạn đầu, tập trung cảnh sửa xe, Part 2 ưu tiên cảnh chạy thử." />
           </div>
-          <button type="button" className="studio-primary w-full" disabled={isAnalyzing||isPreparingSource||!workerHealth?.ok||!preparedSource||(editMode==='manual'&&hasEditPlan)} onClick={()=>{if(editMode==='manual')applyManualPlan();else if(isWebAi)void createWebAiPrompt();else void analyze();}}>{isAnalyzing?<Loader2 size={14} className="animate-spin"/>:<WandSparkles size={14}/>} {isAnalyzing?'Đang phân tích…':editMode==='manual'?'Áp dụng main thủ công':isWebAi?`Tạo prompt ${webAiName}`:'Phân tích'}</button>
+          {editMode==='ai'&&<>
+              <div className="studio-source-provider">
+                <label htmlFor="editor-ai-provider" className="field-label">Chọn AI</label>
+                <Select value={provider} onValueChange={changeProvider}>
+                  <SelectTrigger id="editor-ai-provider" aria-label="Chọn AI" className="studio-input mt-2 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper" align="start">
+                    <SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem>
+                    <SelectItem value="gemini">Gemini Pro · Web</SelectItem>
+                    <SelectItem value="muse">Muse · Web</SelectItem>
+                    {provider==="mock"&&<SelectItem value="mock">Mô phỏng cũ · không AI</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+          </>}
+              {editMode==='ai' && isWebAi ? <section aria-label={`Prompt và JSON ${webAiName}`} className="studio-web-ai-panel">
+                <div className="studio-web-ai-actions">
+                  <Button onClick={() => void createWebAiPrompt()} disabled={isAnalyzing || Object.values(teaserOperations).some(operation=>operation.running) || isPreparingSource || !workerHealth?.ok || !preparedSource || Boolean(effectiveTiming.error)} className="studio-primary"><WandSparkles />Tạo prompt</Button>
+                  <WebAiPromptCopy prompt={webAiPrompt} disabled={!webAiPrompt || !webAiPromptIsCurrent || isAnalyzing || isPreparingSource} onCopied={() => { setWebAiError(""); setWebAiNotice('Đã copy prompt.'); }} onError={() => { setWebAiNotice(""); setWebAiError('Chưa copy được. Cho phép Clipboard rồi thử lại.'); }}/>
+
+                </div>
+                {webAiPrompt && !webAiPromptIsCurrent && <p role="status" className="text-xs text-amber-200">{webAiNotice.startsWith('Đã áp dụng')?'Prompt đã dùng. Tạo lại khi cần phân tích mới.':'Dữ liệu đã đổi. Bấm Tạo prompt để cập nhật.'}</p>}
+                <label htmlFor="web-ai-result" className="field-label block">Dán JSON từ {webAiName}</label>
+                <Textarea id="web-ai-result" value={webAiResult} onChange={(event) => setWebAiResult(event.target.value)} placeholder={`Dán JSON ${webAiName}…`} className="studio-textarea studio-web-json font-mono" />
+                <Button size="action" onClick={()=>void applyWebAiResult()} disabled={!preparedSource || !webAiPromptIsCurrent || !webAiResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check />Áp dụng 2 part</Button>
+                {webAiError && <p role="alert" className="break-words text-xs leading-5 text-red-300">{webAiError}</p>}
+                {webAiNotice && <p role="status" className="text-xs leading-5 text-emerald-300">{webAiNotice}</p>}
+              </section> : null}
+          {!(editMode==='ai'&&isWebAi)&&<button type="button" className="studio-primary w-full" disabled={isAnalyzing||Object.values(teaserOperations).some(operation=>operation.running)||isPreparingSource||!workerHealth?.ok||!preparedSource||(editMode==='manual'&&hasEditPlan)} onClick={()=>{if(editMode==='manual')applyManualPlan();else if(isWebAi)void createWebAiPrompt();else void analyze();}}>{isAnalyzing?<Loader2 size={14} className="animate-spin"/>:<WandSparkles size={14}/>} {isAnalyzing?'Đang phân tích…':editMode==='manual'?'Áp dụng main thủ công':isWebAi?`Tạo prompt ${webAiName}`:'Phân tích'}</button>}
           {isAnalyzing&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice('Đã dừng phân tích; giữ plan hiện tại.');}}>Dừng phân tích</Button>}
           {error && <p role="alert" className="studio-inline-error">{error}</p>}
           {analysisNotice&&<p role="status" className="studio-inline-notice">{analysisNotice}</p>}
-          <details open={sourceAdvancedOpen} onToggle={event=>setSourceAdvancedOpen(event.currentTarget.open)} className="studio-advanced"><summary>Nâng cao</summary>
-          <label className="studio-field-label mt-3" htmlFor="ai-instruction-primary">Yêu cầu AI</label>
-          <Textarea id="ai-instruction-primary" rows={3} value={instruction} onChange={event=>{invalidateAnalysis();setInstruction(event.target.value);}} placeholder="Ưu tiên khoảnh khắc… bỏ quảng cáo…" className="studio-textarea min-h-[64px] resize-y"/>
+          <AiOperationStatus diagnostics={analysisDiagnostics} startedAt={analysisStartedAt} running={isAnalyzing&&Boolean(activeAnalysis.current)} finishedAt={analysisFinishedAt} finishedStage={analysisFinishedStage}/>
+          <SourceOptionsSection id="source-advanced" label="Nâng cao" open={sourceAdvancedOpen} onOpenChange={setSourceAdvancedOpen} className="studio-advanced">
+          <SourceOptionsSection id="source-ai-instructions" label="Yêu cầu AI" className="studio-ai-instructions mt-2">
+            <Textarea id="ai-instruction-primary" aria-label="Yêu cầu AI" rows={3} value={instruction} onChange={event=>{invalidateAnalysis();setInstruction(event.target.value);}} placeholder="Yêu cầu phân tích…" className="studio-textarea mt-2 min-h-[64px] resize-y"/>
+          </SourceOptionsSection>
 
           <Tabs value={editMode} onValueChange={(value) => { setEditMode(value as "ai" | "manual"); setError(""); }} className="mt-5">
             <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
@@ -1922,20 +1967,6 @@ export default function Home() {
             </TabsList>
 
             <TabsContent value="ai" className="space-y-4 pt-4">
-              <div>
-                <label htmlFor="editor-ai-provider" className="field-label">AI provider</label>
-                <Select value={provider} onValueChange={changeProvider}>
-                  <SelectTrigger id="editor-ai-provider" aria-label="AI provider" className="studio-input mt-2 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="border-white/10 bg-[#17181d] text-zinc-200">
-                    <SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem>
-                    <SelectItem value="gemini">Gemini Pro · copy / dán JSON</SelectItem>
-                    <SelectItem value="muse">Muse · copy / dán JSON</SelectItem>
-                    {provider==="mock"&&<SelectItem value="mock">Mô phỏng cũ · không AI</SelectItem>}
-                  </SelectContent>
-                </Select>
-              </div>
               {provider === "chatgpt" && (
                 <div className="rounded-2xl border border-white/8 bg-white/[.025] p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -1947,7 +1978,7 @@ export default function Home() {
                       <p className="mt-1 truncate text-[10px] leading-4 text-zinc-500">
                         {chatGPTSession?.connected
                           ? chatGPTSession.email || chatGPTSession.name || "Connected account"
-                          : "Không cần API key · dùng Plus / Pro nếu account đủ điều kiện"}
+                          : "Chưa đăng nhập"}
                       </p>
                     </div>
                     {chatGPTSession?.connected && (
@@ -1965,7 +1996,6 @@ export default function Home() {
                     {isChatGPTConnecting ? <><Loader2 className="animate-spin" /> Waiting for ChatGPT…</> : chatGPTSession?.sharing ? <><LogIn /> Reconnect ChatGPT</> : <><LogIn /> Continue with ChatGPT</>}
                   </Button>
                   {chatGPTSession?.error && <p role="status" className="mt-2 text-xs text-amber-300">{chatGPTSession.error}</p>}
-                  <p className="mt-2 text-[10px] leading-4 text-zinc-600">Phiên OAuth được bảo vệ trên máy này (macOS Keychain / Windows DPAPI), không lưu token trong web.</p>
                 </div>
               )}
               <details className="rounded-xl border border-white/8 p-3">
@@ -1978,39 +2008,17 @@ export default function Home() {
                 <p className="mt-2 text-xs leading-5 text-zinc-500">{transcriptStatus}</p>
               </details>
 
-              {isWebAi ? <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[.025] p-3">
-                <p className="text-sm font-semibold">{webAiName} bán tự động</p>
-                <p className="text-xs leading-5 text-zinc-400">Tạo prompt → copy và gửi trong {webAiName} → dán JSON bên dưới. Không API key, không kết nối CLI; app không đọc token hay tài khoản {webAiName}.</p>
-                {hasEditPlan && <Button onClick={() => void createWebAiPrompt(true)} disabled={isAnalyzing || !preparedSource || Boolean(effectiveTiming.error)} variant="outline" className="w-full text-xs">Chỉ chọn lại hook · giữ các range hiện tại</Button>}
-                {provider === "gemini" && <p className="text-xs leading-5 text-zinc-400">Mở Gemini web bằng tài khoản Google AI Pro và tự chọn model Pro trước khi gửi prompt.</p>}
 
-                {webAiPrompt && <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <CopyButton text={webAiPrompt} label="Copy prompt" disabled={!webAiPromptIsCurrent} className="h-9 rounded-xl border border-white/10 text-xs" onCopied={() => { setWebAiError(""); setWebAiNotice(`Đã copy prompt + transcript. Mở ${webAiName} và dán để phân tích.`); }} onError={() => { setWebAiNotice(""); setWebAiError("Trình duyệt chưa cho copy. Mở mục Prompt bên dưới, chọn toàn bộ và copy bằng tay."); }} />
-                    <a href={webAiUrl} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs hover:bg-white/10"><Link2 className="size-4" /> Mở {webAiName} ↗</a>
-                  </div>
-                  {!webAiPromptIsCurrent && <p className="text-xs leading-5 text-amber-200">Source đã đổi. Tạo prompt mới cho video hiện tại; JSON nhập vào luôn được kiểm tra theo ID source.</p>}
-                  <details className="rounded-xl border border-white/8 p-3"><summary className="cursor-pointer text-xs text-zinc-400">Prompt · xem / copy bằng tay</summary><Textarea aria-label={`Prompt cho ${webAiName}`} readOnly value={webAiPrompt} className="studio-textarea studio-transcript mt-2 font-mono text-[11px]" /></details>
-                </>}
-                <label htmlFor="web-ai-result" className="field-label block">2. JSON kết quả từ {webAiName}</label>
-                <Textarea id="web-ai-result" value={webAiResult} onChange={(event) => setWebAiResult(event.target.value)} placeholder={`Dán toàn bộ JSON ${webAiName} trả về, gồm sourceId, originalTitle, language và parts…`} className="studio-textarea studio-transcript min-h-[130px] font-mono text-[11px] leading-5" />
-                <Button onClick={applyWebAiResult} disabled={!preparedSource || !webAiPromptIsCurrent || !webAiResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check /> 3. Kiểm tra và áp dụng 2 part</Button>
-                {webAiError && <p role="alert" className="break-words text-xs leading-5 text-red-300">{webAiError}</p>}
-                {webAiNotice && <p role="status" className="text-xs leading-5 text-emerald-300">{webAiNotice}</p>}
-              </div> : null}
 
               {batchEditing&&preparedSource?.id===batchEditing.sourceId&&hasEditPlan&&<Button variant="outline" disabled={isAnalyzing||isStartingRender||Boolean(effectiveTiming.error)||Boolean(teaserIssues.length)} onClick={()=>void queueEditedBatchItem()} className="w-full text-xs">Lưu plan đã duyệt & tiếp tục item này</Button>}
 
-              {previewPlan.analysis&&<details className="rounded-xl border border-white/10 p-3 text-xs"><summary className="cursor-pointer">Lý do chọn · {previewPlan.analysis.method==='ai'?'AI':previewPlan.analysis.method==='deterministic-fallback'?'Dự phòng':'Nhập/đã lưu'} · {previewPlan.analysis.provider}</summary><p className="mt-2 text-zinc-400">Điểm heuristic, không phải xác suất. Replay không phải retention/lượt xem.</p>{previewPlan.analysis.parts.map(p=><div key={p.id} className="mt-2"><strong>Part {p.id}</strong><p>{explainInVietnamese(p.reason)}</p><p className="text-zinc-400">{Object.entries(p.signals).map(([name,s])=>`${({transcript:"Lời thoại",replay:"Replay tương đối",comments:"Bình luận",chapters:"Chương",visual:"Hình ảnh",audio:"Âm thanh"} as Record<string,string>)[name]||"Tín hiệu hỗ trợ"}: ${s.contribution.toFixed(3)}`).join(" · ")||"Không có tín hiệu nội dung; fallback theo cấu trúc."}</p></div>)}{previewPlan.analysis.limitations.map((line,i)=><p key={i} className="mt-1 text-zinc-500">{explainInVietnamese(line,"Thiếu hoặc giới hạn bằng chứng; ghi chú gốc vẫn giữ trong plan.")}</p>)}</details>}
+              {previewPlan.analysis&&<details className="rounded-xl border border-white/10 p-3 text-xs"><summary className="cursor-pointer">Lý do chọn · {previewPlan.analysis.method==='ai'?'AI':previewPlan.analysis.method==='deterministic-fallback'?'Dự phòng':'Nhập/đã lưu'} · {previewPlan.analysis.provider}</summary>{previewPlan.analysis.parts.map(p=><div key={p.id} className="mt-2"><strong>Part {p.id}</strong><p>{explainInVietnamese(p.reason)}</p><p className="text-zinc-400">{Object.entries(p.signals).map(([name,s])=>`${({transcript:"Lời thoại",replay:"Replay tương đối",comments:"Bình luận",chapters:"Chương",visual:"Hình ảnh",audio:"Âm thanh"} as Record<string,string>)[name]||"Tín hiệu hỗ trợ"}: ${s.contribution.toFixed(3)}`).join(" · ")||"Không có tín hiệu nội dung; fallback theo cấu trúc."}</p></div>)}{previewPlan.analysis.limitations.map((line,i)=><p key={i} className="mt-1 text-zinc-500">{explainInVietnamese(line,"Thiếu hoặc giới hạn bằng chứng; ghi chú gốc vẫn giữ trong plan.")}</p>)}</details>}
 
 
             </TabsContent>
 
             <TabsContent value="manual" className="space-y-4 pt-4">
-              {hasEditPlan?<p className="text-xs text-zinc-400">Sửa từng đoạn main trong Timeline dưới preview.</p>:<>
-              <div className="rounded-xl border border-[#ff4d2e]/15 bg-[#ff4d2e]/5 px-3 py-2 text-[11px] leading-5 text-[#ff9a88]">
-                Không gọi AI, không cần transcript. Mỗi dòng: <strong>start - end tên đoạn</strong>.
-              </div>
+              {!hasEditPlan&&<>
               <div>
                 <label htmlFor="manual-title-1" className="field-label">Part 1 title</label>
                 <Input id="manual-title-1" value={manualPart1Title} onChange={(event) => setManualPart1Title(event.target.value.toUpperCase())} className="studio-input mt-2" />
@@ -2021,12 +2029,11 @@ export default function Home() {
                 <Input id="manual-title-2" value={manualPart2Title} onChange={(event) => setManualPart2Title(event.target.value.toUpperCase())} className="studio-input mt-2" />
                 <Textarea aria-label="Part 2 timestamp ranges" value={manualPart2Ranges} onChange={(event) => setManualPart2Ranges(event.target.value)} className="studio-textarea mt-2 min-h-[88px] font-mono text-[12px] leading-5" />
               </div>
-              <p className="text-center text-[10px] leading-5 text-zinc-600">Accepted: MM:SS, HH:MM:SS, seconds · ranges must be chronological.</p>
               </>}
             </TabsContent>
           </Tabs>
 
-          </details>
+          </SourceOptionsSection>
         </>}
         preview={<>
           <div className="studio-part-switcher" role="group" aria-label="Part cho preview và Timeline">
@@ -2044,7 +2051,7 @@ export default function Home() {
           >
             <VideoFilterDefinition filter={previewVisualStyle.filter} id="studio-preview-video-color" />
             {previewVideoUrl ? (
-              <PreviewBackground suspended={exportActivity||workspace!=='editor'} video={previewVideoRef} filter={`${videoColorFilter} blur(${40 * previewScale}px)`} opacity={previewVisualStyle.background.mode === "source-blur" ? previewVisualStyle.background.opacity : 0} />
+              <PreviewBackground suspended={workspace!=='editor'} video={previewVideoRef} filter={`${videoColorFilter} blur(${40 * previewScale}px)`} opacity={previewVisualStyle.background.mode === "source-blur" ? previewVisualStyle.background.opacity : 0} />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
             )}
@@ -2070,7 +2077,7 @@ export default function Home() {
                     setPreviewError("");
                   }}
                   onTimeUpdate={event=>{if(isCurrentPreviewVideo(event.currentTarget))updatePreviewClock();}}
-                  onPlay={event => { if(exportActivity){event.currentTarget.pause();return;}if(isCurrentPreviewVideo(event.currentTarget)){previewPlayingRef.current = true; setIsPreviewPlaying(true);} }}
+                  onPlay={event => { if(isCurrentPreviewVideo(event.currentTarget)){previewPlayingRef.current = true; setIsPreviewPlaying(true);} }}
                   onPause={event => { if (!hasEditPlan && isCurrentPreviewVideo(event.currentTarget)) { previewPlayingRef.current = false; setIsPreviewPlaying(false); } }}
                   onEnded={event => { if (!hasEditPlan && isCurrentPreviewVideo(event.currentTarget)) { previewPlayingRef.current = false; setIsPreviewPlaying(false); }  }}
                   onError={event => {if(isCurrentPreviewVideo(event.currentTarget))setPreviewError("Không phát được source. Hãy bấm Chuẩn bị source lại hoặc thử video MP4/H.264.");}}
@@ -2113,7 +2120,6 @@ export default function Home() {
             </div>
             }
             {!previewVideoUrl&&<div className="studio-empty-preview">{isPreparingSource?'Đang chuẩn bị nguồn…':'Chọn nguồn để xem preview'}</div>}
-            {exportActivity&&<div className="studio-paused-preview">Preview tạm dừng khi render</div>}
             {hasEditPlan && previewVisualStyle.subtitle.enabled && previewCaption && <div className="pointer-events-none absolute inset-x-[10%] z-20 text-center" style={{ bottom: `${(1920 - subtitleY(previewVisualStyle.subtitle, preparedSource?.height || sourceSize.height)) / 1920 * 100}%` }}>
               <p className="whitespace-pre-line break-words font-bold" style={{ ...subtitlePreviewCss(previewVisualStyle.subtitle, previewCaption.text, previewScale), fontSize: previewVisualStyle.subtitle.size * previewScale, lineHeight: 1.2 }}>{previewCaption.text}</p>
             </div>}
@@ -2154,7 +2160,7 @@ export default function Home() {
             <p className="mt-1 text-xs text-zinc-500" title="Timestamp nguồn HH:MM:SS:FF, 30 FPS; FF từ 00 đến 29. Mốc AI chưa sửa vẫn giữ độ chính xác gốc.">Mốc thời gian theo video nguồn</p>
             {previewPlan.parts.map((part,index)=><MainRangesEditor key={`${preparedSource?.id||previewVideoUrl}:${part.id}`} active={index===activePartIndex} plan={previewPlan} part={part} duration={preparedSource?.duration||previewDuration||Infinity} locked={lockedParts(previewPlan)[index]}
               onSeek={rangeIndex=>{const main=part.segments.filter(s=>!s.isPadding)[rangeIndex],segments=presentationSegments(part);if(main){const index=segments.indexOf(main);if(index>=0)seekPreview(timelineTimeForSegment(segments,index,main.start,PREVIEW_RATE));}}}
-              onInvalidate={()=>{invalidateAnalysis();setRenderJob(null);}}
+              onInvalidate={()=>{invalidateAnalysis();activeTeaserRequests.current.get(part.id)?.controller.abort(new Error('Mốc main đang được sửa; đã dừng lựa chọn teaser cũ.'));setRenderJob(null);}}
               onDraft={(id,key,invalid)=>setMainDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.invalid===invalid?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,invalid}})}
               onEdit={(id,rows:MainRangeRow[],expectedKey)=>{invalidateAnalysis();setRenderJob(null);setPlan(current=>{
                 const base=effectiveCutPlan(current),target=base.parts.find(p=>p.id===id);
@@ -2165,7 +2171,7 @@ export default function Home() {
               onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
             >
             {teaserIssues.filter(issue=>issue.partId===part.id).map(issue=><p key={issue.partId} role="alert" className="text-xs text-amber-200">{issue.reason}</p>)}
-            <TeaserEditor reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={exportActivity} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id&&!exportActivity} cues={previewPlan.captionCues?.cues||subtitleCues}
+            <TeaserEditor reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={false} aiBusy={isAnalyzing} progress={teaserOperations[part.id]&&<AiOperationStatus {...teaserOperations[part.id]}/>} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
               onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
@@ -2180,7 +2186,7 @@ export default function Home() {
               });}}/>
             </MainRangesEditor>)}
           </div>}
-          {!hasEditPlan&&<p className="studio-muted text-xs">Chưa có plan — chuẩn bị nguồn rồi Generate hoặc dùng Manual cut trong Nâng cao.</p>}
+          {!hasEditPlan&&<p className="studio-muted text-xs">Chưa có bản cắt.</p>}
         </>}
         inspector={<EditorInspector tab={inspectorTab} onTab={value=>setInspectorTab(value as typeof inspectorTab)} appearance={<>
           <VisualTemplatePanel style={previewVisualStyle} onTemplate={(id) => setPlan((current) => {
@@ -2199,14 +2205,12 @@ export default function Home() {
               const enabled = event.target.checked;
               setSubtitleSettings((current) => ({ ...current, enabled }));
             }} /> Ghép phụ đề vào video xuất</label>
-            <p className="mt-2 text-[11px] leading-5 text-zinc-500">Dùng phụ đề YouTube nếu có; nếu không, Whisper nhận diện giọng nói trên máy. Preview phụ đề chạy 1×; file xuất chạy cùng video 1.25×. Nhận diện tự động có thể sai; kiểm tra preview trước khi xuất.</p>
             {subtitleSettings.enabled && <div className="mt-3 space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" aria-pressed={subtitleSettings.source !== 'whisper'} disabled={subtitleBusy} onClick={() => chooseSubtitleSource('youtube')} className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source !== 'whisper' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-white/10 text-zinc-400'}`}>Dùng phụ đề YouTube</button>
                 <button type="button" aria-pressed={subtitleSettings.source === 'whisper'} disabled={subtitleBusy} onClick={() => chooseSubtitleSource('whisper')} className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source === 'whisper' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-white/10 text-zinc-400'}`}>Dùng phụ đề Whisper</button>
               </div>
               <p className="text-[11px] leading-5 text-zinc-500">{speechModel?.model||'Whisper small đa ngôn ngữ · 465 MiB'} · xử lý trên máy. {whisperSmallReady ? 'Model small đã sẵn sàng.' : speechModel?.installing ? `Đang tải ${Math.round((speechModel.downloadedBytes || 0) / (speechModel.totalBytes || 1) * 100)}%.` : 'Cần tải model một lần.'}</p>
-              <p className="text-[11px] leading-5 text-zinc-500">Vị trí dưới chừa 420 px vùng giao diện TikTok. Mô tả mở rộng vẫn có thể che video; kiểm tra màn hình đăng trước khi xuất bản.</p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <label>Font<select aria-label="Font phụ đề" value={subtitleSettings.font} onChange={(event) => setSubtitleSettings((current) => ({ ...current, font: event.target.value }))} className="studio-input mt-1 w-full">{listFonts().map((font) => <option key={font.id} value={font.id}>{font.label}</option>)}</select></label>
                 <label>Vị trí<select aria-label="Vị trí phụ đề" value={subtitleSettings.position} onChange={(event) => setSubtitleSettings((current) => ({ ...current, position: event.target.value }))} className="studio-input mt-1 w-full"><option value="bottom">Dưới khung video</option><option value="center">Giữa khung video</option><option value="top">Trên khung video</option></select></label>
@@ -2244,16 +2248,16 @@ export default function Home() {
             {activePart.hashtags.length > 0 ? (
               <Textarea aria-label={`Hashtag Part ${activePart.id}`} readOnly value={activePart.hashtags.join(" ")} className="studio-textarea mt-2 min-h-[88px] text-sm leading-6 [overflow-wrap:anywhere]" />
             ) : (
-              <p className="mt-2 text-xs leading-6 text-zinc-500">Chưa có hashtag AI. Generate 2 part bằng ChatGPT để tạo 10 hashtag theo nội dung từng part.</p>
+              <p className="mt-2 text-xs leading-6 text-zinc-500">Chưa có hashtag.</p>
             )}
-            {activePart.hashtags.length > 0 && activePart.hashtags.length < 10 && <p className="mt-2 text-[11px] leading-5 text-zinc-500">Plan cũ chưa đủ 10 hashtag. Generate lại bằng ChatGPT để cập nhật.</p>}
+            {activePart.hashtags.length > 0 && activePart.hashtags.length < 10 && <p className="mt-2 text-[11px] leading-5 text-zinc-500">Plan này có dưới 10 hashtag.</p>}
           </div>
 
 
 
         </>} music={<>
-          <MusicPanel suspended={exportActivity} autoPrepare={sessionReady&&!exportActivity&&!renderHold&&(!restorePassive||musicIntent)} previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>{setMusicIntent(true);setPlan(current=>({...current,music}));}} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}} />        </>}/>}
-        status={<StudioRenderStatus job={renderJob} submitting={isStartingRender} canRender={hasEditPlan&&!teaserIssues.length&&!isStartingRender&&!subtitleBusy&&!isAnalyzing&&!effectiveTiming.error&&renderJob?.state!=='queued'&&renderJob?.state!=='rendering'&&!!workerHealth?.ok} hasPlan={hasEditPlan} blockedReason={!workerHealth?.ok?'Worker chưa kết nối':subtitleBusy?'Đang tạo phụ đề…':isAnalyzing?'Đang phân tích…':''} validation={effectiveTiming.error} issues={teaserIssues} stopping={!!renderJob&&stoppingRenderIds.includes(renderJob.id)} worker={WORKER_ORIGIN} onRender={()=>void startRender()} onCancel={()=>{if(renderJob)void stopRender(renderJob);}} onPart={id=>setActivePartIndex(id-1)} hold={renderHold} busy={exportActivity}/>}
+          <MusicPanel suspended={false} autoPrepare={sessionReady&&(!restorePassive||musicIntent)} previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>{setMusicIntent(true);setPlan(current=>({...current,music}));}} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();}} />        </>}/>}
+        status={<StudioRenderStatus job={renderJob} submitting={isStartingRender} canRender={hasEditPlan&&!teaserIssues.length&&!isStartingRender&&!subtitleBusy&&!isAnalyzing&&!effectiveTiming.error&&renderJob?.state!=='queued'&&renderJob?.state!=='rendering'&&!!workerHealth?.ok} hasPlan={hasEditPlan} blockedReason={!workerHealth?.ok?'Worker chưa kết nối':subtitleBusy?'Đang tạo phụ đề…':isAnalyzing?'Đang phân tích…':''} validation={effectiveTiming.error} issues={teaserIssues} stopping={!!renderJob&&stoppingRenderIds.includes(renderJob.id)} worker={WORKER_ORIGIN} onRender={()=>void startRender()} onCancel={()=>{if(renderJob)void stopRender(renderJob);}} onPart={id=>setActivePartIndex(id-1)} busy={exportActivity}/>}
 
        />
       </div>

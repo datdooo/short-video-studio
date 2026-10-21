@@ -9,7 +9,6 @@ export function CutTransitionPanel({ value, onChange }: { value?: CutTransitionI
   return <section aria-labelledby="cut-transition-heading" className="mt-5">
     <h3 id="cut-transition-heading" className="text-xs font-semibold text-zinc-300">Cut Transition</h3>
     <div className="mt-2 grid grid-cols-3 gap-2">{presets.map(({ id, label }) => <button key={id} type="button" aria-label={`Cut transition: ${label}`} aria-pressed={selected === id} onClick={() => onChange(id)} className={`flex items-center justify-between gap-1 rounded-xl border px-3 py-2 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected === id ? "border-white bg-white/10" : "border-white/10 hover:border-white/40"}`}>{label}{selected === id && <Check aria-hidden="true" className="size-3" />}</button>)}</div>
-    <p className="mt-1 text-[11px] text-zinc-500">Internal cuts · foreground video only · audio/text/background unchanged.</p>
   </section>;
 }
 // All effects live inside the clipped foreground, below scene decorations/text.

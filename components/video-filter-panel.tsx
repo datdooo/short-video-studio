@@ -17,7 +17,6 @@ export function VideoFilterPanel({ filter, onPreset, onIntensity }: { filter: Vi
   const selected = filter.presetId || "current";
   return <section aria-labelledby="video-filter-heading" className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
     <h3 id="video-filter-heading" className="text-sm font-semibold">Video Filter</h3>
-    <p className="mt-1 text-xs leading-5 text-zinc-500">Màu cho video và nền mờ. Chữ giữ nguyên.</p>
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
       {presets.map((preset) => {
         const id = `studio-filter-card-${preset.id}`;
@@ -32,6 +31,6 @@ export function VideoFilterPanel({ filter, onPreset, onIntensity }: { filter: Vi
     </div>
     <label htmlFor="video-filter-intensity" className="mt-4 flex items-center justify-between text-xs font-medium"><span>Intensity</span><output>{Math.round((filter.intensity ?? 1) * 100)}%</output></label>
     <input id="video-filter-intensity" aria-label="Video filter intensity" type="range" min="0" max="100" step="1" disabled={selected === "current"} value={Math.round((filter.intensity ?? 1) * 100)} onChange={(event) => onIntensity(Number(event.target.value) / 100)} className="mt-2 w-full accent-white disabled:opacity-30" />
-    <p role="status" className="mt-1 text-xs text-zinc-400">{selected === "current" ? "Current · Giữ màu gốc của ShortCut Studio" : `${presets.find((preset) => preset.id === selected)?.label} · 0% trung tính, 100% đầy đủ`}</p>
+    <p role="status" className="mt-1 text-xs text-zinc-400">{selected === "current" ? "Current" : presets.find((preset) => preset.id === selected)?.label}</p>
   </section>;
 }

@@ -5,6 +5,11 @@ metadata probes from the heavy lane, protects export-owned validation and remove
 redundant blend/subtitle work. The original FFmpeg/Whisper/VAD/export limits and
 finite range assembly below remain. No new runtime performance qualification.
 
+LATEST user override2026-10-21: `editor-during-render.md` supersedes the global
+pause/exclusive lease behavior: editor playback remains active;1 export and1
+serial editor media task may coexist. VT target12M/max14M/buf24M, CPUABR12M by
+default replace historical16M/CRF17 below. Range assembly/thread bounds preserved.
+
 Status: source/diff/syntax review only; no render, tests, benchmark, browser or
 AI/YouTube requests. User reported whole-system lag on Render. This change must
 not be called performance-qualified until the user measures real playback/export.

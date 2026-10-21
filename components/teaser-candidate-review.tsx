@@ -73,7 +73,7 @@ export function TeaserCandidateReview({part,proposed,contextKey,legacyContextKey
     </details></div>
    </div>
    <footer className="studio-teaser-review-footer"><span title="Phát video và tiếng nguồn; không render style hoặc trộn nhạc lại">Video nguồn · 1×</span><button type="button" className="studio-primary" disabled={suspended||Boolean(used&&!hasEdits)} onClick={()=>onApply(selected.part)}>{used&&!hasEdits?<><Check size={14}/>Đang dùng</>:used?'Dùng teaser này':'Áp dụng teaser'}</button></footer>
-  </>:<div className="studio-teaser-review-empty"><Film size={24}/><strong>Chưa có ứng viên đã lưu</strong><p>Chọn lại bằng AI hoặc nhập Custom Teaser trong Timeline. Kết quả sẽ xuất hiện ở đây để xem thử.</p></div>}
+  </>:<div className="studio-teaser-review-empty"><Film size={24}/><strong>Chưa có ứng viên đã lưu</strong><p>Chọn lại bằng AI hoặc nhập mốc trong Timeline.</p></div>}
  </aside>;
 }
 
@@ -159,7 +159,7 @@ function RangePlayer({sourceUrl,choice,suspended,onAudition,onPlaybackControl}:{
  const active=(node:HTMLVideoElement)=>video.current===node;
  return <div className="studio-teaser-player">
   <div className="studio-teaser-player-picture">
-   {loaded&&sourceUrl?<video ref={bind} src={sourceUrl} playsInline preload="auto" aria-label="Phát thử ứng viên từ video nguồn"
+   {loaded&&sourceUrl?<video ref={bind} src={sourceUrl} playsInline preload="auto" aria-label="Video ứng viên · bấm để phát hoặc tạm dừng" onClick={toggle}
     onPlay={e=>{if(!active(e.currentTarget))return;if(suspended||!playIntent.current){pause();return;}onAudition();}}
     onPlaying={e=>{if(!active(e.currentTarget))return;if(suspended||!playIntent.current){pause();return;}setPlaying(true);setBuffering(false);startClock();}}
     onPause={e=>{if(!active(e.currentTarget)||!e.currentTarget.paused)return;clearClock();setPlaying(false);if(!startup.current){playIntent.current=false;setBuffering(false);}}}

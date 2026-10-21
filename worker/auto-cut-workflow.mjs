@@ -1,6 +1,9 @@
+import {buildExternalEditingContext} from './external-editing-context.mjs';
+import {measureAiStage} from './ai-operation.mjs';
 import {hookFailure,hookFailureNotice} from './teaser-selection.mjs';
 import {captureAiMainRanges} from '../lib/main-ranges.mjs';
-import {externalPlanAnalysis,modelSelectionInput} from '../lib/auto-cut/main-content.mjs';
+import {externalPlanAnalysis} from '../lib/auto-cut/main-content.mjs';
+import {attachExternalHooks} from '../lib/teaser-import.mjs';
 import {assertMainLocks} from '../lib/auto-cut/locks.mjs';
 import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook} from '../lib/teaser-hooks.mjs';
 import {validatePlan} from './plan-validation.mjs';
@@ -8,16 +11,18 @@ import {validatePlan} from './plan-validation.mjs';
 export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
-    const {context,options}=await prepareInputs(source,body,signal);
-    if(body.mode==='context')return{context:modelSelectionInput(await mainContent.prepare(source,context,options))};
+    const {context,options}=await measureAiStage('preparation',()=>prepareInputs(source,body,signal));
+    if(body.mode==='context')return{context:buildExternalEditingContext(source,context,options,await mainContent.prepare(source,context,options),body)};
     if(body.mode==='import'){
       if(!['gemini','muse'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');
       const input=await mainContent.prepare(source,context,options);
-      if(body.analysisKey!==input.analysisKey)throw new Error('Analysis context or manual locks changed; generate a new prompt.');
-      const plan=structuredClone(body.plan);
+      if(body.analysisKey!==buildExternalEditingContext(source,context,options,input,body).analysisKey)throw new Error('Dữ liệu nguồn, transcript, main/locks hoặc quy tắc prompt đã đổi. Tạo prompt mới trước khi nhập JSON.');
+      let plan=structuredClone(body.plan);
       if(plan.providerUsed!==body.provider||plan.parts?.some((p,i)=>p.id!==i+1))throw new Error('External plan provider/part identity mismatch.');
-      validatePlan(plan,source);assertMainLocks(plan,body.currentPlan);
-      if(plan.parts.some(p=>p.teaserEnabled!==false&&!(p.teaser?.status==='unavailable'&&isLaterHookPolicy(p.teaser.selectionPolicy))&&(p.teaser?.selection!=='external-import'||p.teaser.provider!==body.provider)))throw new Error('Missing valid external hooks; use the hook-only prompt for this provider.');
+      validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);
+      plan=await attachExternalHooks({...plan,captionCues:options.captionTrack},body.hookSelections,{...source,sourceContext:context},String(body.transcript??source.transcript??''),body.provider,options.cues,{instruction:options.instruction,supplementalPrompt:options.supplementalPrompt});
+      validatePlan(plan,source);
+      if(plan.parts.some(p=>p.teaserEnabled!==false&&!(p.teaser?.status==='unavailable'&&isLaterHookPolicy(p.teaser.selectionPolicy))&&(p.teaser?.selection!=='external-import'||p.teaser.provider!==body.provider)))throw new Error('Part bật teaser cần kết quả import hợp lệ. Sửa teaserSelection trong JSON, không tự chuyển provider.');
       return{plan:captureAiMainRanges(externalPlanAnalysis(plan,source,context,options,input),body.currentPlan)};
     }
     let plan=await mainContent.select(source,context,options);
@@ -28,7 +33,7 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
       if(previous?.teaserEnabled===false){part.teaser=structuredClone(previous.teaser);part.customTeaser=structuredClone(previous.customTeaser);}
       else if(previous?.customTeaser){part.customTeaser=structuredClone(previous.customTeaser);part.teaser=hookRangeKey(previous)===hookRangeKey(part)?structuredClone(previous.teaser):unavailableHook(part,'Main đã đổi; Custom Teaser cần kiểm tra lại. Không tự chọn đoạn thay thế.');}
     }
-    if(plan.analysis?.method==='deterministic-fallback'&&/provider-(auth|rate-limited|model-unavailable)/.test(plan.analysis.fallbackReason||'')&&!body.currentPlan?.parts?.every(p=>p.manualLocked)){
+    if(plan.analysis?.method==='deterministic-fallback'&&/provider-(auth|rate-limited|model-unavailable|reasoning-unsupported|fast-unsupported)/.test(plan.analysis.fallbackReason||'')&&!body.currentPlan?.parts?.every(p=>p.manualLocked)){
       plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"vr-light-leak-v2"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>p.teaserEnabled===false?p:({...p,teaser:(p.customTeaser||p.manualLocked)&&p.teaser?p.teaser:unavailableHook(p,'Bước phân tích main: '+hookFailureNotice(plan.analysis.fallbackReason))}))};
     }else try{
       plan=await selectHooks(plan,{...source,sourceContext:context},signal,body.transcript,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});

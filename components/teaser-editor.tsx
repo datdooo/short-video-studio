@@ -25,7 +25,7 @@ function savedInput(part:EditPart){
  if(custom.mode==='timestamp'){try{const parsed=parseCustomTeaser(custom.input);if(parsed.mode==='timestamp')return`${formatSourceTimecode(parsed.start)} → ${formatSourceTimecode(parsed.end)}`;}catch{return'';}}
  return custom.input;
 }
-export function TeaserEditor({transition,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,reviewSourceKey,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{transition?:ReactNode;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;reviewSourceKey:string;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart)=>void;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<Teaser>}){
+export function TeaserEditor({transition,progress,aiBusy=false,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,reviewSourceKey,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{transition?:ReactNode;progress?:ReactNode;aiBusy?:boolean;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;reviewSourceKey:string;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart)=>void;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<Teaser>}){
  const enabled=part.teaserEnabled!==false;
  // Playback URLs can be blob URLs, or empty while a saved managed source is
  // reopening. Neither is an analysis identity. Keep restored catalogs untouched
@@ -86,7 +86,7 @@ export function TeaserEditor({transition,onAuditionControl,reviewTarget,reviewVi
   catch{/* Incomplete/invalid edits stay draft; the saved teaser remains effective. */}
  }
  async function generate(){
-  if(!enabled||composing.current)return;
+  if(!enabled||busy||aiBusy||composing.current||(request.current&&!request.current.signal.aborted))return;
   if(suspended){setError('Tạm dừng trong lúc export; thử lại sau khi xuất xong.');return;}
   request.current?.abort();audition.current?.pause();setCandidate(null);const controller=new AbortController();request.current=controller;setError('');setBusy(true);
   const revision=inputRevision.current;
@@ -100,13 +100,13 @@ export function TeaserEditor({transition,onAuditionControl,reviewTarget,reviewVi
    if(teaser.status!=='selected')throw Error(explainInVietnamese(teaser.reason,'Không tìm thấy teaser phù hợp với mô tả; thiếu bằng chứng.'));
    setCandidate({key:identity,part:{...part,teaser,customTeaser:parsed.mode==='description'?{version:1,mode:'description',input:parsed.input}:undefined}});setDraft({key:identity,times:times(teaser.start,teaser.end)});
   }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:String(e));}
-  finally{if(request.current===controller&&!controller.signal.aborted)setBusy(false);}
+  finally{if(request.current===controller){request.current=null;setBusy(false);}}
  }
  return <><section className="studio-teaser-editor min-w-0 space-y-2 text-xs" aria-label={`Teaser Part ${part.id}`}>
   <div className="studio-teaser-header"><h4 className="font-semibold">Teaser {enabled&&(part.teaser?.status==='selected'&&!part.teaserNeedsReselection&&!hookNeedsReselection(part)?<span className="studio-connected" aria-label="Đã có teaser">✓</span>:<span className="studio-danger">· cần chọn</span>)}</h4>
    <button type="button" role="switch" aria-checked={enabled} aria-label={`Bật teaser Part ${part.id}`} className="studio-control studio-teaser-toggle" onClick={()=>{request.current?.abort();audition.current?.pause();setBusy(false);setError('');onToggle(!enabled);}}>{enabled?'Đang bật · Tắt teaser':'Đang tắt · Bật teaser'}</button>
   </div>
-  {!enabled&&<p className="studio-muted">Chỉ phát/xuất nội dung chính. Teaser và mốc đang nhập vẫn được giữ.</p>}
+  {!enabled&&<p className="studio-muted">Teaser đang tắt.</p>}
   <div hidden={!enabled} className="space-y-2">
   <div className="studio-teaser-time-row"><div className="grid min-w-0 grid-cols-2 gap-1.5">{(['start','end']as const).map(boundary=><label key={boundary} className="min-w-0 text-[11px] text-zinc-400">{boundary==='start'?'Bắt đầu':'Kết thúc'}
    <input aria-label={`Teaser Part ${part.id} ${boundary==='start'?'Bắt đầu':'Kết thúc'}`} aria-invalid={Boolean(rangeError)} placeholder="00:00:00:00" autoComplete="off" spellCheck={false} inputMode="text" className="studio-input mt-1 w-full min-w-0 px-2 font-mono text-xs" value={values[boundary]} onChange={e=>edit(boundary,e.target.value)}/>
@@ -118,8 +118,10 @@ export function TeaserEditor({transition,onAuditionControl,reviewTarget,reviewVi
   {part.teaser?.status==='unavailable'&&<p role="alert" className="text-amber-200">Part {part.id}: {explainInVietnamese(part.teaser.reason,'Chưa có teaser hợp lệ. Chọn lại bằng AI hoặc nhập mốc nguồn trong Timeline.')}</p>}
   <label className="block min-w-0 text-zinc-400">Custom Teaser<textarea aria-label={`Custom Teaser Part ${part.id}`} className="studio-textarea mt-1 w-full min-w-0 border p-2 text-xs" rows={1} maxLength={1000} ref={inputElement} defaultValue={input} placeholder="Mô tả footage hoặc 00:01:00:00 → 00:01:10:00" onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={e=>{composing.current=false;writeInput(e.currentTarget.value);}} onChange={e=>writeInput(e.currentTarget.value)} onKeyDown={e=>{if(e.key==='Enter'&&(composing.current||e.nativeEvent.isComposing||e.nativeEvent.keyCode===229))e.stopPropagation();}} onBlur={e=>{composing.current=false;writeInput(e.currentTarget.value);}}/></label>
   <div className="studio-action-row">
-  <button type="button" disabled={busy||suspended} onClick={()=>void generate()} className="max-w-full rounded border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white">{busy?'Đang tìm/kiểm tra…':'Tạo/chọn lại teaser'}</button>
+  <button type="button" disabled={busy||suspended||aiBusy} onClick={()=>void generate()} className="max-w-full rounded border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white">{busy?'Đang chọn teaser…':'Tạo/chọn lại teaser'}</button>
+  {busy&&<button type="button" className="studio-control" onClick={()=>{request.current?.abort();audition.current?.pause();setBusy(false);setError('Đã dừng chọn teaser.');}}>Dừng chọn teaser</button>}
   </div>
+  {progress}
   {error&&<p role="alert" className="text-amber-200">{explainInVietnamese(error,'Không chọn được teaser; kiểm tra nguồn, kết nối AI hoặc mốc đã nhập.')} Teaser/main hiện tại không thay đổi.</p>}
   </div>
  </section>

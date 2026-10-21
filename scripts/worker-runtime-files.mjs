@@ -2,7 +2,7 @@ import { copyFile, cp, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 // Both packagers use one manifest; tests walk the worker's transitive relative
 // imports in a staged copy so a new module cannot silently be omitted.
-export const WORKER_LIB_FILES = Object.freeze(['replay-alignment.mjs','teaser-evidence.mjs','replay-peaks.mjs','source-ranges.mjs','teaser-context.mjs','preview-config.mjs','explanation-language.mjs','source-timecode.mjs','main-ranges.mjs','custom-teaser.mjs','subtitles.mjs','render-config.mjs','legacy-plan.mjs','teaser-candidates.mjs','teaser-hooks.mjs','teaser-prompt.mjs','teaser-import.mjs','teaser-boundaries.mjs']);
+export const WORKER_LIB_FILES = Object.freeze(['muse-plan.mjs','teaser-input.mjs','ai-reasoning.mjs','replay-alignment.mjs','teaser-evidence.mjs','replay-peaks.mjs','source-ranges.mjs','teaser-context.mjs','preview-config.mjs','explanation-language.mjs','source-timecode.mjs','main-ranges.mjs','custom-teaser.mjs','subtitles.mjs','render-config.mjs','legacy-plan.mjs','teaser-candidates.mjs','teaser-hooks.mjs','teaser-prompt.mjs','teaser-import.mjs','teaser-boundaries.mjs']);
 export const WORKER_LIB_DIRS = Object.freeze(['visual-style','source-context','auto-cut','music']);
 export async function copyWorkerLibraries(project, app) {
  await mkdir(path.join(app,'lib'),{recursive:true});

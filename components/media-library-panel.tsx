@@ -105,10 +105,10 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
   return <section className="studio-library px-5 py-6">
     <Tabs value={tab} onValueChange={(value) => { previewVideo.current?.pause(); setTab(value as typeof tab); setSelected(new Set()); }}>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="flex items-center gap-2 text-2xl font-semibold"><FolderOpen className="size-6 text-[#ff806a]" /> Kho</h1><p className="mt-2 text-sm leading-6 text-zinc-400">Quản lý riêng video gốc và các part. Không tự xoá sau render, không xoá bản đã tải về Downloads.</p></div>
+      <div><h1 className="flex items-center gap-2 text-2xl font-semibold"><FolderOpen className="size-6 text-[#ff806a]" /> Kho</h1></div>
       <Button variant="outline" onClick={() => void refresh()} disabled={!ready || loading || working} className="border-white/15 bg-white/5">{loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Làm mới</Button>
     </div>
-    <div className="relative mt-5 min-w-0"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input aria-label="Tìm trong Kho" value={search} onChange={(event) => { setSearch(event.target.value); setSelected(new Set()); }} placeholder="Tìm theo title, tên file hoặc mã render…" className="studio-input studio-icon-input pl-9" /></div>
+    <div className="studio-library-search relative mt-5 min-w-0"><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input aria-label="Tìm trong Kho" value={search} onChange={(event) => { setSearch(event.target.value); setSelected(new Set()); }} placeholder="Tìm theo title, tên file hoặc mã render…" className="studio-input studio-icon-input pl-9" /></div>
     <TabsList className="studio-library-tabs mt-3" aria-label="Nội dung Kho">
       <TabsTrigger value="renders">Danh sách render <span className="studio-count">{renderCount}</span></TabsTrigger>
       <TabsTrigger value="originals">Nguồn <span className="studio-count">{library ? library.originals.length : '…'}</span></TabsTrigger>
@@ -122,7 +122,6 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
     <TabsContent value="renders" forceMount hidden={tab !== "renders"}>{renderList(search)}</TabsContent>
     <TabsContent value={tab === "renders" ? "originals" : tab} forceMount hidden={tab === "renders"}>
     <p className="mt-3 text-xs text-muted-foreground">{tab !== "renders" && library ? sizeLabel(library.totals[tab]) : "—"} trong mục này.</p>
-    <p className="mt-3 text-xs leading-5 text-zinc-500">Bao gồm dữ liệu hiện tại và kho cũ trong Documents nếu có. File trong thùng rác vẫn chiếm dung lượng cho đến khi xoá vĩnh viễn.</p>
     <div className="mt-5 flex flex-wrap items-center gap-3">
       <Button variant="outline" onClick={() => setSelected(new Set(available.map((file) => file.id)))} disabled={!available.length || working} className="border-white/15 bg-white/5">Chọn tất cả {available.length > 1 ? `(${available.length})` : ""}</Button>
       {selectedFiles.length > 0 && <Button onClick={() => void action(tab === "trash" ? "purge" : "move", selectedFiles)} disabled={working} className="bg-red-500/15 text-red-200 hover:bg-red-500/25">{working ? <Loader2 className="animate-spin" /> : <Trash2 />} {tab === "trash" ? "Xoá vĩnh viễn" : "Chuyển vào thùng rác"} ({selectedFiles.length})</Button>}
@@ -137,7 +136,7 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
         </div>)}
         {!files.length && <p className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">{loading ? "Đang đọc kho video…" : tab === "trash" ? "Thùng rác đang trống." : "Không có video phù hợp."}</p>}
       </div>
-      <aside className="rounded-2xl border border-white/10 bg-[#111216] p-4 lg:sticky lg:top-20"><p className="eyebrow">XEM TRƯỚC FILE</p>{preview ? <><video ref={previewVideo} key={preview.id} src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`} controls playsInline preload="metadata" onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")} onLoadedMetadata={() => setPreviewError("")} className="mt-3 max-h-[360px] w-full rounded-xl bg-black object-contain" /><p className="mt-3 break-words text-xs leading-5">{preview.title}</p>{previewError && <p className="mt-2 text-xs text-red-300">{previewError}</p>}</> : <p className="mt-3 text-xs leading-6 text-zinc-500">Bấm Xem ở video gốc hoặc Part để kiểm tra trước khi xoá.</p>}<p className="mt-4 text-xs leading-6 text-zinc-500">Khôi phục không ghi đè file. Xoá vĩnh viễn chỉ tác động đến các mục được xác nhận trong thùng rác, không đụng tới source code, tài khoản hay Downloads.</p></aside>
+      <aside className="rounded-2xl border border-white/10 bg-[#111216] p-4 lg:sticky lg:top-20"><p className="eyebrow">XEM TRƯỚC FILE</p>{preview ? <><video ref={previewVideo} key={preview.id} src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`} controls playsInline preload="metadata" onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")} onLoadedMetadata={() => setPreviewError("")} className="mt-3 max-h-[360px] w-full rounded-xl bg-black object-contain" /><p className="mt-3 break-words text-xs leading-5">{preview.title}</p>{previewError && <p className="mt-2 text-xs text-red-300">{previewError}</p>}</> : <p className="mt-3 text-xs leading-6 text-zinc-500">Chưa chọn video.</p>}</aside>
     </div>
     </TabsContent>
     </Tabs>

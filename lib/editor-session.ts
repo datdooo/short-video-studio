@@ -18,7 +18,7 @@ export type EditorSession={
  plan?:EditPlan;hasEditPlan:boolean;sourceCaptions?:CaptionTrack|null;activePartIndex:number;workspace:'editor'|'batch'|'storage';previewTime:number;previewTimebase?:typeof PREVIEW_TIMEBASE;
  batchId:string;renderJobId:string;batchEditing?:{batchId:string;itemId:string;sourceId:string}|null;selectedBatchPreviewKey:string;batchUrls:string;
  manualPart1Title:string;manualPart2Title:string;manualPart1Ranges:string;manualPart2Ranges:string;
- webAiPrompt:string;webAiResult:string;webAiContext?:{sourceId:string;transcript:string;instruction:string;provider:import('./edit-plan').AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string}|null;
+ webAiPrompt:string;webAiResult:string;webAiContext?:{sourceId:string;transcript:string;instruction:string;provider:import('./edit-plan').AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack}|null;
  controls:Controls;interrupted:string[];
 };
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
@@ -85,7 +85,7 @@ export function readEditorSession():{draft?:Partial<EditorSession>;notice?:strin
   d.sourceCaptions=readCaptions(r.sourceCaptions);
   if(object(r.batchEditing)&&managedId(r.batchEditing.batchId)&&managedId(r.batchEditing.itemId)&&r.batchEditing.sourceId===d.sourceId)d.batchEditing=r.batchEditing as EditorSession['batchEditing'];
   if(object(r.webAiContext)&&r.webAiContext.sourceId===d.sourceId&&managedId(r.webAiContext.requestId)){
-   d.webAiContext={...pick(r.webAiContext,['sourceId','transcript','instruction','provider','requestId','analysisKey','supplementalPrompt','mainSignature']),lockedPlan:readPlan(r.webAiContext.lockedPlan),hookPlan:readPlan(r.webAiContext.hookPlan)} as EditorSession['webAiContext'];
+   d.webAiContext={...pick(r.webAiContext,['sourceId','transcript','instruction','provider','requestId','analysisKey','supplementalPrompt','mainSignature','promptVersion']),captionTrack:readCaptions(r.webAiContext.captionTrack),lockedPlan:readPlan(r.webAiContext.lockedPlan),hookPlan:readPlan(r.webAiContext.hookPlan)} as EditorSession['webAiContext'];
   }
   d.controls=object(r.controls)?Object.fromEntries(Object.entries(r.controls).filter(([key])=>/:(?:main-[12]|teaser-(?:times|input|candidate|review-(?:catalog|focus))-[12]|music-(?:catalog|search|mood))$/.test(key)).slice(0,32)):{};d.interrupted=Array.isArray(r.interrupted)?[...new Set(r.interrupted.filter((s):s is string=>typeof s==='string').map(s=>s.slice(0,200)))].slice(0,12):[];
   return{draft:d,notice:d.plan||!r.hasEditPlan?'Đã khôi phục phiên chỉnh sửa':'Đã khôi phục phần hợp lệ; plan hỏng chưa được áp dụng. Bản nháp gốc được giữ đến khi bạn chỉnh tiếp.',blocked:!!r.hasEditPlan&&!d.plan};

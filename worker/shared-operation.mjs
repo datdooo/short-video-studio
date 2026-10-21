@@ -1,5 +1,5 @@
 // Subscriber-aware cancellation: only the last departing consumer aborts the operation.
-export function createSharedOperations() {
+export function createSharedOperations({onJoin}={}) {
   const pending = new Map();
   return function shared(key, operation, signal) {
     signal?.throwIfAborted();
@@ -9,7 +9,7 @@ export function createSharedOperations() {
       entry = { controller, consumers: 0 };
       entry.promise = Promise.resolve().then(() => operation(controller.signal)).finally(() => { if (pending.get(key) === entry) pending.delete(key); });
       pending.set(key, entry);
-    }
+    }else{try{onJoin?.();}catch{/* Optional diagnostics never owns work. */}}
     entry.consumers++;
     return new Promise((resolve, reject) => {
       let finished = false;

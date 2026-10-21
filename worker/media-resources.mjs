@@ -15,6 +15,7 @@ export function createMediaResources({maxWaiting=Infinity}={}){
  }
  return{
   ownsLease:()=>Boolean(context.getStore()?.live),
+  currentKind:()=>{const lease=context.getStore();return lease?.live?lease.kind:undefined;},
   currentSignal:()=>{const lease=context.getStore();return lease?.live?lease.controller.signal:undefined;},
   pausePreviews(){if(active?.kind==='preview')active.controller.abort(new Error('Audio preview tạm dừng để ưu tiên export.'));for(let i=queue.length-1;i>=0;i--)if(queue[i].kind==='preview'){const [task]=queue.splice(i,1);task.remove();task.reject(new Error('Audio preview tạm dừng để ưu tiên export.'));}},
   state:()=>({active:active?.kind||null,waiting:queue.length,renderBusy:active?.kind==='render'||queue.some(t=>t.kind==='render'),profile:'balanced-m2-v1',decodeThreads:2,filterThreads:1,encodeThreads:2}),
@@ -27,6 +28,20 @@ export function createMediaResources({maxWaiting=Infinity}={}){
    if(queue.length>=maxWaiting&&(kind!=='render'||queue.some(task=>task.kind==='render')))return Promise.reject(Object.assign(new Error('Hàng đợi tài nguyên đã đầy. Thử lại sau.'),{code:'MEDIA_QUEUE_FULL'}));
    return new Promise((resolve,reject)=>{const task={kind,work,signal,resolve,reject};const abort=()=>{const i=queue.indexOf(task);if(i>=0){queue.splice(i,1);task.remove();reject(signal.reason);}};task.remove=()=>signal?.removeEventListener('abort',abort);signal?.addEventListener('abort',abort,{once:true});queue.push(task);pump();});
   }
+ };
+}
+// A single export can coexist with ONE bounded editor media task. Nested tool
+// calls retain the owning lane; preview cancellation never cancels an export.
+export function createEditorMediaResources(){
+ const exports=createMediaResources(),editor=createMediaResources({maxWaiting:64});
+ const owner=()=>exports.ownsLease()?exports:editor.ownsLease()?editor:undefined;
+ return{
+  ownsLease:()=>Boolean(owner()),
+  currentSignal:()=>owner()?.currentSignal(),
+  currentKind:()=>owner()?.currentKind(),
+  commandState:()=>owner()?.state()||editor.state(),
+  state(){const e=exports.state(),i=editor.state();return{...e,active:e.active||i.active,waiting:e.waiting+i.waiting,profile:'balanced-m2-editor-v2',editorActive:i.active,editorWaiting:i.waiting};},
+  use(kind,work,signal){if(kind==='render')return exports.use(kind,work,signal);return(owner()||editor).use(kind,work,signal);},
  };
 }
 // Explicit before EVERY input, not just the first decoder. No quality change.

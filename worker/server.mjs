@@ -1,6 +1,9 @@
 import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
 import {assertTeaserContexts,selectionDigest,transcriptValue,teaserEvidenceValue} from '../lib/teaser-context.mjs';
-import {createMediaResources,balancedFfmpegArgs} from './media-resources.mjs';
+import {createMediaResources,createEditorMediaResources,balancedFfmpegArgs} from './media-resources.mjs';
+import {ANALYSIS_MODEL,ANALYSIS_SERVICE_TIER,lowestReasoning,reasoningCapabilities} from '../lib/ai-reasoning.mjs';
+import {withAiOperation,measureAiStage,aiEvent,aiMemo,beginAiRequest,safeUsage} from './ai-operation.mjs';
+import {compactAiInput,AI_INPUT_INSTRUCTIONS} from './ai-input.mjs';
 import {prepareRangeInput} from './range-input.mjs';
 import{parseCustomTeaser}from"../lib/custom-teaser.mjs";
 import {TRANSITION_SPRITE} from '../lib/visual-style/foreground-transitions.mjs';
@@ -68,6 +71,7 @@ import { createYouTubeDownloader } from "./youtube-downloader.mjs";
 import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth, localAuthOrigin } from "./chatgpt-auth-state.mjs";
 import { createChatGPTStore } from './chatgpt-store.mjs';
 import { createTeaserSelector } from "./teaser-selection.mjs";
+import { createHookFrameSampler } from './hook-frame-cache.mjs';
 import { TEASER_POLICY, presentationSegments, presentationDuration, partTransitionWindows, validateTeaser } from "../lib/teaser-hooks.mjs";
 import { detectScript, fontFamilyForStyle, listFonts } from "../lib/visual-style/fonts.mjs";
 import { DEFAULT_VISUAL_STYLE } from "../lib/visual-style/defaults.mjs";
@@ -76,7 +80,7 @@ import { constrainTitlePair, needsMeasuredTitleFit } from "../lib/visual-style/t
 import { assertRenderableBackground, gradientRowRgb } from "../lib/visual-style/backgrounds.mjs";
 import { currentFilterEnvironment, ffmpegFilterExpression } from "../lib/visual-style/filters.mjs";
 import { snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
-import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundFilter, timelineDuration } from '../lib/render-config.mjs';
+import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundFilter } from '../lib/render-config.mjs';
 import { originalCutPlan } from '../lib/legacy-plan.mjs';
 import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack, effectiveCaptionTrack, selectionCaptionTrack } from "../lib/subtitles.mjs";
 
@@ -92,8 +96,10 @@ const exportNameAllocator = createExportNameAllocator();
 const batches = new Map();
 const batchControllers = new Map();
 const renderControllers = new Map();
+const startedRenderControllers = new WeakSet();
+const renderParentCleanup = new WeakMap();
 const commandLifecycle = createCommandLifecycle();
-const mediaResources=createMediaResources();
+const mediaResources=createEditorMediaResources();
 // Header/stream inspection is serial and bounded, but must not wait for a full
 // export. No full-video decode or heavy FFmpeg/ASR lease is needed here.
 const metadataResources=createMediaResources({maxWaiting:16});
@@ -181,13 +187,18 @@ const mediaLibrary = createMediaLibrary({
     { id: "current", label: "Dữ liệu app hiện tại", root: dataRoot },
     ...(process.env.MEDIA_WORKER_DISABLE_LEGACY === "1" || path.resolve(legacyDataRoot) === dataRoot ? [] : [{ id: "legacy", label: "Dữ liệu cũ trong Documents", root: legacyDataRoot }]),
   ],
-  isBusy: ({ storageId, sourceId }) => storageId === "current" && (
+  isBusy: ({ storageId, sourceId, jobId, kind }) => storageId === "current" && (["part","parts"].includes(kind) ? (
+    // Outputs belong to a specific job directory. Playback/analysis of the
+    // source, or a different export of that source, cannot mutate these files.
+    [...jobs.values()].some(job=>job.id===jobId&&(["queued","rendering"].includes(job.state)||renderControllers.has(job.id))) ||
+    [...batches.values()].some(batch=>batch.items.some(item=>!item.deleted&&item.jobId===jobId&&(item.deleting||item.state==='submitting')))
+  ) : (
     speech.isBusy(sourceId) ||
     musicSpeech.isBusy(sourceId) || musicPreview.isBusy(sourceId) ||
     localSignals.isBusy(sourceId) ||
     [...jobs.values()].some((job) => job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id))) ||
     [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing", "paused", "awaiting-import", "review-required", "render-ready", "submitting"].includes(item.state))))
-  ),
+  )),
   onMoved: async (item) => {
     if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
     const job = jobs.get(item.jobId);
@@ -607,7 +618,7 @@ async function listChatGPTModels(credentials = null, signal) {
   if (!response.ok) throw Object.assign(new Error(`Không đọc được model ChatGPT (${response.status}).`),{status:response.status});
   const models = (body.models || body.data || [])
     .filter((model) => !model.visibility || model.visibility === "list")
-    .map((model) => ({ slug: model.slug || model.id, displayName: model.display_name || model.name || model.slug || model.id }))
+    .map((model) => ({ slug: model.slug || model.id, displayName: model.display_name || model.name || model.slug || model.id, ...(reasoningCapabilities(model)!==undefined?{supported_reasoning_efforts:reasoningCapabilities(model)}:{}) }))
     .filter((model) => model.slug);
   return models;
 }
@@ -630,13 +641,16 @@ function responseTextFromCompleted(response) {
     .join("");
 }
 
-async function analyzeWithChatGPTPlan(body, signal, content) {
+async function analyzeWithChatGPTPlan(body, signal, content, reasoningPolicy) {
   signal?.throwIfAborted();
   const credentials = await activeChatGPTCredentials();
-  const models = content && body.model ? [] : await listChatGPTModels(credentials, signal);
-  const model = body.model || models[0]?.slug;
-  if (!model) throw new Error("MODEL_UNAVAILABLE: ChatGPT account không trả về model khả dụng.");
-  const response = await fetch(`${chatGPTResource}/responses`, {
+  const model = ANALYSIS_MODEL;
+  if(body.model&&body.model!==model)throw new Error(`MODEL_UNAVAILABLE: App đã chốt ${model}; không tự chuyển model khác.`);
+  const reasoning=reasoningPolicy||lowestReasoning(model);
+  const finishRequest=beginAiRequest(model,reasoning,{...body.requestMetrics,requestedServiceTier:ANALYSIS_SERVICE_TIER}),requestStart=performance.now();
+  let providerMs;
+  try {
+  const response = await measureAiStage('provider',()=>fetch(`${chatGPTResource}/responses`, {
     signal,
     method: "POST",
     headers: {
@@ -646,9 +660,11 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
     },
     body: JSON.stringify({
       model,
+      reasoning: {effort:reasoning.effort},
+      service_tier:ANALYSIS_SERVICE_TIER,
       store: false,
       stream: true,
-      ...(content ? { max_output_tokens: Math.max(1200, Math.min(4500, Number(body.maxTokens) || 1200)) } : {}),
+      max_output_tokens: Math.max(1200, Math.min(9000, Number(body.maxTokens) || 4500)),
       instructions: body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
       input: [{ role: "user", content: content || String(body.input || "") }],
       text: {
@@ -660,12 +676,15 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
         },
       },
     }),
-  });
+  }));
+  providerMs=Math.round(performance.now()-requestStart);
   if (!response.ok || !response.body) {
     const errorBody = await response.json().catch(() => ({}));
     const code = errorBody.error?.code;
     if (code === "subscription_sharing_usage_limit_exceeded") throw new Error("PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.");
-    const message = response.status === 401 ? "AUTH_EXPIRED: ChatGPT session không còn hợp lệ. Hãy đăng nhập lại."
+    if(response.status===400&&/service_tier|service tier|fast mode|priority processing/i.test(String(errorBody.error?.param||'')+' '+String(errorBody.error?.message||'')))throw Object.assign(new Error('FAST_MODE_UNSUPPORTED: Kết nối ChatGPT từ chối Faster; chưa bật thành công, không tự đổi model hoặc âm thầm chuyển chế độ.'),{status:400,code:'FAST_MODE_UNSUPPORTED'});
+    const configurationError=response.status===400&&/reasoning|effort/i.test(String(errorBody.error?.param||'')+' '+String(errorBody.error?.message||''));
+    const message = configurationError ? 'REASONING_CONFIGURATION: Kết nối từ chối mức reasoning thấp nhất đã gửi; chưa áp dụng, không tự tăng mức hoặc đổi model.' : response.status === 401 ? "AUTH_EXPIRED: ChatGPT session không còn hợp lệ. Hãy đăng nhập lại."
       : response.status === 429 ? "RATE_LIMITED: ChatGPT đang giới hạn tạm thời."
       : [404, 503].includes(response.status) ? "MODEL_UNAVAILABLE: Model chưa khả dụng."
       : `ChatGPT request failed (${response.status}).`;
@@ -678,38 +697,51 @@ async function analyzeWithChatGPTPlan(body, signal, content) {
   let buffer = "";
   let outputText = "";
   let completed = false;
+  let actualReasoning=null,actualServiceTier=null,usage,responseModel;
+  let readStart;
+  const reading=()=>{if(readStart===undefined){readStart=performance.now();providerMs=Math.round(readStart-requestStart);aiEvent('reading');}};
+  const acceptBlock=block=>{
+      const parsed = parseEventStreamBlock(block);
+      const eventType = parsed.data?.type || parsed.event;
+      const meta=parsed.data?.response;
+      if(meta){if(['fast','priority','default','auto','flex','scale'].includes(meta.service_tier))actualServiceTier=meta.service_tier;usage=safeUsage(meta.usage)||usage;if(typeof meta.model==='string')responseModel=meta.model.slice(0,100);if(typeof meta.reasoning?.effort==='string')actualReasoning=meta.reasoning.effort.slice(0,20);}
+      if (eventType === "response.output_text.delta") {reading();outputText += parsed.data?.delta || "";}
+      if (eventType === "response.output_text.done" && !outputText) {reading();outputText = parsed.data?.text || "";}
+      if (eventType === "response.completed") {reading();completed = true;if (!outputText) outputText = responseTextFromCompleted(meta);}
+      if(eventType==='response.incomplete'){
+        if(meta?.incomplete_details?.reason==='content_filter')throw new Error('PROVIDER_CONTENT_FILTER: Provider không trả kết quả vì bộ lọc nội dung; không tự lặp yêu cầu.');
+        throw Object.assign(new Error('INVALID_RESPONSE_INCOMPLETE: ChatGPT chưa hoàn tất JSON trong giới hạn output; cần repair đúng bước.'),{code:'INVALID_RESPONSE_INCOMPLETE'});
+      }
+      if (eventType === "response.failed") {
+        const error=meta?.error||parsed.data?.error||{};
+        if(error.code==='subscription_sharing_usage_limit_exceeded')throw new Error('PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.');
+        throw new Error('PROVIDER_RESPONSE_FAILED: ChatGPT không hoàn tất yêu cầu.');
+      }
+      if(outputText.length>1_000_000)throw new Error('INVALID_RESPONSE_SIZE: Kết quả AI vượt giới hạn đọc.');
+  };
   try {
   while (true) {
     const { done, value } = await reader.read();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
     const blocks = buffer.split(/\r?\n\r?\n/);
     buffer = blocks.pop() || "";
-    for (const block of blocks) {
-      const parsed = parseEventStreamBlock(block);
-      const eventType = parsed.data?.type || parsed.event;
-      if (eventType === "response.output_text.delta") outputText += parsed.data?.delta || "";
-      if (eventType === "response.output_text.done" && !outputText) outputText = parsed.data?.text || "";
-      if (eventType === "response.completed") {
-        completed = true;
-        if (!outputText) outputText = responseTextFromCompleted(parsed.data?.response);
-      }
-      if(eventType==='response.incomplete')throw new Error('INVALID_RESPONSE_INCOMPLETE: ChatGPT chưa hoàn tất JSON trong giới hạn output.');
-      if (eventType === "response.failed") {
-        const error = parsed.data?.response?.error || parsed.data?.error || {};
-        if (error.code === "subscription_sharing_usage_limit_exceeded") throw new Error("PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.");
-        throw new Error(error.message || error.code || "ChatGPT response failed.");
-      }
-    }
+    for (const block of blocks) acceptBlock(block);
+    if(buffer.length>1_000_000)throw new Error('INVALID_RESPONSE_SIZE: Sự kiện AI vượt giới hạn đọc.');
+    if(done&&buffer.trim())acceptBlock(buffer);
     if (done) break;
   }
-  } finally { await reader.cancel().catch(()=>{}); reader.releaseLock(); }
+  } finally { providerMs=readStart===undefined?Math.round(performance.now()-requestStart):providerMs;finishRequest({providerMs,readMs:readStart===undefined?0:Math.round(performance.now()-readStart),actualReasoning,actualServiceTier,...(responseModel?{responseModel}:{}),...(usage?{usage}:{})});await reader.cancel().catch(()=>{}); reader.releaseLock(); }
   if (!completed) throw new Error("INVALID_RESPONSE: ChatGPT stream kết thúc trước response.completed.");
   const cleaned = outputText.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  if(actualReasoning&&actualReasoning!==reasoning.effort)throw new Error('REASONING_CONFIGURATION: Provider trả mức reasoning khác yêu cầu; không coi là đã áp dụng mức thấp nhất.');
   try {
-    return { plan: JSON.parse(cleaned), model };
+    const plan=await measureAiStage('validation',()=>JSON.parse(cleaned));
+    finishRequest({status:'completed'});
+    return { plan, model, reasoning:{requested:reasoning.effort,actual:actualReasoning,source:reasoning.source}, serviceTier:{requested:ANALYSIS_SERVICE_TIER,actual:actualServiceTier}, usage };
   } catch {
     throw new Error("INVALID_RESPONSE: ChatGPT không trả về JSON edit plan hợp lệ.");
   }
+  }catch(error){finishRequest({status:signal?.aborted?'cancelled':'error',providerMs:providerMs??Math.round(performance.now()-requestStart)});throw error;}
 }
 
 const sourceDigests = new Map();
@@ -723,44 +755,27 @@ async function hookSourceFingerprint(source, signal) {
   if (sourceDigests.size >= 32) sourceDigests.delete(sourceDigests.keys().next().value);
   sourceDigests.set(key, value); return value;
 }
-async function hookFrames(part, source, signal, candidateTimes) {
-  const ranges = part.segments.filter((s) => !s.isPadding).slice(0,200), total = timelineDuration(ranges), frames = [];
-  const directory = path.join(dataRoot, "cache", "hook-frames");
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  const boundedTimes=candidateTimes?.slice(0,48);
-  const frameSignal=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(45_000)]);
-  for (let i = 0; i < (boundedTimes?.length || 6); i++) {
-    signal?.throwIfAborted();if(frameSignal.aborted)break;
-    let offset = (i + 0.5) / 6 * total, range = ranges[0];
-    for (const s of ranges) { range = s; if (offset < s.end - s.start) break; offset -= s.end - s.start; }
-    const time = boundedTimes?.[i]?.time ?? Math.min(range.end - 0.001, range.start + offset);
-    if(!Number.isFinite(time)||!ranges.some(r=>time>=r.start&&time<=r.end))continue;
-    const file = path.join(directory, `${randomUUID()}.jpg`);
-    try {
-      await run(ffmpeg, ["-y", "-v", "error", "-ss", String(time), "-i", source.mediaPath, "-frames:v", "1", "-vf", "scale=512:288:force_original_aspect_ratio=decrease", "-q:v", "5", file], { signal:frameSignal });
-      const bytes = await readFile(file);
-      if (bytes.length > 300_000) throw new Error("Hook frame exceeds budget");
-      frames.push({ time, ...(boundedTimes?.[i]?.candidateId?{candidateId:boundedTimes[i].candidateId}:{}), data: bytes.toString("base64") });
-    } catch { signal?.throwIfAborted();if(frameSignal.aborted)break; }
-    finally { await rm(file, { force: true }); }
-  }
-  return frames;
-}
+const hookFrames = createHookFrameSampler({root:path.join(dataRoot, 'cache', 'hook-frames'), ffmpeg, run, fingerprint:hookSourceFingerprint});
 async function resolveEditingProvider(signal) {
-    const credentials = await activeChatGPTCredentials();
-    const models = await listChatGPTModels(credentials, AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(20_000)]));
-    const model = models.find((m) => /gpt|o[1-9]/i.test(m.slug))?.slug;
-    if (!model) throw new Error("MODEL_UNAVAILABLE");
-    return { id: "chatgpt", model, analyze: async ({ input, images, schema, instructions, signal, maxTokens }) => {
-      const content = [{ type: "input_text", text: JSON.stringify(input) }, ...images.flatMap((f) => [{ type: "input_text", text: `Source frame at ${f.time.toFixed(3)} seconds${f.candidateId?" for "+f.candidateId:""}. Sparse still only.` }, { type: "input_image", image_url: `data:image/jpeg;base64,${f.data}`, detail: "low" }])];
-      const result = await analyzeWithChatGPTPlan({ model, schema, instructions, maxTokens }, signal, content);
+  return aiMemo('editing-provider',async()=>{
+    signal?.throwIfAborted();
+    const model=ANALYSIS_MODEL,reasoning=lowestReasoning(model);
+    // Explicit owner pin: no model-list ordering or extra discovery request.
+    // Existing credential checks and provider capability errors occur on the
+    // real request. Unsupported/unavailable never falls back to another model.
+    return { id: "chatgpt", model, reasoningPolicyKey:reasoning.key, reasoning:reasoning.effort, analyze: async ({ input, images=[], schema, instructions, signal, maxTokens }) => {
+      const packed=compactAiInput(input),serializedInput=packed.text;
+      const content = [{ type: "input_text", text: serializedInput }, ...images.flatMap((f) => [{ type: "input_text", text: `Source frame at ${f.time.toFixed(3)} seconds${f.partId?" in Part "+f.partId:""}${f.candidateId?" for "+f.candidateId:""}. Sparse still only.` }, { type: "input_image", image_url: `data:image/jpeg;base64,${f.data}`, detail: "low" }])];
+      const requestMetrics={phase:input.phase||'select-main',inputCharacters:serializedInput.length,rawInputCharacters:packed.rawCharacters,inputFormat:packed.format,imageCount:images.length,partCount:Array.isArray(input.parts)?input.parts.length:input.partId?1:0};
+      const result = await analyzeWithChatGPTPlan({ model, schema, instructions:packed.encoded?AI_INPUT_INSTRUCTIONS+'\n'+(instructions||'You are a precise source-accurate video editor.'):instructions, maxTokens,requestMetrics }, signal, content,reasoning);
       return { value: result.plan };
     } };
+  });
 }
 const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
 const musicLibrary=createMusicLibrary({root:path.join(dataRoot,"music"),ffmpeg,ffprobe,run});
 const musicSpeech=createMusicSpeech({root:path.join(dataRoot,"cache","music-speech"),ffmpeg,run,fingerprint:hookSourceFingerprint,protectedKeys:protectedAnalysisKeys,resources:mediaResources});
-const musicPreview=createMusicPreview({root:path.join(dataRoot,"cache","music-preview"),ffmpeg,run,musicLibrary,musicSpeech,fingerprint:hookSourceFingerprint,isExporting:exportBusy,resources:mediaResources});
+const musicPreview=createMusicPreview({root:path.join(dataRoot,"cache","music-preview"),ffmpeg,run,musicLibrary,musicSpeech,fingerprint:hookSourceFingerprint,resources:mediaResources});
 const localSignals = createLocalSignalAnalyzer({ ffmpeg, run, fingerprint: hookSourceFingerprint, cacheRoot:path.join(dataRoot,"cache","local-signals"), protectedKeys:protectedAnalysisKeys });
 const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider, protectedKeys:protectedAnalysisKeys });
 
@@ -777,15 +792,21 @@ function protectedAnalysisKeys() {
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
 const processBatch = createBatchProcessor({acquire:importYouTube,load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
-const analyzeSource = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers});
+const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers});
+const analyzeSource=(source,body,signal)=>withAiOperation('generate',()=>autoCutWorkflow(source,body,signal));
 
 async function mainAnalysisInputs(source, body, signal) {
+  if(body.transcript!==undefined&&typeof body.transcript!=='string'||String(body.transcript??source.transcript??'').length>1_000_000)throw Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; chưa gọi AI, không tự bỏ phần cuối.');
   if (body.currentPlan) {
     if (body.currentPlan.analysis?.sourceId && body.currentPlan.analysis.sourceId !== source.id) throw new Error("Plan belongs to another source.");
     validatePlan(body.currentPlan, source, {teasers:false});
   }
-  const context = await sourceContexts.ensure(source, { signal, comments: true });
-  const local = await localSignals.forSource(source,signal);
+  // Independent context network I/O and one bounded local media analysis can
+  // overlap. This does not parallelize AI calls or open another heavy lease.
+  const preparation=new AbortController(),preparing=AbortSignal.any([...(signal?[signal]:[]),preparation.signal]);
+  let context,local;
+  try{[context,local]=await Promise.all([sourceContexts.ensure(source,{signal:preparing,comments:true}),localSignals.forSource(source,preparing)]);}
+  finally{preparation.abort();}
   context.visualSignals = { ...local.visual,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
   context.audioSignals = { ...local.audio,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
   try { await saveSourceContext(source.directory, context); } catch { signal?.throwIfAborted(); }
@@ -806,6 +827,7 @@ async function mainAnalysisInputs(source, body, signal) {
 }
 
 async function planTeasers(plan, source, signal, transcript, selectionOptions = {}) {
+  if(String(transcript??source.transcript??'').length>1_000_000)throw Error('Transcript vượt giới hạn 1 triệu ký tự; chưa gọi AI, không tự bỏ phần cuối.');
   const sourceContext = await sourceContexts.ensure(source, { signal, comments: true });
   // The shared YouTube metadata cache does not own source-local scene/audio
   // analysis. Preserve those current source-bound signals through enrichment.
@@ -829,6 +851,9 @@ async function planTeasers(plan, source, signal, transcript, selectionOptions = 
 }
 
 async function repairBatchTeasers(plan,source,signal,transcript,request={}){
+ return withAiOperation('batch-teaser-repair',()=>repairBatchTeasersInner(plan,source,signal,transcript,request));
+}
+async function repairBatchTeasersInner(plan,source,signal,transcript,request={}){
  validatePlan(plan,source,{teasers:false});let next=structuredClone(plan);
  next.teaserTranscriptKey=await selectionDigest(transcriptValue(transcript));
  for(const part of next.parts){
@@ -875,14 +900,14 @@ function assertId(value) {
 
 async function run(binary,args,options={}){
   if(ffprobe&&binary===ffprobe){
-    const inherited=mediaResources.currentSignal();
+    const inherited=mediaResources.currentSignal(),exportOwner=mediaResources.currentKind()==='render';
     const parent=AbortSignal.any([options.signal,inherited].filter(Boolean));
     // Heavy-lease validation gets the next probe slot, not the background FIFO.
     // Its execution deadline starts at spawn, so waiting behind one live probe
     // cannot consume the time budget of an otherwise completed export.
-    let timeout=inherited?undefined:AbortSignal.timeout(30_000);
+    let timeout=exportOwner?undefined:AbortSignal.timeout(30_000);
     const bounded=timeout?AbortSignal.any([parent,timeout]):parent;
-    try{return await metadataResources.use(inherited?'render':'probe',signal=>{
+    try{return await metadataResources.use(exportOwner?'render':'probe',signal=>{
       timeout ||= AbortSignal.timeout(30_000);
       return runCommand(binary,args,{...options,signal:AbortSignal.any([signal,timeout]),lowerPriority:true});
     },bounded);}
@@ -895,7 +920,7 @@ async function run(binary,args,options={}){
   }
   const heavy=binary&&(binary===ffmpeg||binary===whisper);
   if(heavy){
-    const state=mediaResources.state();
+    const state=mediaResources.commandState();
     if(!mediaResources.ownsLease()&&(state.active||state.waiting))options.onQueued?.(state.renderBusy?'render':'analysis');
     return mediaResources.use('analysis',signal=>{
       options.onStart?.();
@@ -1366,6 +1391,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
 
   const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
   const rangeInput=await prepareRangeInput({source,segments,directory:workDirectory,ffmpeg,run,signal});
+  const filterGraphPath=path.join(workDirectory,`part-${part.id}-filters.ffgraph`);
   try {
   const overlayInput=2; // sequential source video + finite, sample-trimmed PCM
   const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t,${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
@@ -1404,7 +1430,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     `[cuta]atempo=${PLAYBACK_RATE}[${musicAsset?"originalaudio":"aout"}]`,
   ];
 
-  const buildArgs = (videoEncoder) => {
+  const buildArgs = async (videoEncoder) => {
     const hardwareRender = videoEncoder === "h264_videotoolbox";
     const args = ["-y","-copyts"];
     if (hardwareRender && hardwareDecodeCodecs.has(source.videoCodec)) {
@@ -1420,8 +1446,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     if(hasTransitions)args.push("-loop","1","-framerate","30","-i",path.join(projectRoot,"public",TRANSITION_SPRITE.slice(1)));
     const renderFilters=[...filters];
     if(musicAsset){const input=args.filter(a=>a==="-i").length;args.push("-stream_loop","-1","-i",musicAsset.file);renderFilters.push(...musicMixFilters({input,settings:musicSettings,part,activity:plan.musicSpeech,duration:presentationDuration(part)/PLAYBACK_RATE}));}
+    await writeFile(filterGraphPath,renderFilters.join(";"),{mode:0o600});
     args.push(
-      "-filter_complex", renderFilters.join(";"),
+      "-filter_complex_script", filterGraphPath,
       "-map", "[vout]",
       "-map", "[aout]",
       // OUTPUT scope, after all -i inputs and before the output filename.
@@ -1439,9 +1466,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
         "-c:v", "h264_videotoolbox",
         "-profile:v", "high",
         "-level:v", "4.2",
-        "-b:v", process.env.FFMPEG_VIDEO_BITRATE || "16M",
-        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "20M",
-        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "32M",
+        "-b:v", process.env.FFMPEG_VIDEO_BITRATE || "12M",
+        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "14M",
+        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
         "-spatial_aq", "1",
         "-realtime", "0",
         "-allow_sw", "0",
@@ -1450,7 +1477,9 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
       args.push(
         "-c:v", videoEncoder,
         "-preset", process.env.FFMPEG_PRESET || "medium",
-        "-crf", process.env.FFMPEG_CRF || "17",
+        ...(process.env.FFMPEG_CRF ? ["-crf",process.env.FFMPEG_CRF] : ["-b:v",process.env.FFMPEG_VIDEO_BITRATE || "12M"]),
+        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "14M",
+        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
         "-x264-params","threads=2:lookahead-threads=1",
       );
     }
@@ -1486,17 +1515,17 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   };
   let encoderUsed = preferredVideoEncoder;onEncoder(encoderUsed,false);
   try {
-    await run(ffmpeg, buildArgs(encoderUsed), renderOptions);
+    await run(ffmpeg, await buildArgs(encoderUsed), renderOptions);
   } catch (error) {
     signal?.throwIfAborted();
     if (encoderUsed !== "h264_videotoolbox") throw error;
     encoderUsed = "libx264";onEncoder(encoderUsed,true);
     progressBuffer = "";
-    await run(ffmpeg, buildArgs(encoderUsed), renderOptions);
+    await run(ffmpeg, await buildArgs(encoderUsed), renderOptions);
   }
   onProgress(1);
   return encoderUsed;
-  } finally {await rangeInput.dispose();}
+  } finally {await rangeInput.dispose();await rm(filterGraphPath,{force:true});}
 }
 
 function exportPrefixFor(plan, source) {
@@ -1601,7 +1630,6 @@ function startRender(body,parentSignal){
   const key=body.submissionId?`id:${assertId(body.submissionId)}`:`editor:${fingerprint}`;
   if(pendingRenderSubmissions.has(key)){const pending=pendingRenderSubmissions.get(key);if(pending.sourceId!==body.sourceId)throw Object.assign(new Error('Submission belongs to another source'),{status:409});return pending.promise;}
   if(!body.submissionId){const active=[...jobs.values()].find(j=>j.origin==='editor'&&j.submissionFingerprint===fingerprint&&['queued','rendering'].includes(j.state)&&!j.deleted);if(active)return Promise.resolve(active);}
-  mediaResources.pausePreviews();
   const task=prepareRenderSubmission(body,parentSignal,fingerprint).finally(()=>{if(pendingRenderSubmissions.get(key)?.promise===task)pendingRenderSubmissions.delete(key);});pendingRenderSubmissions.set(key,{sourceId:body.sourceId,promise:task});return task;
 }
 async function prepareRenderSubmission(body, parentSignal, fingerprint) {
@@ -1609,7 +1637,7 @@ async function prepareRenderSubmission(body, parentSignal, fingerprint) {
   const source = await loadSource(body.sourceId, parentSignal);
   parentSignal?.throwIfAborted();
   body.plan = originalCutPlan(body.plan, source.id);
-  if(body.transcript!==undefined){if(typeof body.transcript!=='string'||body.transcript.length>100000)throw Error('Invalid render transcript.');body.plan={...body.plan,teaserTranscriptKey:await selectionDigest(transcriptValue(body.transcript))};}
+  if(body.transcript!==undefined){if(typeof body.transcript!=='string'||body.transcript.length>1_000_000)throw Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; không tự bỏ phần cuối.');body.plan={...body.plan,teaserTranscriptKey:await selectionDigest(transcriptValue(body.transcript))};}
   const captions=effectiveCaptionTrack(body.plan,source);
   let originalPlan = structuredClone(effectiveCutPlan({...body.plan,originalTitle:source.title,...(captions?{captionCues:captions}:{})}));
   validateRenderPlan(originalPlan,source);
@@ -1634,7 +1662,7 @@ async function prepareRenderSubmission(body, parentSignal, fingerprint) {
     sourceId: source.id,
     origin: parentSignal ? "batch" : "editor",
     metadataPolicy: EXPORT_METADATA_POLICY,
-    submissionFingerprint:fingerprint,resourceProfile:"balanced-m2-v1",
+    submissionFingerprint:fingerprint,resourceProfile:"balanced-m2-editor-v2",
     plan: originalPlan,
     startTrimSeconds: 1,
     state: "queued",
@@ -1655,10 +1683,15 @@ function enqueueRender(job,source,renderPlan,parentSignal){
   const controller = new AbortController();
   renderControllers.set(job.id, controller);
   const abort = () => cancelRender(job);
+  const detachParent=()=>parentSignal?.removeEventListener("abort",abort);
+  renderParentCleanup.set(controller,detachParent);
   parentSignal?.addEventListener("abort", abort, { once: true });
   if (parentSignal?.aborted) abort();
-  mediaResources.pausePreviews();
   const task=renderQueue.then(async()=>{
+    // A queued cancellation is already final. Its old promise must not touch a
+    // resumed job or reacquire resources when the preceding export completes.
+    if(controller.signal.aborted||renderControllers.get(job.id)!==controller)return;
+    startedRenderControllers.add(controller);
     const signal=controller.signal;signal.throwIfAborted();job.phase='preparing';
     let prepared=structuredClone(renderPlan);
     // Cut compatibility was resolved before job creation; snapshots never run a second Smart Cut here.
@@ -1668,12 +1701,15 @@ function enqueueRender(job,source,renderPlan,parentSignal){
     signal.throwIfAborted();validateRenderPlan(prepared,source);job.plan=structuredClone(prepared);job.phase='rendering';
     await mediaResources.use('render',active=>executeRender(job,source,prepared,active),signal);
   }).catch((error) => {
+    if(renderControllers.get(job.id)!==controller)return;
     job.state = controller.signal.aborted?"cancelled":"error";
     job.error = controller.signal.aborted?null:error instanceof Error ? error.message : String(error);job.finishedAt=new Date().toISOString();
   }).finally(() => {
-    renderControllers.delete(job.id);job.phase=null;
-    parentSignal?.removeEventListener("abort", abort);
-    void persistBatchHistory();
+    if(renderControllers.get(job.id)===controller){
+      renderControllers.delete(job.id);job.phase=null;
+      void persistBatchHistory();
+    }
+    detachParent();renderParentCleanup.delete(controller);startedRenderControllers.delete(controller);
   });
   renderQueue=task.catch(()=>{});
 }
@@ -1691,7 +1727,14 @@ function cancelRender(job) {
   job.state = "cancelled";
   job.error = null;
   job.finishedAt = new Date().toISOString();
-  renderControllers.get(job.id)?.abort();
+  const controller=renderControllers.get(job.id);
+  controller?.abort();
+  // Nothing has started for this controller: no process, resource lease or
+  // output cleanup needs waiting. Do not wait for unrelated earlier exports.
+  if(controller&&!startedRenderControllers.has(controller)&&renderControllers.get(job.id)===controller){
+    renderControllers.delete(job.id);job.phase=null;
+    renderParentCleanup.get(controller)?.();renderParentCleanup.delete(controller);
+  }
   void persistBatchHistory();
 }
 
@@ -1716,6 +1759,20 @@ function batchSnapshot(batch) {
   });
   void persistBatchHistory();
   return { id: batch.id, items, finished: items.every((item) => ["done", "error", "cancelled", "paused", "awaiting-import", "review-required"].includes(item.state)) };
+}
+
+async function serveAiOperation(request,response,body,kind,work){
+  const streamed=body.progress===true;
+  const write=value=>{if(response.destroyed||response.writableEnded)return;if(value.type==='progress'&&response.writableLength>16384)return;response.write(JSON.stringify(value)+'\n');};
+  if(streamed)response.writeHead(200,{...corsHeaders(request),'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store','X-Accel-Buffering':'no'});
+  try{
+    const result=await withAiOperation(kind,work,streamed?diagnostics=>write({type:'progress',diagnostics}):undefined);
+    if(streamed){write({type:'result',...result});response.end();}
+    else sendJson(request,response,200,result);
+  }catch(error){
+    if(streamed){write({type:'error',error:error.message,diagnostics:error.diagnostics});response.end();}
+    else sendJson(request,response,error.status||500,{error:error.message,diagnostics:error.diagnostics});
+  }
 }
 
 function mediaContentType(target) {
@@ -1821,6 +1878,7 @@ const server = createServer(async (request, response) => {
           contrast: renderContrast, saturation: renderSaturation,
           encoder: preferredVideoEncoder,
           hardwareAccelerated: preferredVideoEncoder === "h264_videotoolbox",
+          videoBitrate:process.env.FFMPEG_VIDEO_BITRATE||'12M',videoMaxrate:process.env.FFMPEG_VIDEO_MAXRATE||'14M',videoBufsize:process.env.FFMPEG_VIDEO_BUFSIZE||'24M',
           label: preferredVideoEncoder === "h264_videotoolbox" ? "Apple VideoToolbox" : preferredVideoEncoder,
           colorSpace: "Rec.709",resources:{...mediaResources.state(),renderBusy:exportBusy()},
         },
@@ -1885,8 +1943,9 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/chatgpt/analyze") {
       const body = await readJson(request);
-      const result = await analyzeWithChatGPTPlan(body);
-      sendJson(request, response, 200, result);
+      const controller=new AbortController(),abort=()=>controller.abort(new Error('Analysis cancelled'));response.once('close',abort);
+      try{await serveAiOperation(request,response,body,'legacy-analysis',()=>analyzeWithChatGPTPlan(body,AbortSignal.any([controller.signal,AbortSignal.timeout(240_000)])));}
+      finally{response.removeListener('close',abort);}
       return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/api/youtube/metadata") {
@@ -1922,8 +1981,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if(request.method==='POST'&&requestUrl.pathname==='/api/music/preview'){
-      if(exportBusy())throw Object.assign(new Error('Đang xuất video; audio preview tạm dừng. Bấm Play sau khi xuất để chuẩn bị lại.'),{status:409});
-      const body=await readJson(request),source=await loadSource(body.sourceId);if(mediaLibrary.isLocked(source.id))throw Error('Source is busy in Trash.');validatePlan(body.plan,source);const controller=new AbortController(),abort=()=>controller.abort(new Error('Audio preview cancelled'));response.once('close',abort);try{sendJson(request,response,200,await musicPreview.prepare(source,body.plan,body.partId,body.sessionId,controller.signal));}finally{response.removeListener('close',abort);}return;
+      const body=await readJson(request),source=await loadSource(body.sourceId);if(mediaLibrary.isLocked(source.id))throw Error('Source is busy in Trash.');validatePlan(body.plan,source,{teasers:false});const controller=new AbortController(),abort=()=>controller.abort(new Error('Audio preview cancelled'));response.once('close',abort);try{sendJson(request,response,200,await musicPreview.prepare(source,body.plan,body.partId,body.sessionId,controller.signal));}finally{response.removeListener('close',abort);}return;
     }
     const musicPreviewFile=requestUrl.pathname.match(/^\/api\/music\/preview\/([a-f0-9]{64})\/media$/);
     if(['GET','HEAD'].includes(request.method)&&musicPreviewFile){await serveMediaPath(request,response,await musicPreview.resolve(musicPreviewFile[1]),{download:false});return;}
@@ -1950,9 +2008,12 @@ const server = createServer(async (request, response) => {
       const controller = new AbortController(), abort = () => controller.abort(new Error("Analysis cancelled"));
       response.once("close", abort);
       try {
-        const body = await readJson(request), source = await loadSource(mainSource[1]);
+        const body = await readJson(request);
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(600000)]);
-        sendJson(request,response,200,await analyzeSource(source,body,signal));
+        await serveAiOperation(request,response,body,'generate',async()=>{
+          const source=await measureAiStage('preparation',()=>loadSource(mainSource[1],signal));
+          return analyzeSource(source,body,signal);
+        });
       } finally { response.removeListener("close",abort); }
       return;
     }
@@ -1960,7 +2021,9 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && speechSource) {
       const body = await readJson(request);
       if (mediaLibrary.isLocked(speechSource[1])) throw new Error("Source đang được chuyển vào thùng rác.");
-      const source = await loadSource(speechSource[1]);
+      const loading=new AbortController(),abortLoading=()=>loading.abort(new Error('Analysis cancelled'));response.once('close',abortLoading);
+      let source;
+      try{source=await loadSource(speechSource[1],loading.signal);}finally{response.removeListener('close',abortLoading);}
       if (speechSource[2] === "captions") {
         const controller=new AbortController(),abort=()=>controller.abort(new Error("Caption client disconnected"));response.once("close",abort);
         try{sendJson(request,response,200,await speech.captions(source,controller.signal,{regenerate:body.regenerate===true,provider:body.provider||'auto'}));}
@@ -1971,7 +2034,7 @@ const server = createServer(async (request, response) => {
         const controller = new AbortController(), abort = () => controller.abort(new Error("Hook client disconnected"));
         response.once("close", abort);
         try {
-          if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 100_000)) throw new Error("Invalid hook transcript.");
+          if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 1_000_000)) throw new Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; chưa gọi AI, không tự bỏ phần cuối.');
           if(body.partId!==undefined&&!body.plan.parts.some(p=>p.id===body.partId))throw Error("Invalid hook part ID.");
           if(body.customInstruction!==undefined&&(body.partId===undefined||parseCustomTeaser(body.customInstruction).mode!=='description'))throw Error('Custom description cần part cụ thể và mô tả hợp lệ; timestamp không gọi AI.');
           if(body.mode==='validate-import'){
@@ -1979,10 +2042,11 @@ const server = createServer(async (request, response) => {
             sendJson(request,response,200,{plan:next});return;
           }
           if(body.mode!==undefined)throw Error('Invalid teaser operation.');
-          const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction,instruction:body.instruction,supplementalPrompt:body.supplementalPrompt,forceRefresh:true});
-          validatePlan(next, source, {teasers:false});
-          for(const part of next.parts)if(body.partId===undefined||part.id===body.partId)if(part.teaserEnabled!==false)validateTeaser(part,source.duration);
-          sendJson(request, response, 200, { plan: next });
+          await serveAiOperation(request,response,body,'teaser-retry',async()=>{
+            const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction,instruction:body.instruction,supplementalPrompt:body.supplementalPrompt,forceRefresh:true});
+            await measureAiStage('validation',()=>{validatePlan(next, source, {teasers:false});for(const part of next.parts)if(body.partId===undefined||part.id===body.partId)if(part.teaserEnabled!==false)validateTeaser(part,source.duration);});
+            return {plan:next};
+          });
         } finally { response.removeListener("close", abort); }
         return;
       }
@@ -2074,6 +2138,7 @@ const server = createServer(async (request, response) => {
     const batchPlanMatch=requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})\/plan$/i);
     if(request.method==='POST'&&batchPlanMatch){
       const body=await readJson(request),batch=batches.get(assertId(batchPlanMatch[1])),item=batch?.items.find(i=>i.id===assertId(batchPlanMatch[2])&&!i.deleted);
+      if(body.transcript!==undefined&&(typeof body.transcript!=='string'||body.transcript.length>1_000_000))throw Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; không tự bỏ phần cuối.');
       if(!item||!item.sourceId)throw new Error('Prepared item not found');
       if(item.jobId||!['awaiting-import','review-required','paused','error','cancelled'].includes(item.state))throw new Error('Render/preparation snapshot is immutable while submitted; finish/stop it first.');
       if(body.sourceId!==item.sourceId)throw new Error('Plan belongs to another source');
@@ -2083,7 +2148,7 @@ const server = createServer(async (request, response) => {
       validateRenderPlan(body.plan,source);await verifySourceTeasers(body.plan,source);
 
       item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
-      item.transcript=String(body.transcript||source.transcript||'').slice(0,100000);
+      item.transcript=String(body.transcript||source.transcript||'');
       item.approved=true;item.needsAnalysis=false;item.needsTeasers=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
       await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
     }

@@ -1,3 +1,294 @@
+# Latest: source checkpoint / push authorized, NO further packaging (2026-10-21)
+
+Repo `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Actual branch `recovery/visual-dev-reconstructed`, base HEAD
+`0621d442435847c92ab200e10fabb86561c882b7`. Origin verified
+`https://github.com/datdooo/short-video-studio.git`; fetched successfully, remote
+ancestor of base HEAD (7 local commits ahead,0 behind before checkpoint).
+User explicitly requests push all valid source after fixes; WAIT before packaging.
+Never infer final commit/push SHA from this static file: read actual Git and remote.
+
+Latest SOURCE changes, not runtime acceptance:
+- Audio mix: balanced VAD expression + st/ld, task-owned graph file for both preview
+  and common export encoders; no giant nested chain/argv. Versioned mix cache,
+  obsolete audio ownership cleanup, explicit retry, safe stage diagnostics and no
+  unrelated-part teaser gate on music preview. `docs/music-mix-fix.md` records the
+  actual user error versus code-confirmed parser defect; real fix not reproduced.
+- Text-only Gemini/Muse: shared native hookInput, full evidence collector and
+  winner/main rules. Complete collected transcript/comments/replay/local numeric
+  signals, IDs/locks/gaps/padding. No images/video/file/ZIP/base64; no vision claim.
+  Ordered clipboard blocks/manifest when long. Exact cue track + full revision
+  bound to prompt, worker-side external hook attachment/validation; errors preserve
+  plan, no automatic provider replacement. See `docs/web-ai-text-workflow.md` for
+  data comparison, boundaries and manual acceptance steps.
+- UI: source260→320px (narrow drawer360px max), provider outside Advanced; one
+  Tạo prompt/Copy row and bounded128px JSON box, no duplicate Generate action;
+  original title appears once, ready source styled semantic success. Inspector
+  equal tab cells; select long labels grow to fit instead of overflowing fixed
+  height; Kho search focus kept inside frame. Shared Copy error text shortened.
+- Candidate video click now toggles play/pause; compact transport mostly one row,
+  two rows only under170px width; reclaimed height allocated to larger9:16 picture.
+  Existing handlers/source timestamps, part drafts/catalog order, preview1x,
+  export1.25x/foreground framing, snapshots and render-resource fixes preserved.
+- Auto model explicitly gpt-6-luna + reasoning.none + requested service_tier.fast.
+  Diagnostics distinguish requested/actual Fast; OAuth account access/tier remains
+  UNVERIFIED. No silent model/effort/tier fallback on rejection. Earlier no-Fast
+  notes are historical. See latest `docs/ai-efficiency.md`.
+
+No tests, lint/typecheck, browser automation, AI/YouTube/ASR/render/listening or
+benchmark was started. Diff reviewed only. No production/auth/media/export/backup
+mutation, job interruption or application restart. Preserve all prior source work.
+
+LAST completed DEV package: `/tmp/shortcut-dev-pinned-gpt6-luna-20261021.log`,
+exit0, app `release/dev/ShortCut Studio Dev.app`. Completed before the audio/UI/
+external-text/Faster changes above; it DOES NOT contain these latest source fixes.
+Do not package again until owner requests. Read-only worker68988 cwd was preserved
+at `release/dev/.build-XSxlbm/previous-build.app/Contents/Resources/app`; do not
+restart it or kill its jobs. No newer artifact equivalence/runtime QA is claimed.
+
+All pending source at base HEAD is included in the reviewed source checkpoint,
+including earlier AI efficiency/resources/cancel/delete/UI work documented below.
+Only available reconstructed history is publishable; no missing original local
+checkpoints were recovered. Media/build/cache/runtime/log data stay ignored.
+
+---
+
+# Active update — AI efficiency + usable editor during render (2026-10-21)
+
+LATEST owner model pin: GPT-6 Luna (2026-10-21)
+- User explicitly permits fixed model. Shared ANALYSIS_MODEL='gpt-6-luna' in
+  lib/ai-reasoning.mjs (+declaration) now selects native main/teaser/Custom/retry/
+  repair and legacy OpenAI route. No models[0]/first-gpt heuristic or legacy
+  OPENAI_MODEL override. External Gemini/Muse intentional imports unchanged.
+- reasoning.effort=none, the documented lowest supported effort. Light/Faster
+  labels are not API values; no Fast/priority/pro service mode added. Native model
+  selection no longer needs /models per Generate; existing auth check on actual
+  requests and model/capability rejection remain, no silent model/effort fallback.
+- Official GPT-6 Luna page confirms Responses, image input, structured outputs,
+  none effort. Account availability/inference NOT verified: no AI call/tests.
+  New logs will distinguish requested/actual; cannot promise quota percentage or
+  measured latency improvement. Cache keys already include model+policy; old
+  Sol selections/history/jobs remain readable and are never relabeled as Luna.
+- Source diff checked; DEV package status to be recorded after completion.
+  All prior uncommitted work preserved, HEAD0621d44, no push/merge.
+
+LATEST active follow-up (same dirty source preserved; base0621d44):
+- User asks thorough AI latency/quota fix, adds opened Nâng cao border and delete
+  after cancel fix. Scope complete in source, no tests/provider/render/ASR/YouTube/
+  browser QA or new benchmark. High refers to Codex, not app reasoning/model.
+- Existing112163ms log diagnosed: main cache, discovery1 + separate repair1/
+  final1;229879 input/2798 output, all low, no provider cache. Discovery catch
+  replaced range/schema subtype with generic code; no raw output was logged,
+  so exact original Part1 subtype cannot be recovered honestly.
+- worker/ai-input.mjs new dependency-free JSON table/string transport. Exact
+  roundtrip guard/fallback, no value sampling/clipping/rounding; used by native
+  main/teaser/repair. Metrics raw/sent characters + format, not token/quota guess.
+  Purely architectural reference to TOON/OpenAI latency docs; NO code copied or
+  new package/framework/model. See docs/ai-efficiency.md for design and links.
+- Complete evidence fitting120k chars AFTER encoding skips discovery. Keep
+  existing successful caches (content/full evidence already in identity).
+- Discovery now intervalId+source anchor, bounded local inspection neighborhood
+  only; final AI/manual cut timestamps never adjusted. Keep valid moments even
+  if another proposal is invalid; legacy cached start/end moments supported.
+  Precise safe rejection codes and anchor frame, existing image caps preserved.
+- Failed discovery of one part repaired IN final paired request when budget
+  remains instead of splitting both finals. Same two opportunities/part, only1
+  winner/part, native low unchanged. No local heuristic promoted as winner.
+- Delete root: isBusy was SOURCE scoped even for per-job output moves; unrelated
+  render/ASR/BGM of same source blocked a finished/cancelled job. Part/parts guard
+  now job scoped, original-source guard unchanged; bulk eligible helper aligned.
+  Zero-output deletion already handles ENOENT. API/paths/trash/confirm semantics
+  retained. Poll read errors separate from mutation errors so successful1.2s
+  polling cannot erase DELETE failure. No actual user job/file deleted to test.
+- Nâng cao button unchanged, opened content now bordered card via CSS; secondary
+  Yêu cầu AI kept; mounted inputs/drafts and callbacks retained.
+- Final combined Node22 DEV packaging completed exit0, log
+  `/tmp/shortcut-dev-ai-payload-discovery-delete-20261021.log`. New app:
+  `release/dev/ShortCut Studio Dev.app`; includes ALL changes above. Artifact hash
+  comparison6 worker/library files +1395 frontend runtime files:0 mismatches,
+  excluding existing declaration/map trim policy. Signing/compatibility steps
+  succeeded as part of packaging; no runtime QA or inference was performed.
+- Live DEV67217/67218 preserved at
+  `release/dev/.build-5y9trs/previous-build.app/Contents/Resources/app`; no restart,
+  render cancellation/deletion or other job interruption. Reopen NEW DEV normally
+  when current jobs finish to load the changes. Only docs changed after build.
+  Source still uncommitted on recovery/visual-dev-reconstructed, HEAD0621d44;
+  no push/merge. Old entries below describe earlier artifacts.
+
+LATEST cancel-render correction + final DEV artifact (2026-10-21):
+- User screenshot shows cancelled0% job still “Đang hủy” while another job runs.
+  Source confirms queued controller was retained until serial renderQueue reached
+  that promise; renderSnapshot treated its presence as active cleanup. Fixed
+  worker/server.mjs: track started controllers separately, release unstarted
+  cancellation immediately + detach parent abort listener. Old queued promise
+  skips work and catch/finally are controller-identity guarded so resume/delete
+  cannot be overwritten by stale cleanup. Running-job cancellation still retains
+  controller until actual owned-command cleanup; SIGTERM/3sSIGKILL group behavior
+  unchanged. No running render stopped/reproduced to test this change.
+- One combined Node22 DEV package completed exit0, log
+  `/tmp/shortcut-dev-ai-single-winner-20261021.log`, including latest AI/secondary
+  button changes below. Cancel report arrived during packaging after worker copy;
+  copied final worker/server.mjs only into NEW DEV app, signed+verified exit0.
+  No second frontend build. App `release/dev/ShortCut Studio Dev.app`.
+- Artifact hashes:4 changed worker modules +1395 generated frontend runtime files
+  match final source/output (existing declaration/map trim excluded). Only docs
+  edited afterward. No tests/provider/YouTube/ASR/render/browser/listening QA.
+- Live DEV65089/65090 retained at
+  `release/dev/.build-D6gBf1/previous-build.app/Contents/Resources/app`. No restart,
+  signals, job cancellation, production/credential/media/export/backup changes.
+  Current live worker does NOT have this patch; reopen NEW DEV normally only when
+  active work finishes. Do not imply the stuck live job was fixed in place.
+- Source still uncommitted on recovery/visual-dev-reconstructed, HEAD0621d44.
+  No push/merge. Do not claim measured speed/quota improvement or cancel QA pass.
+
+LATEST follow-up after user's real 13-minute-video Generate report:
+- Existing DEV AI_OPERATION log matches249544ms/5 calls: main1 + discovery/final
+  separately per part. gpt-6.1-sol, actual reasoning low all5,281389 input tokens,
+  6557 output,274 reasoning,0 cached. About230.7s provider/reading,15.5s frames.
+  No new inference, source download, ASR, tests or benchmark run for diagnosis.
+- Source now pairs long-catalog discovery and final selection across2 eligible
+  parts; normal long cold path3 total calls including main, short path2. Common
+  video evidence factored recursively without dropping coverage/frames/content;
+  exact original neighboring evidence still retrieved for final decisions.
+  Same2 inference opportunities per part, no additional hidden retry; successful
+  caches/locks/custom/one-part operations retain independent behavior.
+- Latest user request: only1 native winner per part, request schema alternatives
+  maxItems0/output ceiling2500single/5000pair, concise Vietnamese explanation.
+  Historic/external schema, saved candidate catalogs and job snapshots preserved.
+- Request diagnostics now include phase/input characters/images/part count.
+  Discovery-to-final no longer presented as failed retry. Actual reasoning stays
+  low; no model/auth change or fabricated quota/speed saving.
+- UI steering: Nâng cao unchanged. Yêu cầu AI has transparent secondary styling,
+  light hover/expanded background; same size/focus/state/mounted input.
+- See docs/ai-efficiency.md for updated bounds; old counts/alternatives below
+  describe prior state. Diff reviewed only; app update status to be recorded after
+  final combined DEV packaging. Source remains uncommitted, no push/merge.
+
+LATEST packaging update: user explicitly resumed packaging after UI cleanup.
+- Node22 DEV package completed exit0. App:
+  `release/dev/ShortCut Studio Dev.app`; final log:
+  `/tmp/shortcut-dev-ui-cleanup-package-final-20261021.log`.
+  Includes all pending source changes below, including Advanced/instruction
+  buttons, bounded prompt input and copy cleanup across workspaces.
+- First attempt compiled frontend but sandbox denied yt-dlp's startup semaphore
+  during the packager's version check. Retried normal DEV packager with required
+  permissions; launcher, runtime compatibility audit and signing completed.
+  First log `/tmp/shortcut-dev-ui-cleanup-package-20261021.log`.
+- Artifact-only comparison: 11 changed worker/library files and 1395 frontend
+  runtime files match source/generated output. 1362 declaration/source-map files
+  intentionally omitted by existing trimRuntime policy. No runtime UI/inference/
+  playback/render tests, no app opened or restarted, no job cancellation.
+- DEV listeners62618/62619 existed before packaging; final read-only lsof found
+  no listeners on5273/8887. Do not assume the app is currently running. Existing
+  previous-build stages were preserved; production/media/exports/auth untouched.
+- Branch remains recovery/visual-dev-reconstructed, HEAD0621d44; all source work
+  remains uncommitted, no push/merge. Only this documentation changed after build.
+  The earlier WAIT notes below are historical and superseded by this build.
+
+LATEST source-only UI follow-up (same uncommitted work preserved, base0621d44):
+- Latest copy cleanup: removed redundant static guidance across Editor, Batch,
+  Kho, render history, template/filter/text/animation/transition panels; shortened
+  empty states and music status copy. The OAuth Keychain/DPAPI paragraph was
+  already absent from source before this follow-up (old running app can show it).
+  Removed stale render-history claim that each part drops one second. Retained
+  actual errors/progress, teaser AI evidence/explanations, timing warnings,
+  destructive-action confirmations and concise unverified music-link notice.
+  UI text/conditional empty status only; no processing/API/auth/payload changes.
+  Diff reviewed + git diff --check only; no tests/build/package/runtime QA.
+  Additional presentation files touched: music-panel, media-library-panel,
+  editor-render-list, teaser-candidate-review, teaser-editor, visual-template-panel,
+  video-filter-panel, text-style-panel, text-animation-panel, cut-transition-panel.
+- Latest refinement: Nâng cao and Yêu cầu AI now use shared
+  `components/source-options-section.tsx` with actual shadcn Button, aria-expanded/
+  controls, theme border/chevron and hidden-but-mounted content. Outer uses the
+  existing persisted sourceAdvancedOpen; inner defaults closed, never resets
+  instruction text. Textarea's shared field-sizing-content caused prompt-driven
+  unbounded height; only this input overrides field-sizing:fixed,120px height,
+  96–180px resize bounds and inner scroll. No global Textarea behavior changed.
+- Gemini/Muse inside Nâng cao now always has Tạo Prompts (actual full prompt
+  generation) + Copy prompt (actual clipboard), no web-open anchor or manual
+  Prompt view/copy disclosure. Copy disabled if missing/stale/processing.
+- Removed hook-only prompt generation/import branch from the editor and its
+  imports/button. Legacy saved hookPlan context remains readable but stale and
+  requires new full prompt; saved selected teasers/plans are not deleted.
+- Yêu cầu AI is a compact default-closed disclosure, same instruction state/
+  payload. Yêu cầu bổ sung stays outside/visible. Advanced and child disclosure
+  headers share theme tokens/control radius/height/chevron/focus/selected style.
+- Removed verbose static web/manual/security instructional paragraphs from this
+  Advanced area; retain actual errors, stale warnings and AI explanations.
+- Earlier disclosure/prompt UI changes are app/page.tsx + globals.css + new
+  source-options-section.tsx; latest copy cleanup also touches files listed above.
+  No tests/QA/provider/build/package/restart/push. Last built app below predates
+  these UI changes. User explicitly asked to WAIT before packaging any more.
+
+Actual start branch `recovery/visual-dev-reconstructed`, clean HEAD
+`0621d442435847c92ab200e10fabb86561c882b7`, cached origin ahead7; no fetch/remote
+verification or push/merge. All prior render/preview/candidate/source work kept.
+Latest three user scopes are combined, no build/provider/test yet at this note:
+
+- `docs/ai-efficiency.md`: native Responses adapter now explicitly lowest
+  supported reasoning from numeric API capability metadata or documented catalog,
+  not Light-label mapping. Same selected model/retry policy, config error rather
+  than implicit default/escalation. Unknown/Qwen capability explicitly unsupported;
+  Gemini/Muse web effort beyond app control. Actual effort only confirmed if
+  response echoes it; no real inference was run. Cache/version includes policy.
+- Shared provider per Generate; eligible short2part teaser request combined,
+  exact common evidence serialized once, independently validated/part-local
+  repair. Long catalogs keep discovery/original-neighborhood evidence and bounds.
+  Main retry keeps images unless explicitly unsupported and sends rejection
+  detail. No auth/quota/config retries disguised as repair. Short normal2 total
+  AI requests; max5 short,6 long,2 for single-part retry (inference calls only).
+  Frame cache12MiB disk +8MiB LRU replaces repeated sample decoding; fresh mốc
+  still accurate individual seek, max48/45s. No decoder batching/quality claim.
+- Real NDJSON phases+elapsed+Stop for Generate/custom/retry; safe per-operation
+  model/requested+actual effort/count/usage/retry/timing logs. No prompt/token/
+  source payload logs. Shared join explicitly0newrequests; terminal log can record
+  later usage after first subscriber cancels. No fake %/ETA.
+- Removed silent transcript100k-prefix at UI/canonical binding. Guard1M chars
+  reports error, no tail dropping; old selected long-prefix bindings can need
+  reselection on NEW jobs. Saved jobs/files not mutated. Full-video catalog and
+  raw regional retrieval remain; coverage limitations disclosed.
+- `docs/editor-during-render.md` supersedes old pause-on-export: main/candidate/
+  Batch playback, BGM, source preparation/edit/Generate/style/Timeline continue.
+  Resource dispatcher1export +1serial Editor task, nested owner/cancel preserved,
+  Editor queue64; metadata1serial with export-only reserved slot. No app kills,
+  extra export or old fan-out graph. Old global-one-heavy requirement superseded.
+  One long EditorASR/upscale can delay other heavyEditor tasks, not browserplayback.
+  Actual M2 RAM/latency unmeasured. Job submission response no longer overwrites
+  current editor plan; queued snapshot remains immutable.
+- User later requested lower bitrate: VT16→12Mbps, max20→14,buf32→24. CPU default
+  CRF17→ABR12M/max14/buf24; explicit FFMPEG_CRF overrides retained. Still1080×1920,
+  30fps, preview1×/export1.25×, framing125%, AAC192k, Rec.709 and metadata clean.
+  TikTok official guide does not prescribe universal middle bitrate;12M is our
+  engineering choice. No promise bitrate change alone speeds filter-heavy graph.
+
+Implementation/diff and independent resource/selector review only. NO tests,
+lint/typecheck, browser QA, provider/AI/YouTube/ASR/render or benchmark. Official
+OpenAI/TikTok docs read for capability/specs only. No credential/auth change,
+new model/dependency/framework, production/source media/export/backup changes.
+LATEST USER STEERING: wait before packaging any more. Do not start another build
+or refresh until the user resumes packaging. Current source remains UNCOMMITTED;
+base HEAD0621d44, no push. Preserve all pending files in git status.
+
+Build already finished immediately before that instruction arrived:
+- Full Node22 DEV package exit0, log
+  `/tmp/shortcut-dev-ai-editor-12mbps-20261021.log`. User then finalized target12M /
+  MAX14M (not16M). Worker was refreshed and app signed again, exit0.
+- Final UI request-identity/double-click correction required a frontend-only
+  refresh (runtime/launcher reused), exit0; log
+  `/tmp/shortcut-dev-ai-editor-final-refresh-20261021.log`. App signed+verified by
+  packaging, no runtime QA. Latest app `release/dev/ShortCut Studio Dev.app`.
+  No independent final all-file hash comparison performed after the stop request.
+- No app opened/restarted or job interrupted. Last read-only cwd for live DEV
+  PIDs57591/57592: `release/dev/.build-I2UnVd/previous-build.app/Contents/Resources/app`.
+  Preserve that active old app. No further package/process/cleanup actions after
+  user requested waiting. This build's temporary Swift cache is still present;
+  do not broadly clean old stages/media. No backup/bundle created.
+Next action: wait for user's next changes; continue source only if requested.
+Do not start a package automatically merely because these notes are read.
+
+---
+
 # Active fix — source probe during export / redundant render work (2026-10-21)
 
 Actual base HEAD `0bbc6ff3d696d63698c1226f226c0316d2d99e1e`, clean at start,
