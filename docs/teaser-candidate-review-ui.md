@@ -88,3 +88,20 @@ Final resumed delivery: one Node22 DEV package build succeeded, exit0, log
 loading-overlay removal and source/scroll/download-action corrections. Only docs
 changed afterward. Old live app left running; no tests/browser/render/AI/audio
 acceptance performed, no push. Open new app normally after jobs finish.
+
+## Candidate Play startup fix — 2026-10-21
+
+User observed option2 only starts after a slider nudge. Source-only review found
+reentrant exact-start seeking and no explicit seek-ready continuation. Candidate
+Play now waits for the commanded seek/frame data before playing; seeks never
+retarget themselves inside onSeeking. Preparation is cancellable/bounded15s,
+uses node/epoch/intent guards, keeps paused scrubs paused and starts clock on
+actual playing. No range snapping or plan changes; one lazy player, no loading
+overlay. No runtime reproduction or playback QA performed. Build outcome at top
+of CODEX_HANDOFF.md; manually verify direct Play on option2, replay, paused/playing
+seek, immediate Pause and switching choices during initial preparation.
+
+Candidate-start DEV build completed once (Node22, exit0), log
+`/tmp/shortcut-dev-candidate-play-start-20261021.log`. Current player source is
+in `release/dev/ShortCut Studio Dev.app`; only docs changed afterward. Existing
+app/jobs were left intact. This is build evidence, not playback acceptance.

@@ -1,3 +1,39 @@
+# Active fix — candidate Play waits for its source seek (2026-10-21)
+
+Actual clean base `6069a757bc10df8d405cf0f1ccc5d4e3380eb584`, same DEV branch.
+User reports option2 does not start with Play until nudging candidate seek slider.
+Static source diagnosis only: RangePlayer wrote currentTime on metadata and
+immediately requested play, had no seek-ready continuation, and wrote currentTime
+again inside onSeeking for any exact-boundary deviation. Parent audition
+coordinator correctly excluded the current part. No live event trace was taken;
+these source races are consistent with the symptom, not runtime reproduction.
+
+Only `components/teaser-candidate-review.tsx` player lifecycle changed:
+- Explicit seek target -> available frame data (`readyState>=2`, not seeking,
+  within one-frame tolerance) -> guarded Play. Exact plan range unchanged; decoder
+  tolerance is not timestamp snapping. Initial metadata, cached/no-op seeks,
+  paused scrubs, replay and reset share one readiness path.
+- No corrective timestamp writes inside onSeeking. Clock/end guard waits out seeks;
+  actual playback UI starts on playing. Button can cancel pending start.
+- Newer seek/Play, Pause, choice/source/part/workspace teardown and export suspension
+  abort listeners/clock/deadline. 15s bounded initialization; stale callbacks cannot
+  start/pause a newer command. Native pause retains intent only during explicit
+  startup, not during ordinary playback.
+- No loading text/dark veil reintroduced, no additional player/decoder/dependency.
+  Main preview, candidate order/Apply, source timings, export, BGM and locks unchanged.
+
+NO tests/lint/typecheck/browser/render/AI/YouTube/ASR/media audition. User accepts
+manually. One Node22 `npm run package:mac:dev` completed exit0. App
+`release/dev/ShortCut Studio Dev.app`; log
+`/tmp/shortcut-dev-candidate-play-start-20261021.log`. Current source is built;
+only docs changed afterward. Build success is not playback QA.
+No app/worker restart or job stop; listener PIDs49655/49656 left intact, still
+using the old app tree moved to previous-build by packaging. Reopen DEV normally
+when jobs finish to load the patch. No push/merge or production/data/credential/
+export/backup changes. Source/docs committed locally; use `git log -1` for SHA.
+
+---
+
 # RESUMED — final UI integration (2026-10-21)
 
 User explicitly resumed the paused handoff. Actual starting Git:

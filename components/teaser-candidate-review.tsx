@@ -77,36 +77,100 @@ export function TeaserCandidateReview({part,proposed,contextKey,legacyContextKey
  </aside>;
 }
 
+// Wait for the commanded source seek, not a corrective seek inside onSeeking.
+// Available source frame data can have sub-frame rounding; saved ranges stay exact.
+function candidateFrameReady(node:HTMLVideoElement,target:number,signal:AbortSignal){
+ return new Promise<void>((resolve,reject)=>{
+  const events=['loadedmetadata','loadeddata','seeked','canplay'];
+  let commanded=false,settled=false;
+  function finish(error?:Error){
+   if(settled)return;settled=true;
+   for(const event of events)node.removeEventListener(event,ready);
+   node.removeEventListener('error',failed);signal.removeEventListener('abort',aborted);
+   if(error)reject(error);else resolve();
+  }
+  function aborted(){finish(new DOMException('Candidate playback cancelled','AbortError'));}
+  function failed(){finish(new Error('Không đọc được video nguồn. Kiểm tra nguồn đã chuẩn bị.'));}
+  function ready(){
+   if(signal.aborted){aborted();return;}
+   if(node.readyState<1)return;
+   if(!commanded){
+    commanded=true;
+    try{if(Math.abs(node.currentTime-target)>.001){node.currentTime=target;if(node.seeking)return;}}
+    catch{failed();return;}
+   }
+   if(!node.seeking&&node.readyState>=2&&Math.abs(node.currentTime-target)<=1/30+.002)finish();
+  }
+  for(const event of events)node.addEventListener(event,ready);
+  node.addEventListener('error',failed);signal.addEventListener('abort',aborted,{once:true});
+  ready();
+ });
+}
+
 function RangePlayer({sourceUrl,choice,suspended,onAudition,onPlaybackControl}:{sourceUrl:string;choice:Selected;suspended:boolean;onAudition:()=>void;onPlaybackControl:(control:PlaybackControl|null)=>void}){
  const video=useRef<HTMLVideoElement|null>(null),frame=useRef(0),timer=useRef<ReturnType<typeof setTimeout>|null>(null),epoch=useRef(0),playIntent=useRef(false);
+ const startup=useRef<AbortController|null>(null),requestedTime=useRef(choice.start);
  const[loaded,setLoaded]=useState(false),[playing,setPlaying]=useState(false),[position,setPosition]=useState(choice.start),[error,setError]=useState(''),[buffering,setBuffering]=useState(false);
  const length=(choice.end-choice.start)/PREVIEW_RATE;
  const clearClock=useCallback(()=>{if(frame.current&&video.current?.cancelVideoFrameCallback)video.current.cancelVideoFrameCallback(frame.current);frame.current=0;if(timer.current)clearTimeout(timer.current);timer.current=null;},[]);
- const pause=useCallback(()=>{playIntent.current=false;epoch.current++;clearClock();video.current?.pause();setPlaying(false);setBuffering(false);},[clearClock]);
- const bind=useCallback((node:HTMLVideoElement|null)=>{const old=video.current;if(old&&old!==node){clearClock();playIntent.current=false;epoch.current++;old.pause();old.removeAttribute('src');old.load();}video.current=node;},[clearClock]);
- useEffect(()=>{onPlaybackControl({pause});return()=>{playIntent.current=false;epoch.current++;clearClock();onPlaybackControl(null);};},[onPlaybackControl,pause,clearClock]);
+ const pause=useCallback(()=>{playIntent.current=false;epoch.current++;startup.current?.abort();startup.current=null;clearClock();video.current?.pause();setPlaying(false);setBuffering(false);},[clearClock]);
+ const bind=useCallback((node:HTMLVideoElement|null)=>{const old=video.current;if(old&&old!==node){startup.current?.abort();startup.current=null;clearClock();playIntent.current=false;epoch.current++;old.pause();old.removeAttribute('src');old.load();}video.current=node;},[clearClock]);
+ useEffect(()=>{onPlaybackControl({pause});return()=>{playIntent.current=false;epoch.current++;startup.current?.abort();startup.current=null;clearClock();onPlaybackControl(null);};},[onPlaybackControl,pause,clearClock]);
  useEffect(()=>{if(suspended)pause();},[suspended,pause]);
  function startClock(){
   clearClock();const generation=epoch.current;
-  const update=()=>{const node=video.current;if(!node||generation!==epoch.current||node.paused||!playIntent.current)return;const time=Math.min(choice.end,Math.max(choice.start,node.currentTime));setPosition(previous=>Math.abs(time-previous)>=.1?time:previous);if(node.currentTime>=choice.end-1/120){pause();return;}if(node.requestVideoFrameCallback)frame.current=node.requestVideoFrameCallback(update);else timer.current=setTimeout(update,33);};
+  const update=()=>{const node=video.current;if(!node||generation!==epoch.current||node.paused||!playIntent.current)return;
+   if(!node.seeking){const time=Math.min(choice.end,Math.max(choice.start,node.currentTime));setPosition(previous=>Math.abs(time-previous)>=.1?time:previous);if(node.currentTime>=choice.end-1/120){pause();return;}}
+   if(node.requestVideoFrameCallback)frame.current=node.requestVideoFrameCallback(update);else timer.current=setTimeout(update,33);
+  };
   update();
  }
- async function play(node:HTMLVideoElement){
-  if(suspended||!playIntent.current||video.current!==node)return;
-  onAudition();setError('');node.playbackRate=PREVIEW_RATE;node.preservesPitch=true;
-  if(node.currentTime<choice.start||node.currentTime>=choice.end-.001)node.currentTime=choice.start;
-  const generation=++epoch.current;
-  try{await node.play();if(generation!==epoch.current){if(video.current===node&&!playIntent.current)node.pause();return;}}
-  catch{if(generation===epoch.current){setError('Chưa phát được video. Bấm Phát thử để thử lại.');pause();}}
+ async function prepare(node:HTMLVideoElement,target:number,resume:boolean){
+  startup.current?.abort();clearClock();const controller=new AbortController();startup.current=controller;const generation=++epoch.current;
+  requestedTime.current=target;setPosition(target);setError('');setBuffering(resume);setPlaying(false);
+  node.pause();node.preload='auto';node.playbackRate=PREVIEW_RATE;node.preservesPitch=true;
+  const current=()=>video.current===node&&generation===epoch.current&&!controller.signal.aborted;
+  const deadline=setTimeout(()=>{if(current()){pause();setError('Chưa chuẩn bị được đoạn ứng viên trong 15 giây. Bấm Phát thử để thử lại.');}},15000);
+  controller.signal.addEventListener('abort',()=>clearTimeout(deadline),{once:true});
+  try{
+   await candidateFrameReady(node,target,controller.signal);
+   if(!current()||suspended)return;
+   if(resume&&playIntent.current){onAudition();await node.play();if(!current()&&video.current===node&&!playIntent.current)node.pause();}
+  }catch(error){
+   if(current()){pause();setError(error instanceof Error&&!(error instanceof DOMException)?error.message:'Chưa phát được video. Bấm Phát thử để thử lại.');}
+  }finally{clearTimeout(deadline);if(startup.current===controller){startup.current=null;if(!playIntent.current)setBuffering(false);}}
  }
- function toggle(){if(playIntent.current){pause();return;}if(suspended||!sourceUrl)return;playIntent.current=true;onAudition();if(!loaded){setLoaded(true);setBuffering(true);}else if(video.current)void play(video.current);}
- function seek(value:number){const time=choice.start+value*PREVIEW_RATE;setPosition(time);if(video.current){video.current.currentTime=time;if(time>=choice.end)pause();}}
+ // Mounting is explicit user intent. Start even if metadata has not arrived;
+ // readiness listeners handle both cached/no-op and asynchronous seeks.
+ const prepareLatest=useRef(prepare);prepareLatest.current=prepare;
+ useEffect(()=>{const node=video.current;if(loaded&&node&&playIntent.current)void prepareLatest.current(node,requestedTime.current,true);},[loaded]);
+ function toggle(){
+  if(playIntent.current){pause();return;}if(suspended||!sourceUrl)return;
+  playIntent.current=true;onAudition();
+  if(!loaded){requestedTime.current=choice.start;setLoaded(true);setBuffering(true);}
+  else if(video.current){const time=video.current.currentTime;void prepare(video.current,time<choice.start||time>=choice.end-.001?choice.start:time,true);}
+ }
+ function seek(value:number){
+  if(!Number.isFinite(value)||suspended)return;
+  const time=Math.min(choice.end,Math.max(choice.start,choice.start+value*PREVIEW_RATE));requestedTime.current=time;setPosition(time);
+  if(time>=choice.end)pause();
+  if(video.current)void prepare(video.current,time,playIntent.current);
+ }
+ const active=(node:HTMLVideoElement)=>video.current===node;
  return <div className="studio-teaser-player">
   <div className="studio-teaser-player-picture">
-   {loaded&&sourceUrl?<video ref={bind} src={sourceUrl} playsInline preload="metadata" aria-label="Phát thử ứng viên từ video nguồn" onLoadedMetadata={e=>{if(e.currentTarget!==video.current)return;e.currentTarget.currentTime=choice.start;if(playIntent.current)void play(e.currentTarget);}} onPlay={()=>{if(suspended||!playIntent.current){pause();return;}onAudition();setPlaying(true);setBuffering(false);startClock();}} onPlaying={()=>{if(suspended||!playIntent.current){pause();return;}setBuffering(false);startClock();}} onPause={e=>{if(!e.currentTarget.paused)return;playIntent.current=false;clearClock();setPlaying(false);setBuffering(false);}} onTimeUpdate={e=>{setPosition(Math.min(choice.end,Math.max(choice.start,e.currentTarget.currentTime)));if(e.currentTarget.currentTime>=choice.end)pause();}} onSeeking={e=>{if(e.currentTarget.currentTime<choice.start||e.currentTarget.currentTime>choice.end)e.currentTarget.currentTime=Math.min(choice.end,Math.max(choice.start,e.currentTarget.currentTime));}} onWaiting={()=>{if(playIntent.current)setBuffering(true);}} onError={()=>{pause();setError('Không đọc được video nguồn. Kiểm tra nguồn đã chuẩn bị.');}} onEnded={pause}/>:<button type="button" className="studio-teaser-player-start" disabled={suspended||!sourceUrl} onClick={toggle}><Play size={22}/><span>Phát thử ứng viên</span></button>}
+   {loaded&&sourceUrl?<video ref={bind} src={sourceUrl} playsInline preload="auto" aria-label="Phát thử ứng viên từ video nguồn"
+    onPlay={e=>{if(!active(e.currentTarget))return;if(suspended||!playIntent.current){pause();return;}onAudition();}}
+    onPlaying={e=>{if(!active(e.currentTarget))return;if(suspended||!playIntent.current){pause();return;}setPlaying(true);setBuffering(false);startClock();}}
+    onPause={e=>{if(!active(e.currentTarget)||!e.currentTarget.paused)return;clearClock();setPlaying(false);if(!startup.current){playIntent.current=false;setBuffering(false);}}}
+    onTimeUpdate={e=>{const node=e.currentTarget;if(!active(node)||node.seeking||startup.current)return;setPosition(Math.min(choice.end,Math.max(choice.start,node.currentTime)));if(playIntent.current&&node.currentTime>=choice.end)pause();}}
+    onSeeking={e=>{if(active(e.currentTarget))clearClock();}}
+    onSeeked={e=>{if(active(e.currentTarget)&&playIntent.current&&!e.currentTarget.paused&&!startup.current)startClock();}}
+    onWaiting={e=>{if(active(e.currentTarget)&&playIntent.current)setBuffering(true);}}
+    onError={e=>{if(active(e.currentTarget)){pause();setError('Không đọc được video nguồn. Kiểm tra nguồn đã chuẩn bị.');}}} onEnded={pause}/>:<button type="button" className="studio-teaser-player-start" disabled={suspended||!sourceUrl} onClick={toggle}><Play size={22}/><span>Phát thử ứng viên</span></button>}
    {loaded&&!playing&&!buffering&&<button type="button" className="studio-teaser-player-overlay" aria-label="Phát thử ứng viên" disabled={suspended} onClick={toggle}><Play size={22}/></button>}
   </div>
-  <div className="studio-teaser-player-controls"><button type="button" className="studio-control-icon" disabled={suspended||!sourceUrl} aria-label={playing?'Tạm dừng ứng viên':'Phát thử ứng viên'} onClick={toggle}>{playing?<Pause size={16}/>:<Play size={16}/>}</button><button type="button" className="studio-control-icon" aria-label="Về đầu ứng viên" disabled={!loaded||suspended} onClick={()=>seek(0)}><RotateCcw size={16}/></button><input type="range" min={0} max={length} step={1/30} value={Math.min(length,Math.max(0,(position-choice.start)/PREVIEW_RATE))} disabled={!loaded||suspended} aria-label="Tua trong ứng viên teaser" onChange={e=>seek(Number(e.target.value))}/><span>{seconds((position-choice.start)/PREVIEW_RATE)} / {seconds(length)}</span></div>
+  <div className="studio-teaser-player-controls"><button type="button" className="studio-control-icon" disabled={suspended||!sourceUrl} aria-label={playing||buffering?'Tạm dừng ứng viên':'Phát thử ứng viên'} onClick={toggle}>{playing||buffering?<Pause size={16}/>:<Play size={16}/>}</button><button type="button" className="studio-control-icon" aria-label="Về đầu ứng viên" disabled={!loaded||suspended} onClick={()=>seek(0)}><RotateCcw size={16}/></button><input type="range" min={0} max={length} step={1/30} value={Math.min(length,Math.max(0,(position-choice.start)/PREVIEW_RATE))} disabled={!loaded||suspended} aria-label="Tua trong ứng viên teaser" onChange={e=>seek(Number(e.target.value))}/><span>{seconds((position-choice.start)/PREVIEW_RATE)} / {seconds(length)}</span></div>
   {error&&<p role="alert" className="studio-inline-error">{error}</p>}
  </div>;
 }
