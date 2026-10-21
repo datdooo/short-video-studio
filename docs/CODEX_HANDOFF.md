@@ -1,3 +1,34 @@
+# Active update — preparation button download percent (2026-10-21)
+
+Actual clean base `286e7394947d22d6b13bb3fe8ada0fcf8451245b`, same DEV branch.
+User requests % on the button after pasting link; interpreted explicitly as
+“Chuẩn bị nguồn”. Read `docs/source-preparation-progress.md`.
+- Reuse actual yt-dlp byte counters; per-stream video/audio/media %, ≈ for
+  estimated byte totals. Other phases/fallback/local upload show stage labels,
+  never timer-based %. Source ready only after full existing pipeline succeeds.
+- Optional NDJSON progress on existing POST; default JSON201/API consumers and
+  source-reuse/shared cancellation/cache identity unchanged. No polling/job/db,
+  dependency or extra extraction. Numeric progress only, no signed URLs/cookies.
+- Source/request guards discard stale UI events. Bounded observers/line buffers/
+  writable queue; finally unsubscribes/readers release. Errors remain inline.
+- Source edits only page.tsx and worker/server.mjs + youtube-downloader.mjs; worker
+  packaging already copies these files, no new runtime manifest entries needed.
+  No renderer/teaser/quality/auth/production/media/export/backup changes.
+- Official yt-dlp progress-template documentation consulted, no upstream code copied.
+NO tests/lint/typecheck/browser/YouTube/AI/ASR/render or trial download. Manual
+acceptance remains user-owned. Initial package finished before a final missing-
+field JSON-template correction (`|null` rather than NA) was made. Final combined
+Node22 `npm run package:mac:dev` finished exit0; app
+`release/dev/ShortCut Studio Dev.app`, final log
+`/tmp/shortcut-dev-source-preparation-progress-final-20261021.log`. Two packaging
+invocations: first superseded by final JSON-null correction; final includes all
+current source. Packaged worker hashes match source. Only docs edited afterward.
+No app/worker restart or job interruption; read-only lsof found no DEV listeners
+on5273/8887 at delivery. No push/merge. Source/docs committed locally; use
+`git log -1` for SHA. No download/runtime acceptance claim.
+
+---
+
 # Active fix — candidate Play waits for its source seek (2026-10-21)
 
 Actual clean base `6069a757bc10df8d405cf0f1ccc5d4e3380eb584`, same DEV branch.

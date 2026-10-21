@@ -144,6 +144,48 @@ type WorkerSource = {
   captions?: CaptionTrack["cues"];
 };
 
+type SourcePreparationProgress = {
+  phase: 'metadata'|'connecting'|'download'|'muxing'|'probing'|'upscaling'|'completing';
+  percent: number|null; stream?: 'video'|'audio'|'media'; estimated?: boolean;
+};
+const SOURCE_PREPARATION_PHASES=['metadata','connecting','download','muxing','probing','upscaling','completing'] as const;
+function sourcePreparationLabel(progress:SourcePreparationProgress|null){
+  if(!progress)return 'Đang chuẩn bị…';
+  if(progress.phase==='download'){
+    const label=progress.stream==='audio'?'Tải tiếng':progress.stream==='video'?'Tải hình':'Tải nguồn';
+    return progress.percent===null?`${label}…`:`${label} ${progress.estimated?'≈ ':''}${progress.percent}%`;
+  }
+  return {metadata:'Đọc thông tin nguồn…',connecting:'Kết nối nguồn…',muxing:'Ghép hình và tiếng…',probing:'Kiểm tra video…',upscaling:'Chuẩn hóa video…',completing:'Hoàn tất nguồn…'}[progress.phase];
+}
+async function readSourcePreparation(response:Response,onProgress:(value:SourcePreparationProgress)=>void):Promise<{source?:WorkerSource;error?:string}>{
+  if(!response.headers.get('content-type')?.includes('application/x-ndjson'))return response.json();
+  const reader=response.body?.getReader();if(!reader)throw Error('Không đọc được tiến độ chuẩn bị nguồn.');
+  const decoder=new TextDecoder();let pending='',result:{source?:WorkerSource;error?:string}|undefined;
+  function consume(line:string){
+    if(!line.trim())return;
+    const value=JSON.parse(line) as Record<string,unknown>;
+    if(!value||typeof value!=='object')return;
+    if(value.type==='error')throw Error(typeof value.error==='string'?value.error:'Không chuẩn bị được nguồn.');
+    if(value.type==='result'){result={source:value.source as WorkerSource};return;}
+    if(value.type==='progress'&&SOURCE_PREPARATION_PHASES.includes(value.phase as SourcePreparationProgress['phase']))onProgress({
+      phase:value.phase as SourcePreparationProgress['phase'],
+      percent:typeof value.percent==='number'&&Number.isFinite(value.percent)&&value.percent>=0&&value.percent<=100?Math.floor(value.percent):null,
+      stream:value.stream==='video'||value.stream==='audio'||value.stream==='media'?value.stream:undefined,
+      estimated:value.estimated===true,
+    });
+  }
+  try{
+    while(true){
+      const {done,value}=await reader.read();pending+=decoder.decode(value,{stream:!done});
+      if(pending.length>8*1024*1024)throw Error('Phản hồi chuẩn bị nguồn vượt giới hạn.');
+      let end;while((end=pending.indexOf('\n'))>=0){consume(pending.slice(0,end));pending=pending.slice(end+1);}
+      if(done){if(pending)consume(pending);break;}
+    }
+    if(!result)throw Error('Chuẩn bị nguồn bị gián đoạn. Chưa nhận được nguồn hoàn tất.');
+    return result;
+  }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+}
+
 type RenderJob = {
   id: string;
   sourceId: string;
@@ -354,6 +396,7 @@ export default function Home() {
   const [youtubeError, setYoutubeError] = useState("");
   const [workerHealth, setWorkerHealth] = useState<WorkerHealth | null>(null);
   const [isPreparingSource, setIsPreparingSource] = useState(false);
+  const [sourcePreparationProgress,setSourcePreparationProgress]=useState<SourcePreparationProgress|null>(null);
   const [preparedSource, setPreparedSource] = useState<WorkerSource | null>(null);
   const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
   const [editorRenderJobs, setEditorRenderJobs] = useState<RenderJob[]>([]);
@@ -441,7 +484,7 @@ export default function Home() {
     decks.current?.dispose(); decks.current=null;
     for(const video of deckVideos.current)video?.pause();
     setIsPreviewPlaying(false);setPreviewBuffering(false);setPreviewCurrentTime(0);setPreviewDuration(0);setPreviewError("");
-    setPreparedSource(null);setRenderJob(null);setHasEditPlan(false);setIsPreparingSource(false);
+    setPreparedSource(null);setRenderJob(null);setHasEditPlan(false);setIsPreparingSource(false);setSourcePreparationProgress(null);
     setTranscript("");setTranscriptStatus("");setSourceCaptions(null);subtitleRequestSerial.current++;subtitleSourceRef.current=undefined;
     setSubtitleBusy(false);setSubtitleNotice("");setMainDraftErrors({});setTeaserDraftErrors({});setBatchEditing(null);setActivePartIndex(0);
     setWebAiPrompt("");setWebAiResult("");setWebAiContext(null);setWebAiNotice("");setWebAiError("");setError("");
@@ -1562,6 +1605,7 @@ export default function Home() {
     const controller=new AbortController();sourcePreparation.current=controller;sourceRequests.current.add(controller);
     const requestSignal=signal?AbortSignal.any([signal,controller.signal]):controller.signal;
     const current=()=>!requestSignal.aborted&&sourcePreparation.current===controller&&selectionEpoch===sourceSelectionEpoch.current;
+    setSourcePreparationProgress(sourceMode==='youtube'?{phase:'metadata',percent:null}:null);
     setIsPreparingSource(true);setInterruptedTasks(current=>current.filter(s=>!s.includes('nguồn')&&!s.includes('transcript')));
     setRenderJob(null);
     try {
@@ -1569,14 +1613,16 @@ export default function Home() {
         ? await fetch(`${WORKER_ORIGIN}/api/sources/youtube`, {
             method: "POST", signal:requestSignal,
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: sourceUrl.trim() }),
+            body: JSON.stringify({ url: sourceUrl.trim(), progress:true }),
           })
         : await fetch(`${WORKER_ORIGIN}/api/sources/upload?filename=${encodeURIComponent(localFile!.name)}`, {
             method: "POST", signal:requestSignal,
             headers: { "Content-Type": localFile!.type || "application/octet-stream", "X-Filename": encodeURIComponent(localFile!.name) },
             body: localFile,
           });
-      const data = (await response.json()) as { source?: WorkerSource; error?: string };
+      const data = await readSourcePreparation(response,value=>{
+        if(current())setSourcePreparationProgress(previous=>JSON.stringify(previous)===JSON.stringify(value)?previous:value);
+      });
       if (!response.ok || !data.source || typeof data.source.id!=="string" || typeof data.source.title!=="string" || !Number.isFinite(data.source.duration) || data.source.duration<=0) throw new Error(typeof data.error==="string"?data.error:"Không chuẩn bị được source: API trả dữ liệu không hợp lệ.");
       if (!current()) return null;
       setPreparedSource(data.source);setRetainedSourceId(data.source.id);setSourceRestoreNotice('');
@@ -1601,7 +1647,7 @@ export default function Home() {
       return null;
     } finally {
       sourceRequests.current.delete(controller);
-      if(sourcePreparation.current===controller){sourcePreparation.current=null;setIsPreparingSource(false);}
+      if(sourcePreparation.current===controller){sourcePreparation.current=null;setIsPreparingSource(false);setSourcePreparationProgress(null);}
     }
   }
 
@@ -1836,8 +1882,8 @@ export default function Home() {
               </label>
             </TabsContent>
           </Tabs>
-          <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className="studio-primary w-full">{isPreparingSource?<><Loader2 size={14} className="animate-spin"/>Đang chuẩn bị…</>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
-          {preparedSource?<div className="studio-source-status"><strong>{preparedSource.title}</strong><span>{formatTime(preparedSource.duration)} · {preparedSource.width}×{preparedSource.height}</span></div>:<p className="studio-muted text-xs">{isPreparingSource?'Đang download/import nguồn…':localFileName||'Chưa có nguồn'}</p>}
+          <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className="studio-primary w-full" aria-busy={isPreparingSource}>{isPreparingSource?<><Loader2 size={14} className="animate-spin"/><span aria-live="polite">{sourcePreparationLabel(sourcePreparationProgress)}</span></>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
+          {preparedSource?<div className="studio-source-status"><strong>{preparedSource.title}</strong><span>{formatTime(preparedSource.duration)} · {preparedSource.width}×{preparedSource.height}</span></div>:<p className="studio-muted text-xs">{isPreparingSource?(sourcePreparationProgress?.phase==='download'?'Tiến độ tải từng luồng; còn bước hoàn tất nguồn.':sourcePreparationLabel(sourcePreparationProgress)):localFileName||'Chưa có nguồn'}</p>}
           <div className="mt-1">
             <div className="flex items-center justify-between">
               <label htmlFor="source-title" className="field-label">Original title</label>

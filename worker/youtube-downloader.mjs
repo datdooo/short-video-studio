@@ -22,6 +22,42 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
   const contextCache = new Map();
   const metadataCache = new Map();
   const scratchRoot = path.join(dataRoot, 'youtube-downloads');
+  const progressListeners = new Map();
+  function emitProgress(parsed, value) {
+    for (const listener of progressListeners.get(parsed.id) || []) {
+      try { listener(value); } catch { /* A disconnected observer never owns a download. */ }
+    }
+  }
+  function subscribeProgress(url, listener) {
+    const { id } = youtubeUrl(url);
+    if (!progressListeners.has(id) && progressListeners.size >= 64) throw new Error('Quá nhiều lượt theo dõi nguồn. Thử lại sau.');
+    const listeners = progressListeners.get(id) || new Set();
+    if (listeners.size >= 16) throw new Error('Quá nhiều lượt theo dõi cùng nguồn.');
+    listeners.add(listener); progressListeners.set(id, listeners);
+    return () => { listeners.delete(listener); if (!listeners.size) progressListeners.delete(id); };
+  }
+  // Parse our numeric template only, never human logs, filenames or signed URLs.
+  function progressReader(parsed) {
+    let pending = '';
+    return chunk => {
+      pending += String(chunk);
+      const lines = pending.split(/\r?\n/); pending = lines.pop().slice(-8192);
+      for (const line of lines) {
+        if (!line.startsWith('__shortcut_progress__') || line.length > 8192) continue;
+        try {
+          const value = JSON.parse(line.slice('__shortcut_progress__'.length));
+          if (value.phase === 'muxing') { emitProgress(parsed, { phase: 'muxing', percent: null }); continue; }
+          const downloaded = typeof value.downloaded === 'number' ? value.downloaded : NaN;
+          const exact = typeof value.total === 'number' ? value.total : NaN, estimate = typeof value.estimate === 'number' ? value.estimate : NaN;
+          const total = exact > 0 ? exact : estimate;
+          const percent = Number.isFinite(downloaded) && downloaded >= 0 && Number.isFinite(total) && total > 0 ? Math.max(0, Math.min(100, downloaded / total * 100)) : null;
+          const stream = value.video === 'none' ? 'audio' : value.video && value.video !== 'NA' && value.video !== 'null' ? (value.audio && value.audio !== 'none' && value.audio !== 'null' ? 'media' : 'video') : 'media';
+          emitProgress(parsed, { phase: 'download', percent, stream, estimated: !(exact > 0) });
+        } catch { /* Partial/malformed provider progress is not a source failure. */ }
+      }
+    };
+  }
+
 
   // Keep only bounded normalized intelligence, never format URLs/cookies/raw info.
   function rememberContext(parsed, info, engine) {
@@ -101,6 +137,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
       await writeFile(cookieFile, cookie, { mode: 0o600, flag: 'wx' });
     }
     if (auth.engine === 'js') {
+      if (operation === 'download') emitProgress(parsed, { phase: 'download', percent: null, stream: 'media' });
       const result = await run(process.execPath, ['--max-old-space-size=256', path.join(import.meta.dirname, 'youtube-js.mjs'), operation, parsed.id, directory, cookieFile], {
         signal: bounded, maxStdout: 10 * 1024 * 1024,
         env: { ...Object.fromEntries(Object.keys(process.env).filter((name) => !['PATH', 'LANG', 'TMPDIR', 'HOME', 'SystemRoot'].includes(name)).map((name) => [name, ''])) },
@@ -108,6 +145,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
       const info = JSON.parse(result.stdout);
       if (operation === 'download') {
         if (!ffmpeg) throw new Error('Missing tool FFmpeg');
+        emitProgress(parsed, { phase: 'muxing', percent: null });
         const inputs = info.combined ? ['-i', path.join(directory, 'combined.media')] : ['-i', path.join(directory, 'video.media'), '-i', path.join(directory, 'audio.media')];
         await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...inputs, '-map', '0:v:0', '-map', info.combined ? '0:a:0' : '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', path.join(directory, 'source.mp4')], { signal: bounded });
       }
@@ -125,7 +163,11 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     if (auth.browser) common.push('--cookies-from-browser', auth.browser);
     if (ffmpeg) common.push('--ffmpeg-location', path.dirname(ffmpeg));
     if (operation === 'download') {
-      await run(ytDlp, [...common, '-f', YOUTUBE_FORMAT, '-S', YOUTUBE_SORT, '--merge-output-format', 'mp4', '--write-info-json', '-o', path.join(directory, 'source.%(ext)s'), parsed.url], { signal: bounded });
+      await run(ytDlp, [...common, '--progress', '--newline', '--progress-delta', '1',
+        '--progress-template', 'download:__shortcut_progress__{"downloaded":%(progress.downloaded_bytes|null)j,"total":%(progress.total_bytes|null)j,"estimate":%(progress.total_bytes_estimate|null)j,"video":%(info.vcodec|null)j,"audio":%(info.acodec|null)j}',
+        '--progress-template', 'postprocess:__shortcut_progress__{"phase":"muxing"}',
+        '-f', YOUTUBE_FORMAT, '-S', YOUTUBE_SORT, '--merge-output-format', 'mp4', '--write-info-json', '-o', path.join(directory, 'source.%(ext)s'), parsed.url],
+        { signal: bounded, onStdout: progressReader(parsed), onStderr: progressReader(parsed) });
       const files = await readdir(directory);
       return JSON.parse(await readFile(path.join(directory, files.find((name) => name.endsWith('.info.json')) || 'source.info.json'), 'utf8'));
     }
@@ -170,6 +212,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     return fallback(attempts, async (auth) => {
       const directory = await mkdtemp(path.join(scratchRoot, 'attempt-'));
       try {
+        if (operation === 'download') emitProgress(parsed, { phase: 'connecting', percent: null });
         const info = await attempt(operation, parsed, directory, auth, signal);
         signal.throwIfAborted();
         rememberContext(parsed, info, auth.engine);
@@ -177,11 +220,13 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
         const name = (await readdir(directory)).find((file) => /^source\.(mp4|mkv|webm|mov)$/.test(file));
         if (!name) throw new Error('Media validation failed');
         let mediaPath = path.join(directory, name);
+        emitProgress(parsed, { phase: 'probing', percent: null });
         let media = await probeMedia(mediaPath);
         const expected = Number(info.duration);
         if (!media.width || !media.height || !media.hasAudio || !media.duration || (expected > 0 && media.duration < expected - Math.max(3, expected * .02)) || (await stat(mediaPath)).size < 1000) throw new Error('Media validation failed: video stream/audio missing or truncated');
         const target = upscaleDimensions(media.width, media.height);
         if (target) {
+          emitProgress(parsed, { phase: 'upscaling', percent: null });
           if (!ffmpeg) throw new Error('Missing tool FFmpeg');
           const output = path.join(directory, 'upscaled.mp4');
           const bounded = AbortSignal.any([signal, AbortSignal.timeout(timeouts.download ?? 20 * 60_000)]);
@@ -196,12 +241,14 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
           if (scaled.width !== target.width || scaled.height !== target.height || !scaled.hasAudio || Math.abs(scaled.duration - media.duration) > .5 || (await stat(output)).size < 1000) throw new Error('Media validation failed: upscale output invalid');
           media = scaled; mediaPath = output;
         }
+        emitProgress(parsed, { phase: 'completing', percent: null });
         return await accept({ info, media, mediaPath, parsed, signal });
       } finally { await rm(directory, { recursive: true, force: true }); }
     }, signal);
   }
 
   return {
+    subscribeProgress,
     peekContext,
     context: async (url, signal) => {
       signal?.throwIfAborted();

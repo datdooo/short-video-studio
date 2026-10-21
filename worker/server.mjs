@@ -1859,8 +1859,28 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/youtube") {
       const body = await readJson(request);
       const controller=new AbortController(),abort=()=>controller.abort(new Error("Source import cancelled"));response.once("close",abort);
-      try{const source=await importYouTube(String(body.url||"").trim(),controller.signal);sendJson(request,response,201,{source:publicSource(source)});}
-      finally{response.removeListener("close",abort);}
+      let unsubscribe;
+      const streamed = body.progress === true;
+      const write = value => {
+        if (response.destroyed || response.writableEnded) return;
+        // Progress is optional and bounded; a slow UI must not buffer endlessly.
+        if (value.type === 'progress' && response.writableLength > 16384) return;
+        response.write(JSON.stringify(value) + '\n');
+      };
+      try {
+        if (streamed) {
+          unsubscribe = youtube.subscribeProgress(String(body.url || '').trim(), progress => write({ type: 'progress', ...progress }));
+          response.writeHead(200, { ...corsHeaders(request), 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+          write({ type: 'progress', phase: 'metadata', percent: null });
+        }
+        const source = await importYouTube(String(body.url || '').trim(), controller.signal);
+        if (streamed) { write({ type: 'result', source: publicSource(source) }); response.end(); }
+        else sendJson(request, response, 201, { source: publicSource(source) });
+      } catch (error) {
+        if (!streamed || !response.headersSent) throw error;
+        if (!controller.signal.aborted) write({ type: 'error', error: error instanceof Error ? error.message : 'Không chuẩn bị được nguồn.' });
+        response.end();
+      } finally { unsubscribe?.(); response.removeListener('close', abort); }
       return;
     }
     if(request.method==='POST'&&requestUrl.pathname==='/api/music/preview'){
