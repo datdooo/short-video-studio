@@ -399,6 +399,18 @@ export default function Home() {
   const [manualPart1Ranges, setManualPart1Ranges] = useState("01:12 - 01:46 First reaction\n02:25 - 03:18 Engine reveal");
   const [manualPart2Ranges, setManualPart2Ranges] = useState("06:22 - 07:14 The problem\n08:41 - 09:36 Final result");
   const [previewElement, setPreviewElement] = useState<HTMLDivElement | null>(null);
+  const [reviewTarget,setReviewTarget]=useState<HTMLDivElement|null>(null);
+  const [previewStage,setPreviewStage]=useState<HTMLDivElement|null>(null);
+  const [reviewCompact,setReviewCompact]=useState(true);
+  const [reviewPreference,setReviewPreference]=useState<boolean|null>(null);
+  const reviewToggle=useRef<HTMLButtonElement|null>(null);
+  const reviewVisible=hasEditPlan&&(reviewPreference??!reviewCompact);
+  useEffect(()=>{
+    if(!previewStage)return;
+    const update=()=>setReviewCompact(previewStage.clientWidth<580);
+    update();const observer=new ResizeObserver(update);observer.observe(previewStage);
+    return()=>observer.disconnect();
+  },[previewStage]);
   const [previewWidth, setPreviewWidth] = useState(384);
   const [previewDuration, setPreviewDuration] = useState(0);
   const [previewCurrentTime, setPreviewCurrentTime] = useState(0);
@@ -422,6 +434,7 @@ export default function Home() {
   const registerMusicPlayback = useCallback((handle:{play:()=>void;pause:()=>void}|null)=>{musicPlaybackControl.current=handle;},[]);
   // Called synchronously before source state/ref changes, not after unmount.
   function resetSourceSelection(){
+    stopTeaserAuditions();
     jobRestoreEpoch.current++;setRestorePassive(false);setMusicIntent(false);setRetainedSourceId('');setRestoredJobId('');setControls({});setInterruptedTasks([]);setSourceRestoreNotice('');restoringSource.current=false;pendingPreviewRestore.current=null;
     sourceSelectionEpoch.current++; previewEpoch.current++; invalidateAnalysis();
     for(const request of sourceRequests.current)request.abort();
@@ -443,6 +456,11 @@ export default function Home() {
     if(next!==workspace){stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewTicker.current?.stop();previewVideoRef.current?.pause();batchPreviewRef.current?.pause();musicPlaybackControl.current?.pause();}
     setWorkspace(next);
   }
+  function openTeaserReview(){
+    if(reviewCompact){previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();}
+    setReviewPreference(true);
+  }
+  function closeTeaserReview(){stopTeaserAuditions();setReviewPreference(false);reviewToggle.current?.focus({preventScroll:true});}
   const [sourceSize, setSourceSize] = useState({ width: 1920, height: 1080 });
   const exportActivity=isStartingRender||renderJob?.state==='queued'||renderJob?.state==='rendering'||Boolean(workerHealth?.render?.resources?.renderBusy)||editorRenderJobs.some(job=>job.state==='queued'||job.state==='rendering');
   const pauseForExport=useCallback(()=>{
@@ -1450,6 +1468,7 @@ export default function Home() {
     if(exportActivity){setPreviewError("Đang xuất video; preview và nhạc tạm dừng. Bấm Play sau khi xuất.");return;}
     const video = previewVideoRef.current;
     if (!video || !previewVideoUrl) return;
+    if(reviewCompact&&reviewVisible)setReviewPreference(false);
     stopTeaserAuditions();setRenderHold(false);setMusicIntent(true);
     const epoch=previewEpoch.current,controller=decks.current;
     setPreviewError("");
@@ -1483,6 +1502,7 @@ export default function Home() {
   const seekPreview = useCallback((value: number) => {
     const video = previewVideoRef.current;
     if (!video || !Number.isFinite(value)) return;
+    if(reviewCompact&&reviewVisible)setReviewPreference(false);
     stopTeaserAuditions();setPreviewSaveVersion(v=>v+1);
     if(decks.current){decks.current.seek(value);return;}
     let sourceTime = value;
@@ -1494,12 +1514,12 @@ export default function Home() {
     }
     video.currentTime = sourceTime;
     setPreviewCurrentTime(value);
-  }, [hasEditPlan, playbackSegments,stopTeaserAuditions]);
+  }, [hasEditPlan, playbackSegments,stopTeaserAuditions,reviewCompact,reviewVisible]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const target = event.target;
-      if (workspace !== 'editor' || !previewVideoUrl || event.altKey || event.ctrlKey || event.metaKey || (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="textbox"], [role="combobox"]')))) return;
+      if (workspace !== 'editor' || !previewVideoUrl || event.altKey || event.ctrlKey || event.metaKey || (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, [role="textbox"], [role="combobox"], .studio-teaser-review')))) return;
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       event.preventDefault();
       seekPreview(Math.max(0, Math.min(timelineDuration, previewCurrentTime + (event.key === 'ArrowRight' ? 5 : -5))));
@@ -1956,8 +1976,10 @@ export default function Home() {
           <div className="studio-part-switcher" role="group" aria-label="Part cho preview và Timeline">
            {plan.parts.map((part,index)=>{const issue=hasEditPlan&&teaserIssues.find(issue=>issue.partId===part.id),invalidMain=mainDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[part.id]?.invalid,invalidTeaser=part.teaserEnabled!==false&&teaserDraftErrors[part.id]?.sourceKey===mainEditorSourceKey&&teaserDraftErrors[part.id]?.message;return <button type="button" key={part.id} aria-pressed={activePartIndex===index} data-part={part.id} onClick={()=>setActivePartIndex(index)}>Part {part.id}{hasEditPlan&&<small>{(presentationDuration(previewPlan.parts[index])/PREVIEW_RATE).toFixed(1)}s{part.manualLocked?' · Khóa':''}</small>}{(issue||invalidMain||invalidTeaser)&&<span className="studio-missing-teaser" title={issue?issue.reason:invalidTeaser||'Timeline có mốc chưa hợp lệ'} aria-label={`Part ${part.id}: thiếu teaser hoặc lỗi mốc`}>!</span>}</button>;})}
            {hasEditPlan&&<span className="studio-active-title" title={activePart.title}>{activePart.title}</span>}
+           {hasEditPlan&&<button ref={reviewToggle} type="button" className="studio-review-toggle" aria-expanded={reviewVisible} aria-controls="studio-teaser-review-host" onClick={()=>reviewVisible?closeTeaserReview():openTeaserReview()}><Film size={14}/>Ứng viên</button>}
           </div>
-          <div className="studio-preview-stage">
+          <div ref={setPreviewStage} className="studio-preview-stage" data-review-visible={reviewVisible} data-review-compact={reviewCompact}>
+          <div className="studio-main-preview-stage" inert={reviewVisible&&reviewCompact} aria-hidden={reviewVisible&&reviewCompact}>
           <div
             ref={setPreviewElement}
             aria-busy={needsMeasuredTitleFit(previewVisualStyle) && measuredTitlePair?.input !== titleFitInput}
@@ -2042,7 +2064,9 @@ export default function Home() {
           </div>
 
           </div>
-          <div className="studio-clock-labels"><span>Preview 1×</span><span title="Timestamp gốc, không phải thời gian sau khi nối đoạn">Mốc nguồn · <strong className="font-mono">{formatSourceTimecode(hasEditPlan?locateTimelineTime(playbackSegments,previewCurrentTime,PREVIEW_RATE).sourceTime:previewCurrentTime)}</strong></span></div>
+          <div id="studio-teaser-review-host" ref={setReviewTarget} className="studio-teaser-review-host" hidden={!reviewVisible}/>
+          </div>
+          <div className="studio-clock-labels"><span>{reviewVisible&&reviewCompact?'Preview chính · 1×':'Preview 1×'}</span><span title="Timestamp gốc, không phải thời gian sau khi nối đoạn">Mốc nguồn · <strong className="font-mono">{formatSourceTimecode(hasEditPlan?locateTimelineTime(playbackSegments,previewCurrentTime,PREVIEW_RATE).sourceTime:previewCurrentTime)}</strong></span></div>
           <div className="preview-controls w-full max-w-[520px]">
             <button type="button" aria-label="Tua lùi 5 giây" title="← · Lùi 5 giây" disabled={!previewVideoUrl} onClick={() => seekPreview(Math.max(0, previewCurrentTime - 5))}><ArrowLeft className="size-3" /></button>
             <button type="button" onClick={() => void togglePreview()} disabled={!previewVideoUrl} aria-label={isPreviewPlaying ? "Pause preview" : "Play preview"}>
@@ -2085,7 +2109,7 @@ export default function Home() {
               onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
             >
             {teaserIssues.filter(issue=>issue.partId===part.id).map(issue=><p key={issue.partId} role="alert" className="text-xs text-amber-200">{issue.reason}</p>)}
-            <TeaserEditor onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={exportActivity} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id&&!exportActivity} cues={previewPlan.captionCues?.cues||subtitleCues}
+            <TeaserEditor reviewTarget={reviewTarget} reviewVisible={reviewVisible} onOpenReview={openTeaserReview} onCloseReview={closeTeaserReview} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={exportActivity} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id&&!exportActivity} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
               onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}

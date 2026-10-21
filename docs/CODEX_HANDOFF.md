@@ -1,3 +1,24 @@
+# Active update — candidate cards + audition player (2026-10-21)
+
+- Starting clean at `0ef1399672d0a3ea37eefadfd1804718c33f9b94`, same DEV branch.
+  Read `docs/teaser-candidate-review-ui.md`. Candidate review portal beside the
+  existing main portrait; compact fallback inside preview. One explicitly loaded
+  source-range player1×, existing main/BGM audition coordination and teardown.
+- Saved card order/focus are source/part/analysis UI drafts; Apply changes the
+  selected badge, not card order. Canonical alternative Apply/validation preserved;
+  no backend/schema/provider/render engine edits. Main portrait stays mounted.
+- No tests/browser/render/AI/YouTube/listening/QA. User accepts manually.
+  One Node22 DEV package build succeeded (exit0); app
+  `release/dev/ShortCut Studio Dev.app`, log
+  `/tmp/shortcut-dev-teaser-candidate-review-build-20261021.log`.
+  Only documentation changed afterward. Read-only lsof: active DEV worker/web
+  PIDs37083/37084 use `release/dev/.build-n1YQsU/previous-build.app`.
+  User normally quits/reopens the new DEV app once jobs finish; no automatic
+  restart or job interruption. Build success does not establish runtime UI QA.
+  No push/merge, production/credentials/media/exports/backups changes.
+
+---
+
 # Active checkpoint — teaser evidence/replay + audit fixes (2026-10-21)
 
 - DEV only `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
