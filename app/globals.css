@@ -266,7 +266,6 @@ button, input, textarea { font: inherit; }
 .studio-panel-toggles button { display:flex; align-items:center; padding:4px; color:var(--studio-muted); }
 .studio-render-state { flex:1; min-width:160px; display:flex; flex-wrap:wrap; gap:3px 10px; align-items:center; color:var(--studio-muted); font-size:12px; overflow-wrap:anywhere; }
 .studio-render-state > span { display:inline-flex; align-items:center; gap:4px; }
-.studio-render-state progress { width:100px; height:5px; accent-color:var(--studio-accent); }
 .studio-render-state a { display:inline-flex; align-items:center; gap:3px; color:var(--studio-accent-text); }
 .studio-part-fixes button { color:var(--studio-accent-text); text-decoration:underline; margin-right:6px; }
 .studio-resource-notice { color:var(--studio-dim); font-size:11px; }
@@ -692,7 +691,7 @@ button, input, textarea { font: inherit; }
 .studio-statusbar > .studio-cancel { grid-column:3; grid-row:1; }
 .studio-statusbar > .studio-render-button { grid-column:4; grid-row:1; }
 .studio-render-state :is(span,a) { min-width:0; max-width:100%; overflow-wrap:anywhere; }
-.studio-render-state > span > progress { flex-shrink:0; }
+.studio-render-state > .studio-task-progress { flex:1 1 240px; max-width:420px; }
 .studio-part-fixes { display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
 .prototype-shell .studio-part-fixes button { min-height:32px; margin-right:0; padding:4px 8px; border:1px solid var(--border); border-radius:8px; text-decoration:none; background:var(--panel); }
 .prototype-shell .studio-part-fixes button:hover { border-color:var(--primary); }
@@ -783,7 +782,7 @@ button, input, textarea { font: inherit; }
 .prototype-shell .studio-header-status { gap:8px; }
 .prototype-shell .studio-header-status > span { padding:3px 6px; font-size:11px; }
 .prototype-shell .studio-brand-logo { width:28px; height:28px; flex-basis:28px; }
-.prototype-shell .studio-statusbar > .studio-render-state { max-height:48px; padding:0; }
+.prototype-shell .studio-statusbar > .studio-render-state { max-height:76px; padding:0; }
 .prototype-shell .studio-statusbar .studio-panel-toggles button { width:28px; height:28px; min-width:28px; min-height:28px; }
 
 /* All Inspector section headers share one box model. Outer padding used to
@@ -872,10 +871,11 @@ button, input, textarea { font: inherit; }
 }
 
 /* Shared task telemetry: measured percentages only, within the existing panels. */
-.studio-task-progress { min-width:0; display:grid; gap:5px; font-size:12px; line-height:1.4; }
-.studio-task-progress-label { min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; justify-content:space-between; column-gap:10px; row-gap:2px; }
+.studio-task-progress { min-width:0; width:100%; display:grid; gap:5px; font-size:12px; line-height:1.4; }
+.studio-task-progress-label { min-width:0; display:grid; grid-template-columns:minmax(0,1fr) max-content; align-items:baseline; column-gap:10px; }
 .studio-task-progress-label > span { min-width:0; overflow-wrap:anywhere; }
-.studio-task-progress-label > span:last-child { color:var(--muted-foreground,#a9a49c); font-variant-numeric:tabular-nums; }
+.studio-task-progress-scope { color:var(--muted-foreground,#a9a49c); font-size:inherit; }
+.studio-task-progress-label > .studio-task-progress-value { color:var(--muted-foreground,#a9a49c); font-variant-numeric:tabular-nums; white-space:nowrap; overflow-wrap:normal; text-align:right; }
 .studio-task-progress progress { appearance:none; display:block; border:0; width:100%; height:4px; border-radius:99px; overflow:hidden; background:#302b25; accent-color:#ff5733; }
 .studio-task-progress progress::-webkit-progress-bar { background:#302b25; border-radius:99px; }
 .studio-task-progress progress::-webkit-progress-value { background:#ff5733; border-radius:99px; }

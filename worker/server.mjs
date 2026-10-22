@@ -2020,7 +2020,7 @@ const server = createServer(async (request, response) => {
           if(body.mode!==undefined)throw Error('Invalid teaser operation.');
           await serveAiOperation(request,response,body,'teaser-retry',async()=>{
             const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction,instruction:body.instruction,supplementalPrompt:body.supplementalPrompt,forceRefresh:true});
-            await measureAiStage('validation',()=>{validatePlan(next, source, {teasers:false});for(const part of next.parts)if(body.partId===undefined||part.id===body.partId)if(part.teaserEnabled!==false)validateTeaser(part,source.duration);});
+            await measureAiStage('validation',()=>{validatePlan(next, source, {teasers:false});for(const part of next.parts)if(body.partId===undefined||part.id===body.partId)if(part.teaserEnabled!==false)validateTeaser(part,source.duration,source.id);});
             return {plan:next};
           });
         } finally { response.removeListener("close", abort); }

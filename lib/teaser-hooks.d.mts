@@ -1,6 +1,6 @@
 import type { EditPlan, EditPart, Segment } from "./edit-plan";
 export type Teaser = { selectionPolicy?: "later-main-v1" | "adaptive-editorial-v3"; version: 1; rangeKey: string; reason: string } & ({ status: "unavailable" } | {
-  status: "selected"; start: number; end: number; selection: "ai" | "fallback" | "external-import" | "manual";
+  status: "selected"; start: number; end: number; selection: "ai" | "fallback" | "external-import" | "manual"; manualSourceId?:string;
   candidateId?:string;kind?:string;partUnderstanding?:string;contentTypes?:string;observed?:string;startContext?:string;standalone?:boolean;complete?:boolean;endingBasis?:string;cueIds?:string[];replayUse?:string;
   heatmapEvidence?:{available:boolean;supportsSelection:boolean;peakTimes:number[];reason:string};alternatives?:import("./teaser-import.mjs").ExternalChoice[];
   editedFrom?:{selection:'ai'|'external-import'|'fallback';provider:string;model:string;promptVersion:string;inputKey:string;start:number;end:number};
@@ -18,7 +18,7 @@ export function hookDurationLimits(playbackRate?:number): {playbackRate:number;m
 export function hookCandidates(part:Pick<EditPart,"segments">,cues?:{start:number;end:number;text:string}[],playbackRate?:number,signals?:object):import("./teaser-candidates.mjs").HookCandidate[];
 export function mainRanges(part: EditPart): Segment[];
 export function hookRangeKey(part: EditPart): string;
-export function validateTeaser(part: EditPart, sourceDuration?: number): void;
+export function validateTeaser(part: EditPart, sourceDuration?: number, sourceId?:string): void;
 export function fallbackTeaser(part: EditPart, reason?: string, cues?: {start:number;end:number;text:string}[], inputKey?: string): Teaser;
 export function presentationSegments(part: EditPart): Segment[];
 export function presentationDuration(part: EditPart): number;
@@ -32,8 +32,8 @@ export function hookNeedsReselection(part:EditPart):boolean;
 export function unavailableHook(part:EditPart,reason:string):Teaser;
 
 export function chooseTeaserAlternative(part:EditPart,index:number):EditPart;
-export function adjustTeaserRange(part:EditPart,start:number,end:number,cues?:{start:number;end:number;text:string}[]):EditPart;
-export function teaserReadiness(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[]):{partId:number;reason:string}[];
-export function requireBothTeasers(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[]):void;
+export function adjustTeaserRange(part:EditPart,start:number,end:number,cues?:{start:number;end:number;text:string}[],source?:{id:string;duration:number}):EditPart;
+export function teaserReadiness(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[],sourceId?:string):{partId:number;reason:string}[];
+export function requireBothTeasers(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[],sourceId?:string):void;
 
 export function hookDurationCheck(start:number,end:number,playbackRate?:number):{valid:boolean;violation:"invalid-range"|"minimum"|"maximum"|null;clock:"source";timeUnit:"seconds";start:number|null;end:number|null;sourceSeconds:number|null;renderedSeconds:number|null;playbackRate:number;minSourceSeconds:number;maxSourceSeconds:number;minRenderedSeconds:number;maxRenderedSeconds:number};

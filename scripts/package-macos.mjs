@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { trimRuntime } from "./trim-runtime.mjs";
-import { macPackageTarget, runtimeEnvironment, prepareRuntimeDirectories } from "../desktop/runtime-config.mjs";
+import { macPackageTarget, runtimeEnvironment, prepareRuntimeDirectories, assertRuntimePortsAvailable } from "../desktop/runtime-config.mjs";
 import { auditMacOSRuntime } from "./audit-macos-runtime.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
@@ -16,6 +16,14 @@ if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("
 const compatible26 = process.argv.includes("--macos26");
 const target = macPackageTarget({ beta: process.argv.includes("--beta"), development: process.argv.includes("--dev"), compatible26, projectRoot });
 const { runtime, releaseRoot, outputAppPath } = target;
+async function requireStoppedBeta() {
+  const result=spawnSync('/bin/ps',['-axo','pid=,command='],{encoding:'utf8'});
+  if(result.error||result.status!==0)throw Error('Cannot verify Beta processes; leave the existing app untouched.');
+  const active=result.stdout.split('\n').filter(line=>line.includes(`${outputAppPath}/Contents/`));
+  if(active.length)throw Error('Beta is running. Save and Quit normally before packaging; no processes were stopped.');
+  await assertRuntimePortsAvailable(runtime);
+}
+await requireStoppedBeta();
 const revision=spawnSync('git',['rev-parse','HEAD'],{cwd:projectRoot,encoding:'utf8'});
 const dirty=spawnSync('git',['status','--porcelain'],{cwd:projectRoot,encoding:'utf8'});
 if(revision.status!==0||dirty.status!==0||dirty.stdout.trim())throw Error('Commit reviewed Beta isolation changes before packaging.');
@@ -221,6 +229,7 @@ const audit = await auditMacOSRuntime(appPath, minimumOS);
 await writeFile(path.join(resources, "compatibility-report.json"), JSON.stringify({ targetMacOS: minimumOS, architecture: "arm64", binaries: audit }, null, 2));
 run("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", appPath]);
 run("/usr/bin/codesign", ["--verify", "--deep", "--strict", appPath]);
+await requireStoppedBeta();
 if (existsSync(outputAppPath)) await rename(outputAppPath, path.join(stageRoot, "previous-build.app"));
 await rename(appPath, outputAppPath);
 if (compatible26) {

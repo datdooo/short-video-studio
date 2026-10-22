@@ -595,7 +595,7 @@ export default function Home() {
   const partDuration = presentationDuration(activePart)/PREVIEW_RATE;
   const previewEffectTime=previewToExportTime(previewCurrentTime);
   const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined, customTeaser: undefined })), cues: subtitleCues });
-  const basicTeaserIssues=useMemo(()=>teaserReadiness(previewPlan,preparedSource?.duration||previewDuration||Infinity,previewPlan.captionCues?.cues||subtitleCues),[previewPlan.parts,preparedSource?.duration,previewDuration,previewPlan.captionCues?.cues,subtitleCues]);
+  const basicTeaserIssues=useMemo(()=>teaserReadiness(previewPlan,preparedSource?.duration||previewDuration||Infinity,previewPlan.captionCues?.cues||subtitleCues,preparedSource?.id),[previewPlan.parts,preparedSource?.duration,preparedSource?.id,previewDuration,previewPlan.captionCues?.cues,subtitleCues]);
   const [freshnessState,setFreshnessState]=useState<{key:string;issues:{partId:number;reason:string}[]}>({key:'',issues:[]});
   const freshnessKey=JSON.stringify({source:preparedSource?{id:preparedSource.id,duration:preparedSource.duration,title:preparedSource.title}:null,parts:previewPlan.parts,cues:subtitleCues,transcript:transcript||preparedSource?.transcript||'',instruction,supplementalPrompt});
   useEffect(()=>{
@@ -1264,7 +1264,7 @@ export default function Home() {
       if(!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
       if(!response.ok||!data.plan)throw new Error(data.error||"Không tạo được Smart Auto Cut.");
       replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
-      const missingTeasers=teaserReadiness(data.plan,source.duration);
+      const missingTeasers=teaserReadiness(data.plan,source.duration,[],source.id);
       const mainNotice=data.plan.analysis?.method==='deterministic-fallback'?`Main dự phòng · ${explainInVietnamese(data.plan.analysis.fallbackReason,"AI chưa khả dụng; main dự phòng chưa được AI xác minh ngữ nghĩa.")}. `:'';
       setAnalysisFinishedStage(missingTeasers.length||data.plan.analysis?.method==='deterministic-fallback'?'error':'complete');
       setAnalysisNotice(mainNotice+(missingTeasers.length?`Main đã lưu; chưa hoàn tất teaser. ${missingTeasers.map(issue=>`Part ${issue.partId}: ${issue.reason}`).join(' ')} Chọn lại, nhập mốc tay hoặc tắt teaser tại Timeline.`:'Đã tạo main; các teaser đang bật hợp lệ. Có thể xem/chỉnh trong Timeline.'));
@@ -1317,7 +1317,7 @@ export default function Home() {
 
 
   async function checkTeasersForExport(nextPlan:EditPlan,source:WorkerSource){
-    requireBothTeasers(nextPlan,source.duration,nextPlan.captionCues?.cues||subtitleCues);
+    requireBothTeasers(nextPlan,source.duration,nextPlan.captionCues?.cues||subtitleCues,source.id);
     await assertTeaserContexts(nextPlan,source,nextPlan.captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
     if(!await externalHooksCurrent(nextPlan,source,transcript||source.transcript||''))throw new Error("Teaser import đã cũ; tạo prompt/import lại trước khi xuất, không tự chuyển provider.");
   }
@@ -2158,7 +2158,7 @@ export default function Home() {
               });}}
               onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
             >
-            <TeaserEditor issues={teaserIssues.filter(issue=>issue.partId===part.id).map(issue=>issue.reason)} reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={workspace!=='editor'} aiBusy={isAnalyzing} progress={teaserOperations[part.id]&&<AiOperationStatus {...teaserOperations[part.id]}/>} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id} cues={previewPlan.captionCues?.cues||subtitleCues}
+            <TeaserEditor sourceId={preparedSource?.id||''} sourceDuration={preparedSource?.duration||previewDuration} issues={teaserIssues.filter(issue=>issue.partId===part.id).map(issue=>issue.reason)} reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={workspace!=='editor'} aiBusy={isAnalyzing} progress={teaserOperations[part.id]&&<AiOperationStatus {...teaserOperations[part.id]}/>} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
               onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
@@ -2169,7 +2169,7 @@ export default function Home() {
                 const captionCues=proposalTrack?sourceCaptionTrack(proposalTrack,source):previewPlan.captionCues;
                 if(proposalTrack&&previewPlan.captionCues?.origin==='user-edited'&&JSON.stringify(captionCues?.cues)!==JSON.stringify(previewPlan.captionCues.cues))throw Error('Ứng viên dùng phụ đề khác bản chỉnh tay; chọn lại với phụ đề hiện tại.');
                 const selected={...previewPlan,...(captionCues?{captionCues}:{}),parts:previewPlan.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:{...p,teaserEnabled:false})};
-                const target=selected.parts.find(p=>p.id===next.id)!;validateTeaser(target,source.duration);
+                const target=selected.parts.find(p=>p.id===next.id)!;validateTeaser(target,source.duration,source.id);
                 await assertTeaserContexts(selected,source,captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
                 if(!await externalHooksCurrent(selected,source,transcript||source.transcript||''))throw Error('Ứng viên import đã cũ; tạo prompt lại.');
                 if(epoch!==sourceSelectionEpoch.current||identity!==latestPartHookIdentities.current[next.id])throw Error('Nguồn/main đã đổi; ứng viên chưa được áp dụng.');

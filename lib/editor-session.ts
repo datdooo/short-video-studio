@@ -31,7 +31,7 @@ const finite=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
 function pick(v:Record<string,unknown>,keys:string[]){return Object.fromEntries(keys.filter(k=>Object.hasOwn(v,k)).map(k=>[k,v[k]]));}
 // This parser is deliberately for editing, not export: incomplete/invalid hooks
 // remain visible for repair. It never normalizes timestamps or requires inference.
-function readPlan(raw:unknown):EditPlan|undefined{
+function readPlan(raw:unknown,sourceId?:string):EditPlan|undefined{
  if(!object(raw)||!Array.isArray(raw.parts)||raw.parts.length!==2||!object(raw.render))return;
  const parts=[];
  for(const [i,p]of raw.parts.entries()){
@@ -42,8 +42,8 @@ function readPlan(raw:unknown):EditPlan|undefined{
   if(typeof p.teaserEnabled==='boolean')part.teaserEnabled=p.teaserEnabled;
   if(object(p.teaser)&&['selected','unavailable'].includes(String(p.teaser.status))&&typeof p.teaser.reason==='string'){
    if(p.teaser.status==='unavailable'||(finite(p.teaser.start)&&finite(p.teaser.end)&&Array.isArray(p.teaser.limitations)&&p.teaser.limitations.every(v=>typeof v==='string')&&Array.isArray(p.teaser.evidenceTimes)&&p.teaser.evidenceTimes.every(finite))){
-    part.teaser=pick(p.teaser,['editedFrom','binding','version','rangeKey','reason','status','start','end','selection','candidateId','kind','partUnderstanding','contentTypes','observed','startContext','standalone','complete','endingBasis','cueIds','replayUse','heatmapEvidence','alternatives','ending','relation','evidenceTimes','limitations','provider','model','promptVersion','inputKey','transition','selectionPolicy']) as unknown as NonNullable<typeof part.teaser>;
-    try{validateTeaser(part);}catch{part.teaserNeedsReselection=true;if(part.teaser.status==='selected')delete part.teaser.alternatives;}
+    part.teaser=pick(p.teaser,['manualSourceId','editedFrom','binding','version','rangeKey','reason','status','start','end','selection','candidateId','kind','partUnderstanding','contentTypes','observed','startContext','standalone','complete','endingBasis','cueIds','replayUse','heatmapEvidence','alternatives','ending','relation','evidenceTimes','limitations','provider','model','promptVersion','inputKey','transition','selectionPolicy']) as unknown as NonNullable<typeof part.teaser>;
+    try{validateTeaser(part,Infinity,sourceId);if(part.teaser.status==='selected'&&part.teaser.selection==='manual')part.teaserNeedsReselection=false;}catch{part.teaserNeedsReselection=true;if(part.teaser.status==='selected')delete part.teaser.alternatives;}
    }
   }
   if(object(p.customTeaser)&&['timestamp','description'].includes(String(p.customTeaser.mode))&&typeof p.customTeaser.input==='string')part.customTeaser=pick(p.customTeaser,['version','mode','input']) as unknown as NonNullable<typeof part.customTeaser>;
@@ -81,7 +81,7 @@ export function readEditorSessionRaw(saved:string|null):EditorSessionRead{
   d.sourceMode=r.sourceMode==='local'?'local':'youtube';d.editMode=r.editMode==='manual'?'manual':'ai';
   if(['mock','chatgpt','gemini','muse','openai','qwen'].includes(String(r.provider)))d.provider=r.provider as EditorSession['provider'];
   d.workspace=r.workspace==='batch'||r.workspace==='storage'?r.workspace:'editor';d.activePartIndex=r.activePartIndex===1?1:0;d.previewTime=finite(r.previewTime)?Number(r.previewTime):0;
-  d.plan=readPlan(r.plan);d.hasEditPlan=!!d.plan&&r.hasEditPlan===true;
+  d.plan=readPlan(r.plan,d.sourceId||undefined);d.hasEditPlan=!!d.plan&&r.hasEditPlan===true;
   // Legacy editor drafts stored the export clock. Migrate only the UI playhead,
   // never source timecodes/plan/job snapshots; future reads see an explicit marker.
   if(r.previewTimebase!==PREVIEW_TIMEBASE&&d.hasEditPlan)d.previewTime=Number(d.previewTime)*PLAYBACK_RATE;

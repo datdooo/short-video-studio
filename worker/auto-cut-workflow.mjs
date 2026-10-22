@@ -66,7 +66,7 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
               partTitle:original?.partTitle??previous.title,partContext:original?.partContext??previous.hook}};
           }
           if(part.teaser.alternatives)part.teaser.alternatives=part.teaser.alternatives.filter(choice=>{try{validateTeaser({...part,teaser:{...part.teaser,...choice,heatmapEvidence:undefined,alternatives:undefined}},source.duration);return true;}catch{return false;}});
-          validateTeaser(part,source.duration);
+          validateTeaser(part,source.duration,source.id);
           await assertTeaserContexts({...plan,parts:[part]},source,cues,content,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
           part.teaserNeedsReselection=false;
         }catch(error){

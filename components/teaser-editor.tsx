@@ -26,7 +26,7 @@ function savedInput(part:EditPart){
  if(custom.mode==='timestamp'){try{const parsed=parseCustomTeaser(custom.input);if(parsed.mode==='timestamp')return`${formatSourceTimecode(parsed.start)} → ${formatSourceTimecode(parsed.end)}`;}catch{return'';}}
  return custom.input;
 }
-export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,reviewSourceKey,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{issues?:string[];transition?:ReactNode;progress?:ReactNode;aiBusy?:boolean;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;reviewSourceKey:string;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart,captionTrack?:CaptionTrack)=>Promise<void>;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<{teaser:Teaser;captionTrack?:CaptionTrack}>}){
+export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,reviewSourceKey,sourceId,sourceDuration,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{issues?:string[];transition?:ReactNode;progress?:ReactNode;aiBusy?:boolean;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;reviewSourceKey:string;sourceId:string;sourceDuration:number;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart,captionTrack?:CaptionTrack)=>Promise<void>;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<{teaser:Teaser;captionTrack?:CaptionTrack}>}){
  const enabled=part.teaserEnabled!==false;
  // Playback URLs can be blob URLs, or empty while a saved managed source is
  // reopening. Neither is an analysis identity. Keep restored catalogs untouched
@@ -45,7 +45,7 @@ export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAudit
  const baseline=useMemo(()=>savedTimes(part),[part]);
  const[draft,setDraft]=useEditorDraft<{key:string;times:Times}|null>(`teaser-times-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'times'in v&&!!v.times&&typeof v.times==='object'&&'start'in v.times&&typeof v.times.start==='string'&&'end'in v.times&&typeof v.times.end==='string'),[inputDraft,setInputDraft]=useEditorDraft<{key:string;text:string}|null>(`teaser-input-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'text'in v&&typeof v.text==='string');
  const[error,setError]=useState(''),[busy,setBusy]=useState(false),[applying,setApplying]=useState(false),applyPending=useRef(false),request=useRef<AbortController|null>(null);
- const[candidate,setCandidate]=useEditorDraft<{key:string;part:EditPart;captionTrack?:CaptionTrack}|null>(`teaser-candidate-${part.id}`,null,v=>{try{if(v===null)return true;const c=v as {key:string;part:EditPart;captionTrack?:CaptionTrack};if(typeof c.key!=='string'||c.part?.id!==part.id||draftIdentity(c.part.segments)!==draftIdentity(part.segments)||c.part.teaser?.status!=='selected'||!Array.isArray(c.part.teaser.limitations)||!Array.isArray(c.part.teaser.evidenceTimes))return false;validateTeaser(c.part);checkHookSpeechBoundaries(c.part.teaser,c.captionTrack?.cues||cues);return true;}catch{return false;}});
+ const[candidate,setCandidate]=useEditorDraft<{key:string;part:EditPart;captionTrack?:CaptionTrack}|null>(`teaser-candidate-${part.id}`,null,v=>{try{if(v===null)return true;const c=v as {key:string;part:EditPart;captionTrack?:CaptionTrack};if(typeof c.key!=='string'||c.part?.id!==part.id||draftIdentity(c.part.segments)!==draftIdentity(part.segments)||c.part.teaser?.status!=='selected'||!Array.isArray(c.part.teaser.limitations)||!Array.isArray(c.part.teaser.evidenceTimes))return false;validateTeaser(c.part,sourceDuration,sourceId);checkHookSpeechBoundaries(c.part.teaser,c.captionTrack?.cues||cues);return true;}catch{return false;}});
  const [applyAcknowledgement,setApplyAcknowledgement]=useState<{signature:string;revision:number}|null>(null);
  const audition=useRef<{pause:()=>void}|null>(null);
  const bindAudition=useCallback((control:{pause:()=>void}|null)=>{audition.current=control;},[]);
@@ -70,10 +70,10 @@ export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAudit
 
  const boundaryWarning=useMemo(()=>{const value=proposed?.teaser??part.teaser;return value?.status==='selected'?hookSpeechBoundaryWarning(value,cues):'';},[proposed?.teaser,part.teaser,cues]);
  const {rangeError,previewSeconds}=useMemo(()=>{let rangeError='',previewSeconds:number|undefined;
- try{if(draft?.key===identity&&!values.start&&!values.end)throw Error('Nhập đủ mốc bắt đầu/kết thúc teaser.');if(values.start||values.end){const start=sourceTimecodeValue(values.start,values.exactStart),end=sourceTimecodeValue(values.end,values.exactEnd);previewSeconds=(end-start)/PREVIEW_RATE;customTimestampPart(part,`${start}–${end}`,cues);}}
+ try{if(draft?.key===identity&&!values.start&&!values.end)throw Error('Nhập đủ mốc bắt đầu/kết thúc teaser.');if(values.start||values.end){const start=sourceTimecodeValue(values.start,values.exactStart),end=sourceTimecodeValue(values.end,values.exactEnd);previewSeconds=(end-start)/PREVIEW_RATE;customTimestampPart(part,`${start}–${end}`,cues,{id:sourceId,duration:sourceDuration});}}
  catch(e){rangeError=e instanceof Error?e.message:String(e);}
- return{rangeError,previewSeconds};},[values,part,cues,draft,identity]);
- useEffect(()=>{let current=true;request.current?.abort();audition.current?.pause();queueMicrotask(()=>{if(current){setBusy(false);setError('');}});return()=>{current=false;request.current?.abort();audition.current?.pause();};},[identity,sourceUrl]);
+ return{rangeError,previewSeconds};},[values,part,cues,draft,identity,sourceId,sourceDuration]);
+ useEffect(()=>{let current=true;request.current?.abort();audition.current?.pause();queueMicrotask(()=>{if(current){setBusy(false);setError('');}});return()=>{current=false;request.current?.abort();audition.current?.pause();};},[identity,sourceUrl,sourceId]);
  const draftMessage=!enabled?'':rangeError?`Teaser Part ${part.id}: ${rangeError}`:proposed?`Part ${part.id}: chọn và áp dụng một ứng viên phía trên trước khi xuất.`:busy?`Part ${part.id}: đang chọn teaser, chờ kết quả trước khi xuất.`:'';
  const report=useRef(onDraft);useEffect(()=>{report.current=onDraft;},[onDraft]);
  const rangeKey=hookRangeKey(part);
@@ -85,7 +85,7 @@ export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAudit
   inputRevision.current++;setApplyAcknowledgement(null);
   request.current?.abort();audition.current?.pause();setCandidate(null);setBusy(false);setError('');
   const nextTimes={...values,[boundary]:value,[boundary==='start'?'exactStart':'exactEnd']:undefined};setDraft({key:identity,times:nextTimes});
-  try{const start=sourceTimecodeValue(nextTimes.start,nextTimes.exactStart),end=sourceTimecodeValue(nextTimes.end,nextTimes.exactEnd),next=customTimestampPart(part,`${start}–${end}`,cues);setCandidate({key:identity,part:next});}
+  try{const start=sourceTimecodeValue(nextTimes.start,nextTimes.exactStart),end=sourceTimecodeValue(nextTimes.end,nextTimes.exactEnd),next=customTimestampPart(part,`${start}–${end}`,cues,{id:sourceId,duration:sourceDuration});setCandidate({key:identity,part:next});}
   catch{/* Incomplete/invalid edits stay draft; the saved teaser remains effective. */}
  }
  async function generate(){
@@ -98,15 +98,19 @@ export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAudit
    // projected input. Actual edits parse the entered source timecode exactly.
    const raw=inputDraft?(inputElement.current?.value??inputValue.current):(part.customTeaser?.input??inputElement.current?.value??inputValue.current);
    const parsed=parseCustomTeaser(raw);
-   if(parsed.mode==='timestamp'){const next=customTimestampPart(part,parsed.input,cues);setCandidate({key:identity,part:next});setDraft({key:identity,times:times(parsed.start,parsed.end)});return;}
+   if(parsed.mode==='timestamp'){const next=customTimestampPart(part,parsed.input,cues,{id:sourceId,duration:sourceDuration});setCandidate({key:identity,part:next});setDraft({key:identity,times:times(parsed.start,parsed.end)});return;}
    const {teaser,captionTrack}=await onResolve(parsed.input,controller.signal);if(controller.signal.aborted||request.current!==controller||revision!==inputRevision.current)return;
    if(teaser.status!=='selected')throw Error(explainInVietnamese(teaser.reason,'Không tìm thấy teaser phù hợp với mô tả; thiếu bằng chứng.'));
    setCandidate({key:identity,captionTrack,part:{...part,teaser,customTeaser:parsed.mode==='description'?{version:1,mode:'description',input:parsed.input}:undefined}});setDraft({key:identity,times:times(teaser.start,teaser.end)});
   }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:String(e));}
   finally{if(request.current===controller){request.current=null;setBusy(false);}}
  }
- const detailMessages=[...new Set([rangeError,error,...issues,(part.teaserNeedsReselection||hookNeedsReselection(part))?'Main đã đổi hoặc teaser nằm ngoài phạm vi hợp lệ.':'',part.teaser?.status==='unavailable'?part.teaser.reason:'',boundaryWarning].filter(Boolean))];
- const mainMessage=busy?'Đang chọn teaser…':applying?'Đang áp dụng…':rangeError?/vượt 9|dài.*9/i.test(rangeError)?'Teaser dài quá 9 giây.':'Mốc thời gian chưa hợp lệ.':error||issues.length||part.teaserNeedsReselection||hookNeedsReselection(part)?'Teaser cần cập nhật.':part.teaser?.status==='unavailable'?'Chưa chọn được teaser. Thử lại.':proposed?'Chọn phương án phía trên.':boundaryWarning?'Kiểm tra biên lời nói.':'';
+ const manualSelected=part.teaser?.status==='selected'&&part.teaser.selection==='manual';
+ const needsReselection=(!manualSelected&&part.teaserNeedsReselection)||hookNeedsReselection(part);
+ const warningTeaser=proposed?.teaser??part.teaser;
+ const manualContextWarning=warningTeaser?.status==='selected'&&warningTeaser.selection==='manual'&&!part.segments.some(r=>!r.isPadding&&warningTeaser.start>=r.start&&warningTeaser.end<=r.end)?'Đoạn ngoài Main; kiểm tra nội dung.':'';
+ const detailMessages=[...new Set([rangeError,error,...issues,needsReselection?'Main đã đổi hoặc teaser nằm ngoài phạm vi hợp lệ.':'',part.teaser?.status==='unavailable'?part.teaser.reason:'',manualContextWarning,boundaryWarning].filter(Boolean))];
+ const mainMessage=busy?'Đang chọn teaser…':applying?'Đang áp dụng…':rangeError?/vượt 9|dài.*9/i.test(rangeError)?'Teaser dài quá 9 giây.':'Mốc thời gian chưa hợp lệ.':error||issues.length||needsReselection?'Teaser cần cập nhật.':part.teaser?.status==='unavailable'?'Chưa chọn được teaser. Thử lại.':proposed?'Chọn phương án phía trên.':manualContextWarning|| (boundaryWarning?'Kiểm tra biên lời nói.':'');
  useEffect(()=>{
   if(!applyAcknowledgement)return;
   if(applyAcknowledgement.revision!==inputRevision.current){setApplyAcknowledgement(null);return;}
@@ -121,7 +125,7 @@ export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAudit
   finally{applyPending.current=false;setApplying(false);}
  }
  return <><section className="studio-teaser-editor min-w-0 space-y-2 text-xs" aria-label={`Teaser Part ${part.id}`}>
-  <div className="studio-teaser-header"><h4 className="font-semibold">Teaser {enabled&&(part.teaser?.status==='selected'&&!part.teaserNeedsReselection&&!hookNeedsReselection(part)?<span className="studio-connected" aria-label="Đã có teaser">✓</span>:<span className="studio-danger">· cần chọn</span>)}</h4>
+  <div className="studio-teaser-header"><h4 className="font-semibold">Teaser {enabled&&(part.teaser?.status==='selected'&&!needsReselection?<span className="studio-connected" aria-label="Đã có teaser">✓</span>:<span className="studio-danger">· cần chọn</span>)}</h4>
    <button type="button" role="switch" aria-checked={enabled} aria-label={`Bật teaser Part ${part.id}`} className="studio-control studio-teaser-toggle" onClick={()=>{request.current?.abort();audition.current?.pause();setBusy(false);setError('');onToggle(!enabled);}}>{enabled?'Đang bật · Tắt teaser':'Đang tắt · Bật teaser'}</button>
   </div>
   {!enabled&&<p className="studio-muted">Teaser đang tắt.</p>}

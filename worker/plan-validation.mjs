@@ -50,7 +50,7 @@ export function validatePlan(plan, source, {teasers = true} = {}) {
     previousPartEnd = previousEnd;
     for(const key of ['manualLocked','startTrimApplied','smartCutApplied'])if(part[key]!==undefined&&typeof part[key]!=='boolean')throw Error('Cờ trạng thái cut không hợp lệ.');
     if(part.teaserEnabled!==undefined&&typeof part.teaserEnabled!=='boolean')throw Error('Invalid teaser enabled flag.');
-    if(teasers){validateTeaser(part, source.duration);validateCustomTeaser(part);}
+    if(teasers){validateTeaser(part, source.duration,source.id);validateCustomTeaser(part);}
     validateMainRangeMetadata(part,source.duration);
     if(part.mainEdited&&(part.startTrimApplied!==true||part.smartCutApplied!==true))throw Error("Manual main ranges must bypass start trimming and Smart Cut.");
   }
@@ -59,7 +59,7 @@ export function validatePlan(plan, source, {teasers = true} = {}) {
 // Loading/editing/analyzing old plans intentionally remains validatePlan-only.
 export function validateRenderPlan(plan,source){
  const cues=effectiveCaptionTrack(plan,source)?.cues||[];
- requireBothTeasers(plan,source.duration,cues);
+ requireBothTeasers(plan,source.duration,cues,source.id);
  for(const part of plan.parts){
   const h=part.teaser;if(part.teaserEnabled===false||h?.status!=='selected'||!['ai','external-import'].includes(h.selection))continue;
   // V2 binds the relevant part transcript. The raw current transcript is checked

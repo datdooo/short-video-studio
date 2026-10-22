@@ -62,7 +62,7 @@ export function EditorRenderList({ query = "", jobs, stopping, deleting, deletin
               <button aria-label={`Xoá render ${job.plan?.originalTitle || job.id}`} title={active || cancelling ? "Huỷ render và chờ dừng hẳn trước khi xoá" : "Chuyển các part vào Thùng rác; giữ video gốc"} onClick={() => onDelete(job)} disabled={active || cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-300 active:scale-95 disabled:opacity-40">{removing ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />} {removing ? "Đang xoá…" : "Xoá"}</button>
             </div>
           </div>
-          <RenderProgress job={job}/>
+          <RenderProgress job={{...job,stopping:cancelling}}/>
           {job.error && <p className="mt-3 break-words text-xs text-red-300">{job.error}</p>}
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {job.plan?.parts.map((part) => {

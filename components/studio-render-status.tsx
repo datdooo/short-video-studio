@@ -6,8 +6,8 @@ export function StudioRenderStatus({job,submitting,canRender,hasPlan,blockedReas
  const running=job&&['queued','rendering'].includes(job.state);
  const reason=blockedReason||validation||(issues[0]?`Part ${issues[0].partId}: ${issues[0].reason}`:'')||(!hasPlan?'Chuẩn bị nguồn rồi Phân tích':'');
  return <>
-  <div className="studio-render-state" role="status">
-   {submitting?<span><Loader2 size={13} className="animate-spin"/>Đang gửi job…</span>:running?<RenderProgress job={job} compact/>:reason?<span className={hasPlan?'studio-warning':'studio-muted'}>{reason}</span>:job?.state==='error'?<span role="alert" className="studio-danger">{job.error||'Render lỗi'}</span>:job?.state==='cancelled'?<span>Đã hủy</span>:job?.state==='done'?<span className="studio-connected">Hoàn tất</span>:<span className="studio-muted">Sẵn sàng xuất 2 MP4</span>}
+  <div className="studio-render-state" role={running?undefined:'status'}>
+   {submitting?<span><Loader2 size={13} className="animate-spin"/>Đang gửi job…</span>:running?<RenderProgress job={{...job,stopping:stopping||job.stopping}} compact/>:reason?<span className={hasPlan?'studio-warning':'studio-muted'}>{reason}</span>:job?.state==='error'?<span role="alert" className="studio-danger">{job.error||'Render lỗi'}</span>:job?.state==='cancelled'?<span>Đã hủy</span>:job?.state==='done'?<span className="studio-connected">Hoàn tất</span>:<span className="studio-muted">Sẵn sàng xuất 2 MP4</span>}
    {reason&&job?.state==='error'&&<span role="alert" className="studio-danger">{job.error||'Render lỗi'}</span>}
    {!!issues.length&&hasPlan&&!running&&<span className="studio-part-fixes">{issues.map(issue=><button type="button" key={issue.partId} onClick={()=>onPart(issue.partId)} title={issue.reason}>Sửa Part {issue.partId}</button>)}</span>}
    {job?.resourceNotice&&<span className="studio-resource-notice" title={job.resourceNotice}>{job.resourceNotice}</span>}
