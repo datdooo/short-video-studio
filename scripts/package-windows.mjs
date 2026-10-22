@@ -48,14 +48,28 @@ async function download(url, filename, expected, algorithm = 'sha256', encoding 
   await writeFile(`${target}.partial`, bytes); await rename(`${target}.partial`, target);
   return target;
 }
-async function asset(repository, name, tag = 'latest') {
-  const metadata = await json(`https://api.github.com/repos/${repository}/releases/${tag === 'latest' ? 'latest' : `tags/${tag}`}`);
-  const entry = metadata.assets.find((item) => item.name === name);
-  if (!entry?.digest?.startsWith('sha256:')) throw new Error(`Missing upstream SHA256: ${repository}/${name}`);
-  const sha256 = entry.digest.slice(7);
-  const archive = await download(entry.browser_download_url, `${sha256.slice(0, 12)}-${name}`, sha256);
-  sources.push({ repository, tag: metadata.tag_name, url: entry.browser_download_url, sha256 });
-  return archive;
+async function asset(repository,name,tag='latest') {
+ let metadata,entry,metadataSource='github-api';
+ try{metadata=await json(`https://api.github.com/repos/${repository}/releases/${tag==='latest'?'latest':`tags/${tag}`}`);entry=metadata.assets.find(item=>item.name===name);}
+ catch(error){
+  if(!/\((403|429)\)/.test(String(error.message)))throw error;
+  // The public release page exposes the same per-asset digest. Restrict the
+  // match to one exact asset row; never substitute a locally computed digest.
+  let releaseTag=tag;
+  if(tag==='latest'){const page=await fetch(`https://github.com/${repository}/releases/latest`);if(!page.ok)throw Error('Official release page unavailable');releaseTag=decodeURIComponent(new URL(page.url).pathname.split('/releases/tag/')[1]||'');}
+  if(!releaseTag)throw Error('Official release tag missing');
+  const response=await fetch(`https://github.com/${repository}/releases/expanded_assets/${encodeURIComponent(releaseTag)}`);
+  if(!response.ok)throw Error('Official release asset metadata unavailable');
+  const html=await response.text(),href=`/${repository}/releases/download/${releaseTag}/${name}`;
+  const rows=html.split(/<li\b[^>]*>/).filter(row=>row.includes(`href="${href}"`));
+  if(rows.length!==1)throw Error(`Expected exactly one official asset row: ${name}`);
+  const digests=[...new Set(rows[0].split('</li>')[0].match(/sha256:[a-f0-9]{64}/g)||[])];
+  if(digests.length!==1)throw Error(`Missing or ambiguous official SHA256: ${name}`);
+  metadata={tag_name:releaseTag};entry={digest:digests[0],browser_download_url:`https://github.com${href}`};metadataSource='github-release-html';
+ }
+ if(!entry?.digest?.startsWith('sha256:'))throw Error(`Missing upstream SHA256: ${repository}/${name}`);
+ const sha256=entry.digest.slice(7),archive=await download(entry.browser_download_url,`${sha256.slice(0,12)}-${name}`,sha256);
+ sources.push({repository,tag:metadata.tag_name,url:entry.browser_download_url,sha256,metadataSource});return archive;
 }
 async function unzip(archive, label) {
   const destination = await mkdtemp(path.join(cache, `${label}-`));
