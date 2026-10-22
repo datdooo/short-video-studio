@@ -46,9 +46,7 @@ export function validatePlan(plan, source, {teasers = true} = {}) {
       }
       duration += end - start;
     }
-    if (plan.providerUsed && !["mock", "manual"].includes(plan.providerUsed) && duration / PLAYBACK_RATE <= 60) {
-      throw new Error(`Part ${partIndex + 1} phải trên 1 phút sau tua 1.25×; cần hơn 75 giây footage gốc. Yêu cầu AI bổ sung footage thật ở cuối (isPadding: true) nếu nội dung chính quá ngắn.`);
-    }
+    // Editorial duration is not a reason to reinsert filler or padding.
     previousPartEnd = previousEnd;
     for(const key of ['manualLocked','startTrimApplied','smartCutApplied'])if(part[key]!==undefined&&typeof part[key]!=='boolean')throw Error('Cờ trạng thái cut không hợp lệ.');
     if(part.teaserEnabled!==undefined&&typeof part.teaserEnabled!=='boolean')throw Error('Invalid teaser enabled flag.');
@@ -64,7 +62,10 @@ export function validateRenderPlan(plan,source){
  requireBothTeasers(plan,source.duration,cues);
  for(const part of plan.parts){
   const h=part.teaser;if(part.teaserEnabled===false||h?.status!=='selected'||!['ai','external-import'].includes(h.selection))continue;
-  const b=h.binding,key=plan.teaserTranscriptKey||b?.transcriptKey;
+  // V2 binds the relevant part transcript. The raw current transcript is checked
+  // by assertTeaserContexts at Apply/submission; immutable render snapshots keep
+  // that accepted digest and recheck their actual source-bound caption evidence.
+  const b=h.binding,key=b?.contextVersion===2?b.transcriptKey:plan.teaserTranscriptKey||b?.transcriptKey;
   if(b?.version!==1||b.sourceId!==source.id||!b.sourceFingerprint||b.transcriptKey!==key||b.contextKey!==createHash('sha256').update(teaserContextValue(part,source,cues,key)).digest('hex'))throw Object.assign(Error(`Part ${part.id}: teaser AI thiếu binding hoặc đã cũ so với source/main/phụ đề. Chọn lại bằng AI hoặc Custom Teaser.`),{code:'TEASER_REQUIRED',status:409});
  }
  validatePlan(plan,source);

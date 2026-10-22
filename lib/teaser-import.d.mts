@@ -4,7 +4,7 @@ export type ExternalChoice = {start:number|null;end:number|null;reason:string;re
 export type ExternalSelection = ExternalChoice & {alternatives:ExternalChoice[];model:string};
 export function externalHookSchema(winnerOnly?:boolean): object;
 export const externalHookInstructions: string;
-export function externalHookKey(source:MuseSource,part:EditPart,transcript:string,provider:string,model:string,selectionPolicy?:string):Promise<string>;
+export function externalHookKey(source:MuseSource,part:EditPart,transcript:string,provider:string,model:string,selectionPolicy?:string,contextVersion?:number):Promise<string>;
 export function attachExternalHooks(plan:EditPlan,selections:ExternalSelection[],source:MuseSource,transcript:string,provider:string,cues?:{start:number|null;end:number|null;text:string}[],request?:import('./teaser-context.mjs').SelectionRequest):Promise<EditPlan>;
 export function externalHooksCurrent(plan:EditPlan,source:MuseSource,transcript:string):Promise<boolean>;
 export function buildExternalHookOnlyPrompt(plan:EditPlan,source:MuseSource,transcript:string,requestId:string,cues?:{start:number;end:number;text:string}[]):string;

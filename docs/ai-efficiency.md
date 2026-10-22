@@ -1,4 +1,24 @@
-# Latest owner request: GPT-6 Luna + Faster (source only)
+# Current DEV source policy — 2026-10-22
+
+The latest owner pin is **gpt-6.1-sol / reasoning low for ALL video ChatGPT tasks**,
+including main, discovery/finalize, custom, retry/repair and Batch. No fallback to
+Luna/none. All these requests are text-only; no AI frame/JPEG/base64 preparation.
+OAuth SIWC sends neither service_tier nor max_output_tokens. Provider response,
+not a catalog label, determines confirmed capabilities/usage. No inference call,
+test, render or build was run in this source-edit pass; the fixed DEV app has not
+been updated. See [unified handoff](DEV-LOGIC-MAIN-TEXT-UX-2026-10-22.md).
+
+Everything below is chronological historical investigation, not current policy.
+Old Luna/Faster/image/minimum-duration statements must not be reapplied over the
+latest owner decisions or interpreted as current runtime verification.
+
+## Historical: GPT-6 Luna + Faster (superseded)
+
+Investigation 2026-10-21: local configuration is not runtime capability proof.
+Existing failed-request logs have no HTTP status/raw response; account/route
+support for gpt-6-luna + none + fast is UNCONFIRMED. See
+CHATGPT-RESPONSE-DIAGNOSIS-2026-10-21.md. Earlier documentation claims below must
+not be used as evidence that this particular OAuth route accepted the parameters.
 
 2026-10-21: fixed gpt-6-luna, reasoning.effort=none (lowest documented;
 Light is not a literal API effort). Owner subsequently explicitly requested Faster.

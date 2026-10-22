@@ -1,3 +1,4 @@
+import {originalCaptionTrack} from './caption-tracks.mjs';
 import { mkdir, mkdtemp, readFile, readdir, writeFile, rm, stat, open } from 'node:fs/promises';
 import path from 'node:path';
 import { homedir } from 'node:os';
@@ -44,7 +45,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
   }
   // Parse our numeric template only, never human logs, filenames or signed URLs.
   function progressReader(parsed) {
-    let pending = '';
+    let pending = '',lastBytes=0,lastAt=0,lastEmit=0;
     return chunk => {
       pending += String(chunk);
       const lines = pending.split(/\r?\n/); pending = lines.pop().slice(-8192);
@@ -58,7 +59,9 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
           const total = exact > 0 ? exact : estimate;
           const percent = Number.isFinite(downloaded) && downloaded >= 0 && Number.isFinite(total) && total > 0 ? Math.max(0, Math.min(100, downloaded / total * 100)) : null;
           const stream = value.video === 'none' ? 'audio' : value.video && value.video !== 'NA' && value.video !== 'null' ? (value.audio && value.audio !== 'none' && value.audio !== 'null' ? 'media' : 'video') : 'media';
-          emitProgress(parsed, { phase: 'download', percent, stream, estimated: !(exact > 0) });
+          const now=performance.now();if(downloaded<lastBytes){lastBytes=0;lastAt=now;}
+          const seconds=lastAt?(now-lastAt)/1000:0,speed=seconds>=.25&&downloaded>=lastBytes?(downloaded-lastBytes)/seconds:null;
+          if(now-lastEmit>=250||percent===100){emitProgress(parsed,{phase:'download',percent,stream,estimated:!(exact>0),downloadedBytes:Number.isFinite(downloaded)?downloaded:undefined,totalBytes:total>0?total:undefined,...(speed>0?{bytesPerSecond:speed,etaSeconds:total>downloaded?(total-downloaded)/speed:0}:{})});lastEmit=now;lastBytes=downloaded;lastAt=now;}
         } catch { /* Partial/malformed provider progress is not a source failure. */ }
       }
     };
@@ -187,11 +190,9 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     const info = JSON.parse(result.stdout);
     if (!info.title) throw new Error('No title found in player responses');
     if (operation === 'transcript') {
-      const manual = Object.keys(info.subtitles || {}).filter((name) => name !== 'live_chat');
-      const automatic = Object.keys(info.automatic_captions || {});
-      const preferred = /[\uac00-\ud7af]/.test(info.title) ? 'ko' : /[\u3040-\u30ff]/.test(info.title) ? 'ja' : info.language;
-      const selected = manual.find((name) => name === preferred) || automatic.find((name) => name === `${preferred}-orig`) || automatic.find((name) => name.endsWith('-orig')) || manual[0] || automatic[0];
-      info.vtt = ''; info.language = selected || preferred || '';
+      const speechLanguage=info.requested_formats?.find(f=>f.acodec&&f.acodec!=='none')?.language||info.language||'';
+      const track=originalCaptionTrack(info.subtitles,info.automatic_captions,speechLanguage),selected=track.id;
+      info.vtt='';info.spokenLanguage=track.language;info.captionLanguage=selected?track.language:'';info.captionTrackId=selected||'';info.captionWarning=track.warning||'';info.captionTranslated=false;
       if (selected) {
         await run(ytDlp, [...common, '--skip-download', '--write-subs', '--write-auto-subs', '--sub-langs', selected, '--sub-format', 'vtt', '-o', path.join(directory, 'transcript.%(ext)s'), parsed.url], { signal: bounded });
         const file = (await readdir(directory)).find((name) => name.endsWith('.vtt'));

@@ -1,8 +1,13 @@
+import {canonicalVideoInput,VIDEO_TEXT_INSTRUCTIONS,VIDEO_TEXT_VERSION} from '../lib/video-ai-input.mjs';
+import {createEditorSourceLeases} from './editor-source-leases.mjs';
+import {createRequestOriginPolicy} from './request-origin.mjs';
+import {createHistoryPersistence} from './history-persistence.mjs';
+import {providerError,readProviderOutput,safeProviderId} from './provider-response.mjs';
 import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
 import {assertTeaserContexts,selectionDigest,transcriptValue,teaserEvidenceValue} from '../lib/teaser-context.mjs';
 import {createMediaResources,createEditorMediaResources,balancedFfmpegArgs} from './media-resources.mjs';
-import {ANALYSIS_MODEL,ANALYSIS_SERVICE_TIER,lowestReasoning,reasoningCapabilities} from '../lib/ai-reasoning.mjs';
-import {withAiOperation,measureAiStage,aiEvent,aiMemo,beginAiRequest,safeUsage} from './ai-operation.mjs';
+import {ANALYSIS_MODEL,ANALYSIS_REASONING,videoReasoning,reasoningCapabilities} from '../lib/ai-reasoning.mjs';
+import {withAiOperation,measureAiStage,aiEvent,aiMemo,beginAiRequest} from './ai-operation.mjs';
 import {compactAiInput,AI_INPUT_INSTRUCTIONS} from './ai-input.mjs';
 import {prepareRangeInput} from './range-input.mjs';
 import{parseCustomTeaser}from"../lib/custom-teaser.mjs";
@@ -29,6 +34,7 @@ import {
 } from "node:fs";
 import {
   mkdir,
+  mkdtemp,
   lstat,
   chmod,
   readFile,
@@ -68,10 +74,9 @@ import { createLocalSignalAnalyzer } from "./local-signals.mjs";
 import { createMainContentSelector } from "./main-content.mjs";
 import { createSourceContextService, sourceContextFor, saveSourceContext } from "./source-context.mjs";
 import { createYouTubeDownloader } from "./youtube-downloader.mjs";
-import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth, localAuthOrigin } from "./chatgpt-auth-state.mjs";
+import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth } from "./chatgpt-auth-state.mjs";
 import { createChatGPTStore } from './chatgpt-store.mjs';
 import { createTeaserSelector } from "./teaser-selection.mjs";
-import { createHookFrameSampler } from './hook-frame-cache.mjs';
 import { TEASER_POLICY, presentationSegments, presentationDuration, partTransitionWindows, validateTeaser } from "../lib/teaser-hooks.mjs";
 import { detectScript, fontFamilyForStyle, listFonts } from "../lib/visual-style/fonts.mjs";
 import { DEFAULT_VISUAL_STYLE } from "../lib/visual-style/defaults.mjs";
@@ -90,6 +95,9 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
 const sourcesRoot = path.join(dataRoot, "sources");
 const port = Number(process.env.MEDIA_WORKER_PORT || 8787);
+const webPort=Number(process.env.PORT||(process.env.SHORTCUT_RUNTIME_PROFILE==='development'||port===8887?5273:5173));
+const requestOrigins=createRequestOriginPolicy({webPort,workerPort:port});
+const editorSourceLeases=createEditorSourceLeases();
 const host = "127.0.0.1";
 const jobs = new Map();
 const exportNameAllocator = createExportNameAllocator();
@@ -107,30 +115,31 @@ const pendingRenderSubmissions=new Map();
 let renderQueue=Promise.resolve();
 const exportBusy=()=>pendingRenderSubmissions.size>0||[...jobs.values()].some(j=>["queued","rendering"].includes(j.state)&&renderControllers.has(j.id));
 const batchHistoryPath = path.join(dataRoot, "batch-history.json");
-let historyWriteQueue = Promise.resolve();
-function persistBatchHistory({strict=false}={}) {
+const historyPersistence=createHistoryPersistence(batchHistoryPath);
+function persistBatchHistory({strict=false,immediate=false}={}) {
   const snapshot=JSON.stringify({batches:[...batches.values()],jobs:[...jobs.values()].filter(job=>job.origin==="editor"||[...batches.values()].some(batch=>batch.items.some(item=>!item.deleted&&(item.jobId===job.id||item.submissionId===job.id))))});
-  const write=historyWriteQueue.then(async()=>{await mkdir(dataRoot,{recursive:true});const temporary=`${batchHistoryPath}.tmp`;await writeFile(temporary,snapshot);await rename(temporary,batchHistoryPath);});
-  historyWriteQueue=write.catch(error=>console.error(`Queue history write failed: ${error.code||'IO_ERROR'}`));
-  return strict?write:historyWriteQueue;
+  const write=historyPersistence.save(snapshot,{strict:strict||immediate});
+  return strict?write:write.catch(error=>console.error(`Queue history write failed: ${error.code||'IO_ERROR'}`));
 }
 
 async function restoreBatchHistory() {
   try {
     const history = JSON.parse(await readFile(batchHistoryPath, "utf8"));
+    let normalized=false;
     for (const job of history.jobs || []) {
       if (!["done", "error", "cancelled"].includes(job.state)) {
-        job.state = "cancelled";
+        normalized=true;job.state = "cancelled";
         job.error = "App đã đóng trước khi xử lý xong. File đã hoàn tất vẫn được giữ.";
       }
       jobs.set(job.id, job);
     }
     for (const batch of history.batches || []) {
+      const before=JSON.stringify(batch);
       for(const item of batch.items||[])item.id ||= randomUUID();
-      restoreBatchPreparation(batch,jobs);
+      restoreBatchPreparation(batch,jobs);if(JSON.stringify(batch)!==before)normalized=true;
       batches.set(batch.id, batch);
     }
-    await importLegacyRenderHistory();
+    await importLegacyRenderHistory();if(normalized)await persistBatchHistory({strict:true});
   } catch (error) {
     if (error.code === "ENOENT") await importLegacyRenderHistory();
     else console.error(`Không đọc được lịch sử hàng đợi: ${error.message}`);
@@ -174,15 +183,16 @@ async function importLegacyRenderHistory() {
   if (recoveredItems.length) {
     const batch = { id: randomUUID(), items: recoveredItems };
     batches.set(batch.id, batch);
-    await persistBatchHistory();
+    await persistBatchHistory({strict:true});
   }
 }
 
 const batchPreparationQueue = createBatchSubmissionQueue({
-  batches, controllers: batchControllers, prepare: prepareBatch, onChange: persistBatchHistory,
+  batches, controllers: batchControllers, prepare: prepareBatch, onChange: ()=>persistBatchHistory({immediate:true}),
 });
 const legacyDataRoot = process.env.MEDIA_WORKER_LEGACY_DATA_DIR || path.join(homedir(), "Documents", "tiktok-edit", "short-video-studio", "worker-data");
 const mediaLibrary = createMediaLibrary({
+  editorInUse:({storageId,sourceId,kind})=>storageId==='current'&&kind==='original'&&editorSourceLeases.has(sourceId),
   roots: [
     { id: "current", label: "Dữ liệu app hiện tại", root: dataRoot },
     ...(process.env.MEDIA_WORKER_DISABLE_LEGACY === "1" || path.resolve(legacyDataRoot) === dataRoot ? [] : [{ id: "legacy", label: "Dữ liệu cũ trong Documents", root: legacyDataRoot }]),
@@ -206,7 +216,7 @@ const mediaLibrary = createMediaLibrary({
       if (item.kind === "parts") { job.deleted = true; job.outputs = []; }
       else job.outputs = job.outputs.filter((output) => output.url !== item.renderUrl);
     }
-    await persistBatchHistory();
+    await persistBatchHistory({strict:true});
   },
   onRestored: async (item) => {
     if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
@@ -230,7 +240,7 @@ const mediaLibrary = createMediaLibrary({
     for (const batch of batches.values()) for (const candidate of batch.items) {
       if (candidate.jobId === item.jobId && candidate.deleted) { delete candidate.deleted; candidate.state = "done"; candidate.error = null; restoredItemIds.push(candidate.id); }
     }
-    await persistBatchHistory();
+    await persistBatchHistory({strict:true});
     return { restoredItemIds, restoredUrls: outputs.map((output) => output.url) };
   },
 });
@@ -303,11 +313,11 @@ const versions = {
 
 function corsHeaders(request) {
   return {
-    "Access-Control-Allow-Origin": request.headers.origin || "*",
+    ...(requestOrigins.allowsOrigin(request.headers.origin)?{"Access-Control-Allow-Origin":request.headers.origin}:{}),
     "Access-Control-Allow-Methods": "GET, HEAD, POST, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, X-Filename, X-Catalog-Id, Range",
     "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
-    "Access-Control-Allow-Private-Network": "true",
+    ...(requestOrigins.allowsOrigin(request.headers.origin)?{"Access-Control-Allow-Private-Network":"true"}:{}),
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };
@@ -623,32 +633,16 @@ async function listChatGPTModels(credentials = null, signal) {
   return models;
 }
 
-function parseEventStreamBlock(block) {
-  const event = block.split(/\r?\n/).find((line) => line.startsWith("event:"))?.slice(6).trim();
-  const data = block.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
-  if (!data || data === "[DONE]") return { event, data: null };
-  try {
-    return { event, data: JSON.parse(data) };
-  } catch {
-    return { event, data: null };
-  }
-}
-
-function responseTextFromCompleted(response) {
-  return (response?.output || [])
-    .flatMap((item) => item.content || [])
-    .map((content) => content.text || "")
-    .join("");
-}
-
 async function analyzeWithChatGPTPlan(body, signal, content, reasoningPolicy) {
   signal?.throwIfAborted();
   const credentials = await activeChatGPTCredentials();
-  const model = ANALYSIS_MODEL;
-  if(body.model&&body.model!==model)throw new Error(`MODEL_UNAVAILABLE: App đã chốt ${model}; không tự chuyển model khác.`);
-  const reasoning=reasoningPolicy||lowestReasoning(model);
-  const finishRequest=beginAiRequest(model,reasoning,{...body.requestMetrics,requestedServiceTier:ANALYSIS_SERVICE_TIER}),requestStart=performance.now();
+  const model = body.model || ANALYSIS_MODEL;
+  if(model!==ANALYSIS_MODEL)throw new Error(`MODEL_UNAVAILABLE: App đã chốt ${model}; không tự chuyển model khác.`);
+  const reasoning=reasoningPolicy||videoReasoning();
+  if(reasoning.effort!==ANALYSIS_REASONING)throw Object.assign(Error('REASONING_CONFIGURATION: Phân tích video chỉ dùng low.'),{code:'REASONING_CONFIGURATION'});
+  const finishRequest=beginAiRequest(model,reasoning,{...body.requestMetrics,requestedServiceTier:"default"}),requestStart=performance.now();
   let providerMs;
+  const transport={endpoint:`${chatGPTResource}/responses`,responseKind:"not-received"};
   try {
   const response = await measureAiStage('provider',()=>fetch(`${chatGPTResource}/responses`, {
     signal,
@@ -661,10 +655,10 @@ async function analyzeWithChatGPTPlan(body, signal, content, reasoningPolicy) {
     body: JSON.stringify({
       model,
       reasoning: {effort:reasoning.effort},
-      service_tier:ANALYSIS_SERVICE_TIER,
       store: false,
       stream: true,
-      max_output_tokens: Math.max(1200, Math.min(9000, Number(body.maxTokens) || 4500)),
+      // SIWC HTTP contract explicitly forbids max_output_tokens. The generic
+      // provider's maxTokens hint must not leak onto this OAuth route.
       instructions: body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
       input: [{ role: "user", content: content || String(body.input || "") }],
       text: {
@@ -678,70 +672,24 @@ async function analyzeWithChatGPTPlan(body, signal, content, reasoningPolicy) {
     }),
   }));
   providerMs=Math.round(performance.now()-requestStart);
-  if (!response.ok || !response.body) {
-    const errorBody = await response.json().catch(() => ({}));
-    const code = errorBody.error?.code;
-    if (code === "subscription_sharing_usage_limit_exceeded") throw new Error("PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.");
-    if(response.status===400&&/service_tier|service tier|fast mode|priority processing/i.test(String(errorBody.error?.param||'')+' '+String(errorBody.error?.message||'')))throw Object.assign(new Error('FAST_MODE_UNSUPPORTED: Kết nối ChatGPT từ chối Faster; chưa bật thành công, không tự đổi model hoặc âm thầm chuyển chế độ.'),{status:400,code:'FAST_MODE_UNSUPPORTED'});
-    const configurationError=response.status===400&&/reasoning|effort/i.test(String(errorBody.error?.param||'')+' '+String(errorBody.error?.message||''));
-    const message = configurationError ? 'REASONING_CONFIGURATION: Kết nối từ chối mức reasoning thấp nhất đã gửi; chưa áp dụng, không tự tăng mức hoặc đổi model.' : response.status === 401 ? "AUTH_EXPIRED: ChatGPT session không còn hợp lệ. Hãy đăng nhập lại."
-      : response.status === 429 ? "RATE_LIMITED: ChatGPT đang giới hạn tạm thời."
-      : [404, 503].includes(response.status) ? "MODEL_UNAVAILABLE: Model chưa khả dụng."
-      : `ChatGPT request failed (${response.status}).`;
-    const retry = response.headers.get("retry-after");
-    throw Object.assign(new Error(message), { status: response.status, retryAfterMs: retry ? (/^\d+$/.test(retry) ? Number(retry) * 1000 : Math.max(0, Date.parse(retry) - Date.now())) : 1000 });
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let outputText = "";
-  let completed = false;
-  let actualReasoning=null,actualServiceTier=null,usage,responseModel;
-  let readStart;
-  const reading=()=>{if(readStart===undefined){readStart=performance.now();providerMs=Math.round(readStart-requestStart);aiEvent('reading');}};
-  const acceptBlock=block=>{
-      const parsed = parseEventStreamBlock(block);
-      const eventType = parsed.data?.type || parsed.event;
-      const meta=parsed.data?.response;
-      if(meta){if(['fast','priority','default','auto','flex','scale'].includes(meta.service_tier))actualServiceTier=meta.service_tier;usage=safeUsage(meta.usage)||usage;if(typeof meta.model==='string')responseModel=meta.model.slice(0,100);if(typeof meta.reasoning?.effort==='string')actualReasoning=meta.reasoning.effort.slice(0,20);}
-      if (eventType === "response.output_text.delta") {reading();outputText += parsed.data?.delta || "";}
-      if (eventType === "response.output_text.done" && !outputText) {reading();outputText = parsed.data?.text || "";}
-      if (eventType === "response.completed") {reading();completed = true;if (!outputText) outputText = responseTextFromCompleted(meta);}
-      if(eventType==='response.incomplete'){
-        if(meta?.incomplete_details?.reason==='content_filter')throw new Error('PROVIDER_CONTENT_FILTER: Provider không trả kết quả vì bộ lọc nội dung; không tự lặp yêu cầu.');
-        throw Object.assign(new Error('INVALID_RESPONSE_INCOMPLETE: ChatGPT chưa hoàn tất JSON trong giới hạn output; cần repair đúng bước.'),{code:'INVALID_RESPONSE_INCOMPLETE'});
-      }
-      if (eventType === "response.failed") {
-        const error=meta?.error||parsed.data?.error||{};
-        if(error.code==='subscription_sharing_usage_limit_exceeded')throw new Error('PLAN_LIMIT_REACHED: ChatGPT plan đã chạm giới hạn dùng cho app này.');
-        throw new Error('PROVIDER_RESPONSE_FAILED: ChatGPT không hoàn tất yêu cầu.');
-      }
-      if(outputText.length>1_000_000)throw new Error('INVALID_RESPONSE_SIZE: Kết quả AI vượt giới hạn đọc.');
-  };
-  try {
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    buffer = blocks.pop() || "";
-    for (const block of blocks) acceptBlock(block);
-    if(buffer.length>1_000_000)throw new Error('INVALID_RESPONSE_SIZE: Sự kiện AI vượt giới hạn đọc.');
-    if(done&&buffer.trim())acceptBlock(buffer);
-    if (done) break;
-  }
-  } finally { providerMs=readStart===undefined?Math.round(performance.now()-requestStart):providerMs;finishRequest({providerMs,readMs:readStart===undefined?0:Math.round(performance.now()-readStart),actualReasoning,actualServiceTier,...(responseModel?{responseModel}:{}),...(usage?{usage}:{})});await reader.cancel().catch(()=>{}); reader.releaseLock(); }
-  if (!completed) throw new Error("INVALID_RESPONSE: ChatGPT stream kết thúc trước response.completed.");
-  const cleaned = outputText.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  if(actualReasoning&&actualReasoning!==reasoning.effort)throw new Error('REASONING_CONFIGURATION: Provider trả mức reasoning khác yêu cầu; không coi là đã áp dụng mức thấp nhất.');
+  transport.httpStatus=response.status;
+  transport.requestId=safeProviderId(response.headers.get('x-request-id'))||safeProviderId(response.headers.get('request-id'));
+  // MIME and structural diagnostics are captured by the single body reader.
+  finishRequest(transport);
+  const readStart=performance.now();
+  transport.readStartedAt=readStart;
+  const {outputText,actualReasoning,actualServiceTier,usage,responseModel}=await readProviderOutput(response,transport,signal);
+  const {readStartedAt:ignoredReadStart,...safeTransport}=transport;void ignoredReadStart;finishRequest({...safeTransport,providerMs,readMs:Math.round(performance.now()-readStart),actualReasoning,actualServiceTier,...(responseModel?{responseModel}:{}),...(usage?{usage}:{})});
+  const cleaned = outputText.trim();
+  if(actualReasoning&&actualReasoning!==reasoning.effort)throw providerError('REASONING_CONFIGURATION',transport);
   try {
     const plan=await measureAiStage('validation',()=>JSON.parse(cleaned));
     finishRequest({status:'completed'});
-    return { plan, model, reasoning:{requested:reasoning.effort,actual:actualReasoning,source:reasoning.source}, serviceTier:{requested:ANALYSIS_SERVICE_TIER,actual:actualServiceTier}, usage };
+    return { plan, model, reasoning:{requested:reasoning.effort,actual:actualReasoning,source:reasoning.source}, serviceTier:{requested:"default",actual:actualServiceTier}, usage };
   } catch {
-    throw new Error("INVALID_RESPONSE: ChatGPT không trả về JSON edit plan hợp lệ.");
+    throw providerError('PROVIDER_OUTPUT_JSON_INVALID',transport);
   }
-  }catch(error){finishRequest({status:signal?.aborted?'cancelled':'error',providerMs:providerMs??Math.round(performance.now()-requestStart)});throw error;}
+  }catch(error){if(!signal?.aborted&&(!error.code||!(/^(PROVIDER_|MODEL_|REASONING_|FAST_|INVALID_RESPONSE_)/.test(error.code)))){transport.networkCode=safeProviderId(error.cause?.code||error.code);error=providerError(error.name==='TimeoutError'?'PROVIDER_TIMEOUT':'PROVIDER_NETWORK',transport,error);}const {readStartedAt,...safeTransport}=transport;finishRequest({...safeTransport,...(readStartedAt!==undefined?{readMs:Math.round(performance.now()-readStartedAt)}:{}),errorCode:error.code||'PROVIDER_CANCELLED',status:signal?.aborted?'cancelled':'error',providerMs:providerMs??Math.round(performance.now()-requestStart)});throw error;}
 }
 
 const sourceDigests = new Map();
@@ -755,29 +703,36 @@ async function hookSourceFingerprint(source, signal) {
   if (sourceDigests.size >= 32) sourceDigests.delete(sourceDigests.keys().next().value);
   sourceDigests.set(key, value); return value;
 }
-const hookFrames = createHookFrameSampler({root:path.join(dataRoot, 'cache', 'hook-frames'), ffmpeg, run, fingerprint:hookSourceFingerprint});
-async function resolveEditingProvider(signal) {
-  return aiMemo('editing-provider',async()=>{
+async function resolveEditingProvider(signal,task='main') {
+  return aiMemo('editing-provider:'+task,async()=>{
     signal?.throwIfAborted();
-    const model=ANALYSIS_MODEL,reasoning=lowestReasoning(model);
+    const model=ANALYSIS_MODEL;
+    let reasoning;
+    if(task==='teaser'){
+      const models=await listChatGPTModels(null,signal),entry=models.find(item=>item.slug===model);
+      if(!entry)throw Object.assign(Error('MODEL_UNAVAILABLE: Catalog tài khoản không có gpt-6.1-sol; không tự đổi model.'),{code:'MODEL_UNAVAILABLE'});
+      if(entry.supported_reasoning_efforts&&!entry.supported_reasoning_efforts.includes('low'))throw Object.assign(Error('REASONING_CONFIGURATION: Catalog không cho phép low cho gpt-6.1-sol.'),{code:'REASONING_CONFIGURATION'});
+      reasoning={effort:'low',source:entry.supported_reasoning_efforts?'model-metadata':'owner-pin-low-catalog-model-confirmed',key:videoReasoning().key};
+    }else reasoning=videoReasoning();
     // Explicit owner pin: no model-list ordering or extra discovery request.
     // Existing credential checks and provider capability errors occur on the
     // real request. Unsupported/unavailable never falls back to another model.
     return { id: "chatgpt", model, reasoningPolicyKey:reasoning.key, reasoning:reasoning.effort, analyze: async ({ input, images=[], schema, instructions, signal, maxTokens }) => {
-      const packed=compactAiInput(input),serializedInput=packed.text;
-      const content = [{ type: "input_text", text: serializedInput }, ...images.flatMap((f) => [{ type: "input_text", text: `Source frame at ${f.time.toFixed(3)} seconds${f.partId?" in Part "+f.partId:""}${f.candidateId?" for "+f.candidateId:""}. Sparse still only.` }, { type: "input_image", image_url: `data:image/jpeg;base64,${f.data}`, detail: "low" }])];
-      const requestMetrics={phase:input.phase||'select-main',inputCharacters:serializedInput.length,rawInputCharacters:packed.rawCharacters,inputFormat:packed.format,imageCount:images.length,partCount:Array.isArray(input.parts)?input.parts.length:input.partId?1:0};
-      const result = await analyzeWithChatGPTPlan({ model, schema, instructions:packed.encoded?AI_INPUT_INSTRUCTIONS+'\n'+(instructions||'You are a precise source-accurate video editor.'):instructions, maxTokens,requestMetrics }, signal, content,reasoning);
+      if(images.length)throw Object.assign(Error('VIDEO_TEXT_ONLY: đường phân tích không nhận ảnh.'),{code:'VIDEO_TEXT_ONLY'});
+      const canonical=canonicalVideoInput(input),packed=compactAiInput(canonical.value),serializedInput=packed.text;
+      const content=[{type:'input_text',text:serializedInput}];
+      const requestMetrics={phase:input.phase||'select-main',inputCharacters:serializedInput.length,rawInputCharacters:JSON.stringify(input).length,inputFormat:packed.format,imageCount:0,dataCounts:canonical.counts,dataAvailability:canonical.availability,textContract:VIDEO_TEXT_VERSION,partCount:Array.isArray(input.parts)?input.parts.length:input.partId?1:0,...(input.partId?{partId:input.partId}:{}),inputIntegrity:packed.encoded?"roundtrip-verified":"original-json"};
+      const result = await analyzeWithChatGPTPlan({ model, schema, instructions:VIDEO_TEXT_INSTRUCTIONS+'\n'+(packed.encoded?AI_INPUT_INSTRUCTIONS+'\n':'')+(instructions||'You are a precise source-accurate video editor.'), maxTokens,requestMetrics }, signal, content,reasoning);
       return { value: result.plan };
     } };
   });
 }
-const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider });
+const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, resolveProvider: signal=>resolveEditingProvider(signal,'teaser') });
 const musicLibrary=createMusicLibrary({root:path.join(dataRoot,"music"),ffmpeg,ffprobe,run});
 const musicSpeech=createMusicSpeech({root:path.join(dataRoot,"cache","music-speech"),ffmpeg,run,fingerprint:hookSourceFingerprint,protectedKeys:protectedAnalysisKeys,resources:mediaResources});
 const musicPreview=createMusicPreview({root:path.join(dataRoot,"cache","music-preview"),ffmpeg,run,musicLibrary,musicSpeech,fingerprint:hookSourceFingerprint,resources:mediaResources});
 const localSignals = createLocalSignalAnalyzer({ ffmpeg, run, fingerprint: hookSourceFingerprint, cacheRoot:path.join(dataRoot,"cache","local-signals"), protectedKeys:protectedAnalysisKeys });
-const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, frames: hookFrames, resolveProvider: resolveEditingProvider, protectedKeys:protectedAnalysisKeys });
+const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, resolveProvider: resolveEditingProvider, protectedKeys:protectedAnalysisKeys });
 
 function protectedAnalysisKeys() {
   const keys=new Set();
@@ -791,8 +746,8 @@ function protectedAnalysisKeys() {
 
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
-const processBatch = createBatchProcessor({acquire:importYouTube,load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
-const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers});
+const processBatch = createBatchProcessor({acquire:async(url,signal,onProgress)=>{const stop=youtube.subscribeProgress(url,onProgress);try{return await importYouTube(url,signal);}finally{stop();}},load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
+const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers});
 const analyzeSource=(source,body,signal)=>withAiOperation('generate',()=>autoCutWorkflow(source,body,signal));
 
 async function mainAnalysisInputs(source, body, signal) {
@@ -822,7 +777,7 @@ async function mainAnalysisInputs(source, body, signal) {
   }
   const track=selectionCaptionTrack({captionCues:body.captionCues||body.currentPlan?.captionCues},source,body.transcript||source.transcript,
     cues.length?{sourceId:source.id,cues,origin:'cached-caption'}:undefined);
-  return { context, options: { cues:track.cues, boundaryCues:track.cues, captionTrack:track, local, currentPlan:body.currentPlan, instruction:String(body.instruction || '').slice(0,6000), supplementalPrompt:String(body.supplementalPrompt || '').slice(0,6000), signal } };
+  return { context, options: { cues:track.cues, boundaryCues:track.cues, captionTrack:track, local, currentPlan:body.currentPlan, transcript:String(body.transcript??source.transcript??''),instruction:String(body.instruction || ''), supplementalPrompt:String(body.supplementalPrompt || ''), signal } };
 
 }
 
@@ -842,8 +797,8 @@ async function planTeasers(plan, source, signal, transcript, selectionOptions = 
   const sourceInput={...source,transcript:transcriptValue(transcript??source.transcript)};
   const track=selectionCaptionTrack(plan,sourceInput,sourceInput.transcript,cached);
   const cues=track.cues;
-  sourceInput.captionProvenance={origin:track.origin,timing:track.timing||'cue'};
-  sourceInput.selectionRequest={instruction:String(selectionOptions.instruction||'').slice(0,6000),supplementalPrompt:String(selectionOptions.supplementalPrompt||'').slice(0,6000)};
+  sourceInput.captionProvenance={origin:track.origin,timing:track.timing||'cue',language:track.language||'unknown',trackId:track.trackId||null,warning:track.warning||null};
+  sourceInput.selectionRequest={instruction:String(selectionOptions.instruction||''),supplementalPrompt:String(selectionOptions.supplementalPrompt||'')};
   plan={...plan,captionCues:track};
 
   const context = source.sourceContext;
@@ -1083,8 +1038,8 @@ async function fetchYouTubeTranscript(url, signal) {
     title: String(info.title || "YouTube video"),
     sourceContext: youtube.peekContext(url),
     transcript: vttToTranscript(info.vtt || ""), captions: parseCaptions(info.vtt || ""),
-    language: info.language || "",
-    message: info.vtt ? "" : "YouTube không cung cấp phụ đề cho video này. Có thể dùng Manual cut hoặc Auto Subtitle.",
+    language:info.spokenLanguage||'',captionLanguage:info.captionLanguage||'',captionTrackId:info.captionTrackId||'',captionTranslated:info.captionTranslated===true,captionWarning:info.captionWarning||'',
+    message:info.captionWarning||(info.vtt?"":"YouTube không cung cấp phụ đề gốc phù hợp; có thể chọn Whisper."),
   };
 }
 
@@ -1106,7 +1061,7 @@ async function downloadYouTubeSource(url, signal) {
         sourceContext, id, kind: "youtube", title: String(info.title || "YouTube video"), sourceUrl: `https://www.youtube.com/watch?v=${parsed.id}`,
         originalFilename: filename, ...media, transcript: captions.transcript || "",
         transcriptMessage: captions.message || "", captions: captions.captions || [],
-        language: captions.language || info.language || "", subtitleFound: Boolean(captions.transcript),
+        language:captions.language||info.language||'',captionLanguage:captions.captionLanguage||'',captionTrackId:captions.captionTrackId||'',captionTranslated:captions.captionTranslated===true,captionWarning:captions.captionWarning||'',subtitleFound: Boolean(captions.transcript),
         subtitleFile: null, youtubeVideoId: parsed.id, createdAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -1115,40 +1070,46 @@ async function downloadYouTubeSource(url, signal) {
   }, signal);
 }
 
-async function importUpload(request, url) {
-  const rawFilename = request.headers["x-filename"] || url.searchParams.get("filename") || "source.mp4";
-  const filename = safeName(decodeURIComponent(String(rawFilename)));
-  const extension = path.extname(filename).toLowerCase() || ".mp4";
-  if (![".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"].includes(extension)) {
-    throw new Error("Chỉ nhận MP4, MOV, MKV, WebM, M4V hoặc AVI.");
+async function importUpload(request, url, response) {
+  const rawFilename=request.headers['x-filename']||url.searchParams.get('filename')||'source.mp4';
+  const filename=safeName(decodeURIComponent(String(rawFilename))),extension=path.extname(filename).toLowerCase()||'.mp4';
+  if(!['.mp4','.mov','.mkv','.webm','.m4v','.avi'].includes(extension))throw Error('Chỉ nhận MP4, MOV, MKV, WebM, M4V hoặc AVI.');
+  const controller=new AbortController(),signal=controller.signal;
+  const abort=()=>controller.abort(new Error('Đã dừng import video.'));
+  const disconnected=()=>{if(!response.writableEnded)abort();};
+  request.once('aborted',abort);response.once('close',disconnected);
+  if(request.aborted||response.destroyed)abort();
+  let directory,owner,published=false;
+  try{
+    const uploadBytes=Number(request.headers['content-length']);
+    await requireDiskSpace(dataRoot,(Number.isFinite(uploadBytes)&&uploadBytes>0?uploadBytes:512*1024*1024)+256*1024*1024);
+    signal.throwIfAborted();
+    // Catalog/reuse only accepts UUID directories. An unfinished upload is never
+    // visible as a usable source, even after its media file has been renamed.
+    directory=await mkdtemp(path.join(sourcesRoot,'.upload-work-'));
+    owner=await lstat(directory);signal.throwIfAborted();
+    const temporaryPath=path.join(directory,`upload${extension}.partial`),mediaPath=path.join(directory,`source${extension}`);
+    await pipeline(request,createWriteStream(temporaryPath,{flags:'wx'}),{signal});
+    signal.throwIfAborted();await rename(temporaryPath,mediaPath);signal.throwIfAborted();
+    const media=await probeMedia(mediaPath,signal);signal.throwIfAborted();
+    const id=randomUUID(),source={id,kind:'upload',title:path.basename(filename,extension),originalFilename:filename,
+      duration:media.duration,width:media.width,height:media.height,hasAudio:media.hasAudio,
+      transcript:'',subtitleFound:false,subtitleFile:null,createdAt:new Date().toISOString()};
+    source.sourceContext=sourceContextFor(source);
+    await saveSourceMetadata(directory,source);signal.throwIfAborted();
+    const destination=path.join(sourcesRoot,id);
+    try{await lstat(destination);throw Object.assign(Error('Source ID đã tồn tại; không ghi đè.'),{status:409});}catch(error){if(error.code!=='ENOENT')throw error;}
+    signal.throwIfAborted();await rename(directory,destination);
+    // Publication is the commit point. A disconnect after this atomic rename
+    // must not delete a complete source another operation may already open.
+    published=true;return source;
+  }finally{
+    request.removeListener('aborted',abort);response.removeListener('close',disconnected);
+    if(directory&&owner&&!published)try{
+      const current=await lstat(directory);
+      if(current.isDirectory()&&!current.isSymbolicLink()&&current.dev===owner.dev&&current.ino===owner.ino)await rm(directory,{recursive:true,force:false});
+    }catch(error){if(error.code!=='ENOENT')console.error(`Upload scratch cleanup failed: ${error.code||'IO_ERROR'}`);}
   }
-  const id = randomUUID();
-  const directory = path.join(sourcesRoot, id);
-  await mkdir(directory, { recursive: true });
-  const temporaryPath = path.join(directory, `upload${extension}.partial`);
-  const mediaPath = path.join(directory, `source${extension}`);
-  const uploadBytes=Number(request.headers['content-length']);
-  await requireDiskSpace(dataRoot,(Number.isFinite(uploadBytes)&&uploadBytes>0?uploadBytes:512*1024*1024)+256*1024*1024);
-  try{await pipeline(request, createWriteStream(temporaryPath, { flags: "wx" }));}
-  catch(error){await rm(temporaryPath,{force:true});throw error;}
-  await rename(temporaryPath, mediaPath);
-  const media = await probeMedia(mediaPath);
-  const source = {
-    id,
-    kind: "upload",
-    title: path.basename(filename, extension),
-    originalFilename: filename,
-    duration: media.duration,
-    width: media.width,
-    height: media.height,
-    hasAudio: media.hasAudio,
-    transcript: "",
-    subtitleFound: false,
-    subtitleFile: null,
-    createdAt: new Date().toISOString(),
-  };
-  source.sourceContext = sourceContextFor(source);
-  return saveSourceMetadata(directory, source);
 }
 
 function fontFamilyFor(text, font = "auto") {
@@ -1268,7 +1229,7 @@ async function loadSource(sourceId, signal) {
   const metadata = JSON.parse(await readFile(path.join(directory, "source.json"), "utf8"));
   const mediaPath = await findSourceMedia(directory);
   const media = await probeMedia(mediaPath, signal);
-  const source = { ...metadata, ...media, directory, mediaPath };
+  const source = { ...metadata, ...media, directory, mediaPath,...(metadata.captions?.length&&!metadata.captionTrackId?{captionWarning:'Phụ đề nguồn cũ chưa xác minh ngôn ngữ; chọn Whisper nếu không đúng tiếng nguồn.'}:{}) };
   return { ...source, sourceContext: sourceContextFor(source) };
 }
 
@@ -1448,7 +1409,8 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     if(musicAsset){const input=args.filter(a=>a==="-i").length;args.push("-stream_loop","-1","-i",musicAsset.file);renderFilters.push(...musicMixFilters({input,settings:musicSettings,part,activity:plan.musicSpeech,duration:presentationDuration(part)/PLAYBACK_RATE}));}
     await writeFile(filterGraphPath,renderFilters.join(";"),{mode:0o600});
     args.push(
-      "-filter_complex_script", filterGraphPath,
+      // FFmpeg 9 reads argument files with -/option; keep large graphs off argv.
+      "-/filter_complex", filterGraphPath,
       "-map", "[vout]",
       "-map", "[aout]",
       // OUTPUT scope, after all -i inputs and before the output filename.
@@ -1569,19 +1531,21 @@ async function executeRender(job, source, plan, signal) {
       }
       await sharp(pixels, { raw: { width: 1080, height: 1920, channels: 3 } }).png().toFile(backgroundAsset);
     }
+    const outputDurations=plan.parts.map(part=>presentationDuration(part)/PLAYBACK_RATE),totalOutputSeconds=outputDurations.reduce((a,b)=>a+b,0);let completedSeconds=0;
+    job.totalOutputSeconds=totalOutputSeconds;
     for (const [index, part] of plan.parts.entries()) {
       signal?.throwIfAborted();
       const finalDirectory=path.join(outputDirectory,`part-${part.id}`);
       const prior=job.outputs.find(o=>o.part===part.id)||await recoverPublication({directory:finalDirectory,filename:exportNames[index],sourceId:source.id,jobId:job.id,partId:part.id,metadataPolicy:EXPORT_METADATA_POLICY});
       const completed=await verifiedRenderOutput({file:path.join(outputDirectory,`part-${part.id}`,exportNames[index]),filename:exportNames[index],record:prior,sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
-      if(completed){if(!job.outputs.some(o=>o.part===part.id))job.outputs.push(completed);job.progress=Math.round((index+1)/plan.parts.length*100);await persistBatchHistory({strict:true});continue;}
+      if(completed){if(!job.outputs.some(o=>o.part===part.id))job.outputs.push(completed);completedSeconds+=outputDurations[index];job.outputSeconds=completedSeconds;job.progress=Math.min(99,Math.floor(completedSeconds/totalOutputSeconds*100));await persistBatchHistory({strict:true});continue;}
       // An existing unrecorded/legacy/corrupt file is never overwritten or
       // adopted as a clean export. Keep it and require a separate new job.
       const existingFile=path.join(outputDirectory,`part-${part.id}`,exportNames[index]);
       const existingOutput=await lstat(existingFile).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
       if(existingOutput)throw new Error('MP4 đã tồn tại nhưng không đủ bằng chứng chính sách metadata hiện tại. Xuất thành job mới; không ghi đè/xóa file cũ.');
       job.outputs=job.outputs.filter(o=>o.part!==part.id);
-      job.currentPart = part.id;
+      job.currentPart = part.id;job.phase='rendering';
       const filename = exportNames[index];
       const partDirectory = path.join(scratch.root, `part-${part.id}`);
       await mkdir(partDirectory, { recursive: true });
@@ -1597,13 +1561,16 @@ async function executeRender(job, source, plan, signal) {
         signal,
         onEncoder:(encoder,fallback)=>{job.encoder=encoder;job.encoderFallback=fallback;job.resourceNotice=encoder==='libx264'?(fallback?'VideoToolbox lỗi; chuyển CPU · giới hạn 2 luồng.':'CPU · giới hạn 2 luồng (VideoToolbox chưa khả dụng).'):'Apple VideoToolbox · Balanced M2';void persistBatchHistory();},
         onProgress: (partProgress) => {
-          job.progress = Math.round(((index + partProgress) / plan.parts.length) * 100);
+          job.outputSeconds=completedSeconds+partProgress*outputDurations[index];
+          job.progress=Math.max(job.progress||0,Math.min(99,Math.floor(job.outputSeconds/totalOutputSeconds*100)));
         },
       });
       signal?.throwIfAborted();
+      job.phase='validating';
       const outputStat = await stat(outputPath);
       const checked=await verifiedRenderOutput({file:outputPath,filename,record:{filename,size:outputStat.size,metadataPolicy:EXPORT_METADATA_POLICY},sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
       if(!checked)throw Error('MP4 chưa đạt geometry/duration/audio contract; chưa publish, có thể Resume part này.');
+      job.phase='publishing';
       await publishRender({staging:outputPath,directory:finalDirectory,filename,sourceId:source.id,jobId:job.id,partId:part.id,metadataPolicy:EXPORT_METADATA_POLICY,signal});
       job.outputs.push({
         part: part.id,
@@ -1612,7 +1579,7 @@ async function executeRender(job, source, plan, signal) {
         metadataPolicy: EXPORT_METADATA_POLICY,
         url: `/files/${source.id}/outputs/${job.id}/part-${part.id}/${encodeURIComponent(filename)}`,
       });
-      await persistBatchHistory({strict:true});
+      await persistBatchHistory({strict:true});completedSeconds+=outputDurations[index];
     }
     job.progress = 100;
     job.state = "done";
@@ -1674,7 +1641,8 @@ async function prepareRenderSubmission(body, parentSignal, fingerprint) {
     createdAt: new Date().toISOString(),
   };
   jobs.set(job.id, job);
-  if(body.submissionId)await persistBatchHistory({strict:true});else void persistBatchHistory();
+  try{await persistBatchHistory({strict:true});}
+  catch(error){job.state='error';job.error='Không lưu được lịch sử job; chưa bắt đầu render.';job.finishedAt=new Date().toISOString();throw error;}
   enqueueRender(job,source,renderPlan,parentSignal);
   return job;
 }
@@ -1704,21 +1672,23 @@ function enqueueRender(job,source,renderPlan,parentSignal){
     if(renderControllers.get(job.id)!==controller)return;
     job.state = controller.signal.aborted?"cancelled":"error";
     job.error = controller.signal.aborted?null:error instanceof Error ? error.message : String(error);job.finishedAt=new Date().toISOString();
-  }).finally(() => {
-    if(renderControllers.get(job.id)===controller){
+  }).finally(async () => {
+    try{if(renderControllers.get(job.id)===controller){
       renderControllers.delete(job.id);job.phase=null;
-      void persistBatchHistory();
-    }
-    detachParent();renderParentCleanup.delete(controller);startedRenderControllers.delete(controller);
+      await persistBatchHistory({strict:true});
+    }}finally{detachParent();renderParentCleanup.delete(controller);startedRenderControllers.delete(controller);}
   });
-  renderQueue=task.catch(()=>{});
+  renderQueue=task.catch(error=>console.error(`Render final history write failed: ${error.code||'IO_ERROR'}`));
 }
 async function resumeRender(job,parentSignal){
   requireCurrentExportPolicy(job);
   if(!['error','cancelled'].includes(job.state)||renderControllers.has(job.id))throw new Error('Render still active or already complete; no duplicate submission.');
   if(mediaLibrary.isLocked(job.sourceId))throw new Error('Source is in use/trash.');
-  const source=await loadSource(job.sourceId,parentSignal);validateRenderPlan(job.plan,source);await verifySourceTeasers(job.plan,source,parentSignal);job.state='queued';job.error=null;
-  await persistBatchHistory({strict:true});enqueueRender(job,source,structuredClone(job.plan),parentSignal);return job;
+  const source=await loadSource(job.sourceId,parentSignal);validateRenderPlan(job.plan,source);await verifySourceTeasers(job.plan,source,parentSignal);
+  const previous={state:job.state,error:job.error,attempt:job.attempt,progress:job.progress,outputSeconds:job.outputSeconds};
+  job.state='queued';job.error=null;job.attempt=(job.attempt||1)+1;job.progress=0;job.outputSeconds=0;
+  try{await persistBatchHistory({strict:true});}catch(error){Object.assign(job,previous);throw error;}
+  enqueueRender(job,source,structuredClone(job.plan),parentSignal);return job;
 }
 
 function cancelRender(job) {
@@ -1735,7 +1705,7 @@ function cancelRender(job) {
     renderControllers.delete(job.id);job.phase=null;
     renderParentCleanup.get(controller)?.();renderParentCleanup.delete(controller);
   }
-  void persistBatchHistory();
+  void persistBatchHistory({immediate:true});
 }
 
 function renderSnapshot(job) {
@@ -1757,7 +1727,6 @@ function batchSnapshot(batch) {
     const job = item.jobId ? jobs.get(item.jobId) : null;
     return { ...item, state: job?.state || item.state, error: job?.error || item.error, job };
   });
-  void persistBatchHistory();
   return { id: batch.id, items, finished: items.every((item) => ["done", "error", "cancelled", "paused", "awaiting-import", "review-required"].includes(item.state)) };
 }
 
@@ -1850,22 +1819,18 @@ await mkdir(sourcesRoot, { recursive: true });
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", `http://${host}:${port}`);
   try {
-    if (requestUrl.pathname.startsWith("/api/chatgpt/") && !localAuthOrigin(request.headers.origin)) {
-      sendJson(request, response, 403, { error: "Phiên ChatGPT chỉ dùng từ app local." }); return;
+    requestOrigins.assert(request,requestUrl.pathname);
+    if(request.method==='OPTIONS'){
+      response.writeHead(204,corsHeaders(request));response.end();return;
     }
-    if (request.method === "OPTIONS") {
-      response.writeHead(204, corsHeaders(request));
-      response.end();
-      return;
+    const rawUpload=['/api/sources/upload','/api/music/import'].includes(requestUrl.pathname);
+    const bodyPresent=Number(request.headers['content-length'])>0||Boolean(request.headers['transfer-encoding']);
+    if(!rawUpload&&!['GET','HEAD'].includes(request.method)&&bodyPresent&&request.headers['content-type']?.split(';')[0].trim()!=='application/json'){
+      sendJson(request,response,415,{error:'Thao tác này yêu cầu JSON từ app.'});return;
     }
-    if (requestUrl.pathname.startsWith("/api/music") || requestUrl.pathname.endsWith("/music-speech") || requestUrl.pathname.startsWith("/api/storage") || requestUrl.pathname.startsWith("/api/speech") || /^\/api\/sources\/[^/]+\/(captions|smart-cut|teaser-hooks|auto-cut)$/.test(requestUrl.pathname) || (request.method === "DELETE" && requestUrl.pathname.startsWith("/api/editor-renders/"))) {
-      const origin = request.headers.origin;
-      let local = !origin;
-      try { const url = new URL(origin); local = url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname); } catch { /* Missing/native origin only. */ }
-      if (!local) { sendJson(request, response, 403, { error: "Kho video chỉ cho phép thao tác từ app local trên máy này." }); return; }
-      if (requestUrl.pathname!=="/api/music/import" && ["POST", "DELETE"].includes(request.method) && request.headers["content-type"]?.split(";")[0].trim() !== "application/json") {
-        sendJson(request, response, 415, { error: "Thao tác kho video yêu cầu JSON từ app." }); return;
-      }
+    if(request.method==='POST'&&requestUrl.pathname==='/api/editor/source-lease'){
+      const body=await readJson(request,4096);
+      sendJson(request,response,200,editorSourceLeases.retain(body,id=>mediaLibrary.isLocked(id)));return;
     }
     if (request.method === "GET" && requestUrl.pathname === "/health") {
       sendJson(request, response, 200, {
@@ -2026,7 +1991,7 @@ const server = createServer(async (request, response) => {
       try{source=await loadSource(speechSource[1],loading.signal);}finally{response.removeListener('close',abortLoading);}
       if (speechSource[2] === "captions") {
         const controller=new AbortController(),abort=()=>controller.abort(new Error("Caption client disconnected"));response.once("close",abort);
-        try{sendJson(request,response,200,await speech.captions(source,controller.signal,{regenerate:body.regenerate===true,provider:body.provider||'auto'}));}
+        try{sendJson(request,response,200,await speech.captions(source,controller.signal,{regenerate:body.regenerate===true,provider:body.provider||'auto',language:body.language||'auto'}));}
         finally{response.removeListener("close",abort);}return;
       }
       validatePlan(body.plan, source, {teasers:false});
@@ -2060,7 +2025,7 @@ const server = createServer(async (request, response) => {
       finally{response.removeListener("close",abort);}return;
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/sources/upload") {
-      const source = await importUpload(request, requestUrl);
+      const source = await importUpload(request, requestUrl, response);
       sendJson(request, response, 201, { source });
       return;
     }
@@ -2122,6 +2087,7 @@ const server = createServer(async (request, response) => {
         sendJson(request, response, error.status, { error: error.message });
         return;
       }
+      await persistBatchHistory({strict:true});
       sendJson(request, response, 202, { batch: batchSnapshot(batch) });
       return;
     }
@@ -2150,7 +2116,7 @@ const server = createServer(async (request, response) => {
       item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
       item.transcript=String(body.transcript||source.transcript||'');
       item.approved=true;item.needsAnalysis=false;item.needsTeasers=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
-      await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
+      await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);await persistBatchHistory({strict:true});sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
     }
     const deleteBatchItemMatch = requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})$/i);
     if (request.method === "DELETE" && deleteBatchItemMatch) {
@@ -2160,6 +2126,7 @@ const server = createServer(async (request, response) => {
         const item = batch.items.find((item) => item.id === deleteBatchItemMatch[2]);
         if (mediaLibrary.isLocked(item?.sourceId || jobs.get(item?.jobId)?.sourceId)) throw Object.assign(new Error("Video đang được xử lý trong Thùng rác. Thử lại sau."), { status: 409 });
         const result = await removeBatchItem({ batch, itemId: assertId(deleteBatchItemMatch[2]), jobs, renderControllers, dataRoot });
+        await persistBatchHistory({strict:true});
         sendJson(request, response, 200, { batch: batchSnapshot(batch), ...result });
       } catch (error) {
         sendJson(request, response, error.status || 500, { error: error.message });
@@ -2170,7 +2137,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && cancelBatchMatch) {
       const batch = batches.get(assertId(cancelBatchMatch[1]));
       if (!batch) { sendJson(request, response, 404, { error: "Hàng đợi không tồn tại." }); return; }
-      cancelBatch(batch);
+      cancelBatch(batch);await persistBatchHistory({strict:true});
       sendJson(request, response, 200, { batch: batchSnapshot(batch) });
       return;
     }
@@ -2178,7 +2145,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && cancelJobMatch) {
       const job = jobs.get(assertId(cancelJobMatch[1]));
       if (!job) { sendJson(request, response, 404, { error: "Render job không tồn tại." }); return; }
-      cancelRender(job);
+      cancelRender(job);await persistBatchHistory({strict:true});
       sendJson(request, response, 200, { job: renderSnapshot(job) });
       return;
     }
@@ -2201,7 +2168,7 @@ const server = createServer(async (request, response) => {
       }
       const result = await mediaLibrary.moveRender({ sourceId: job.sourceId, jobId: job.id });
       job.deleted = true; job.outputs = [];
-      await persistBatchHistory();
+      await persistBatchHistory({strict:true});
       sendJson(request, response, 200, result);
       return;
     }
@@ -2252,7 +2219,7 @@ for (const name of ["SIGTERM", "SIGINT"]) {
         server.close();
         server.closeAllConnections();
       },
-      onStopped: persistBatchHistory,
+      onStopped: ()=>persistBatchHistory({strict:true}),
     }).finally(() => process.exit(0));
   });
 }

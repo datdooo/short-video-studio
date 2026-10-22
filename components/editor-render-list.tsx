@@ -2,7 +2,7 @@
 
 import { Download, Loader2, Square, Trash2 } from "lucide-react";
 import type { EditPlan } from "@/lib/edit-plan";
-import { Progress } from "@/components/ui/progress";
+import { RenderProgress } from "./render-progress";
 import { CopyButton } from "@/components/copy-button";
 import { completedRenderJobs } from '@/lib/render-delete.mjs';
 
@@ -16,7 +16,7 @@ export type EditorRenderJob = {
   error: string | null;
   plan?: EditPlan;
   createdAt?: string;
-  stopping?: boolean;
+  stopping?: boolean;phase?:string|null;startedAt?:string;attempt?:number;
 };
 
 export function EditorRenderList({ query = "", jobs, stopping, deleting, deletingAll, error, notice, origin, onStop, onDelete, onDeleteAll }: {
@@ -51,19 +51,18 @@ export function EditorRenderList({ query = "", jobs, stopping, deleting, deletin
         const active = ["queued", "rendering"].includes(job.state);
         const cancelling = stopping.includes(job.id) || Boolean(job.stopping);
         const removing = deleting.includes(job.id) || deletingAll;
-        const status = { queued: "Chờ render", rendering: `Đang render Part ${job.currentPart || 1}`, done: "Hoàn tất", error: "Render lỗi", cancelled: "Đã dừng" }[job.state];
         return <article data-render-state={job.state} key={job.id} className="rounded-xl border border-white/10 bg-white/[.025] p-4">
           <div className="studio-render-job-heading flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h3 className="break-words text-sm font-semibold">{job.plan?.originalTitle || "Video đã render"}</h3>
-              <p className="studio-job-status mt-1 text-xs">{job.stopping ? "Đang huỷ render…" : status} · {job.progress}%</p>
+
             </div>
             <div className="studio-action-row flex shrink-0 flex-wrap justify-end gap-2">
               {(active || cancelling) && <button aria-label={`Huỷ render ${job.plan?.originalTitle || job.id}`} onClick={() => onStop(job)} disabled={cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 active:scale-95 disabled:opacity-50">{cancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />} {cancelling ? "Đang huỷ…" : "Huỷ render"}</button>}
               <button aria-label={`Xoá render ${job.plan?.originalTitle || job.id}`} title={active || cancelling ? "Huỷ render và chờ dừng hẳn trước khi xoá" : "Chuyển các part vào Thùng rác; giữ video gốc"} onClick={() => onDelete(job)} disabled={active || cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-300 active:scale-95 disabled:opacity-40">{removing ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />} {removing ? "Đang xoá…" : "Xoá"}</button>
             </div>
           </div>
-          <Progress value={job.progress} className="mt-3 h-1.5 bg-white/8 [&>div]:bg-[#ff4d2e]" />
+          <RenderProgress job={job}/>
           {job.error && <p className="mt-3 break-words text-xs text-red-300">{job.error}</p>}
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {job.plan?.parts.map((part) => {

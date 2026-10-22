@@ -40,7 +40,7 @@ export async function boundedCatalogue(task, label, timeout = 2500) {
   } finally { clearTimeout(timer); }
 }
 
-export function createMediaLibrary({ roots, isBusy = () => false, onMoved = () => {}, onRestored = () => {} }) {
+export function createMediaLibrary({ roots, isBusy = () => false, editorInUse = () => false, onMoved = () => {}, onRestored = () => {} }) {
   const storages = new Map(roots.map((root) => [root.id, { ...root, root: path.resolve(root.root) }]));
   const locks = new Set();
   const scans = new Map();
@@ -60,8 +60,11 @@ export function createMediaLibrary({ roots, isBusy = () => false, onMoved = () =
     return ["sources", data.sourceId, ...(data.kind === "part" ? ["outputs", data.jobId, `part-${data.part}`] : []), data.filename];
   }
   function busy(data) { return locks.has(`${data.storageId}:${data.sourceId}`) || isBusy(data); }
-  function guard(data) { if (busy(data)) fail("Video đang được tải, AI hoặc render. Dừng/chờ tác vụ hoàn tất trước khi xoá hoặc khôi phục.", 409); }
-  function lock(data) { guard(data); const key = `${data.storageId}:${data.sourceId}`; locks.add(key); return () => locks.delete(key); }
+  function guardEditor(data,action){
+    if(action!=='restore'&&editorInUse(data))fail(action==='purge'?'Nguồn đang dùng trong Editor; chưa thể xoá vĩnh viễn. Đổi nguồn hoặc mở Phiên mới trước.':'Nguồn đang dùng trong Editor; đổi nguồn hoặc mở Phiên mới trước khi chuyển vào Thùng rác.',409);
+  }
+  function guard(data,action) { guardEditor(data,action);if (busy(data)) fail("Video đang được tải, AI hoặc render. Dừng/chờ tác vụ hoàn tất trước khi xoá hoặc khôi phục.", 409); }
+  function lock(data,action='move') { guard(data,action); const key = `${data.storageId}:${data.sourceId}`; locks.add(key); return () => locks.delete(key); }
   async function metadata(store, sourceId) {
     try { return JSON.parse(await readFile(await safePath(store.root, ["sources", sourceId, "source.json"]), "utf8")); }
     catch (error) { if (error.status) throw error; }
@@ -81,7 +84,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, onMoved = () =
     if (!info.isFile()) fail("Không phải file video.");
     const source = await metadata(store, data.sourceId);
     return { ...data, id: Buffer.from(JSON.stringify(data)).toString("base64url"), title: source.title || data.sourceId,
-      size: info.size, createdAt: info.mtime.toISOString(), busy: busy(data),
+      size: info.size, createdAt: info.mtime.toISOString(), busy: busy(data),inUseByEditor:editorInUse(data),
       renderUrl: data.storageId === "current" && data.kind === "part" ? `/files/${data.sourceId}/outputs/${data.jobId}/part-${data.part}/${encodeURIComponent(data.filename)}` : null,
       target };
   }
@@ -100,7 +103,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, onMoved = () =
       const target = await safePath(store.root, ["trash", "media", key, data.filename]);
       if (!(await lstat(target)).isFile()) fail("File trong thùng rác không hợp lệ.");
       return { ...data, id, title: String(manifest.title || data.sourceId), size: await bytes(directory), deletedAt: manifest.deletedAt,
-        busy: busy(data), directory, target, originalId: manifest.originalId };
+        busy: busy(data),inUseByEditor:editorInUse(data), directory, target, originalId: manifest.originalId };
     }
     if (category === "renders") {
       const ids = key.split("--");
@@ -197,7 +200,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, onMoved = () =
     }); },
     restore(id) { return serialized(async () => {
       const item = await trashEntry(id), store = storage(item.storageId);
-      const release = lock(item);
+      const release = lock(item,'restore');
       try {
         const relative = item.kind === "parts" ? ["sources", item.sourceId, "outputs", item.jobId] : pieces(item);
         const destination = await safePath(store.root, relative, true);
@@ -213,7 +216,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, onMoved = () =
     purge(ids) { return serialized(async () => {
       if (!Array.isArray(ids) || !ids.length || ids.length > 500 || new Set(ids).size !== ids.length) fail("Chọn từ 1 đến 500 mục khác nhau để xoá.");
       const items = await Promise.all(ids.map(trashEntry));
-      items.forEach(guard);
+      items.forEach(item=>guard(item,'purge'));
       const keys = new Set(items.map((item) => `${item.storageId}:${item.sourceId}`));
       keys.forEach((key) => locks.add(key));
       try {
@@ -221,6 +224,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, onMoved = () =
         for (const item of items) {
           // Revalidate the exact managed child directory immediately before rm.
           await trashEntry(item.id);
+          guardEditor(item,'purge');
           await rm(item.directory, { recursive: true, force: false });
           freedBytes += item.size;
         }

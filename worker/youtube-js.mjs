@@ -1,3 +1,4 @@
+import {originalCaptionTrack} from './caption-tracks.mjs';
 // Runs in a bounded, killable subprocess; no inherited application credentials.
 import { Innertube, Platform, Log } from 'youtubei.js';
 import { evaluatePlayer } from './youtube-player.mjs';
@@ -25,9 +26,10 @@ try {
   const result = { title: basic.title, duration: basic.duration, channelName: basic.author || '', thumbnailUrl: basic.thumbnail?.at(-1)?.url || '' };
   if (operation === 'transcript') {
     const tracks = info.captions?.caption_tracks || [];
-    const preferred = /[\uac00-\ud7af]/.test(basic.title) ? 'ko' : /[\u3040-\u30ff]/.test(basic.title) ? 'ja' : '';
-    const track = tracks.find((item) => preferred && item.language_code === preferred) || tracks.find((item) => item.kind !== 'asr') || tracks[0];
-    result.language = track?.language_code || '';
+    const manual={},automatic={};for(const item of tracks){const target=item.kind==='asr'?automatic:manual;(target[item.language_code]??=[]).push({url:item.base_url});}
+    const selected=originalCaptionTrack(manual,automatic,basic.language||basic.default_audio_language||'');
+    const track=tracks.find(item=>item.language_code===selected.id);
+    result.spokenLanguage=selected.language;result.captionLanguage=track?selected.language:'';result.captionTrackId=selected.id||'';result.captionWarning=selected.warning||'';result.captionTranslated=false;
     result.vtt = '';
     if (track) {
       const url = new URL(track.base_url); url.searchParams.set('fmt', 'vtt');

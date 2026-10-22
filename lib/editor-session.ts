@@ -11,12 +11,15 @@ import {validateMainRangeMetadata} from './main-ranges.mjs';
 import {validateMainAnalysis} from './auto-cut/analysis.mjs';
 export const SESSION_KEY='shortcut-dev-editor-session-v1';
 export const SESSION_LIMIT=4*1024*1024; // UTF-16 upper bound, one atomic localStorage value.
+const PRESERVED_SESSION_KEY='shortcut-dev-editor-preserved-sessions-v1';
+const PRESERVED_SESSION_LIMIT=8*1024*1024;
+const PRESERVED_SESSION_COUNT=12;
 export type Controls=Record<string,unknown>;
 export type EditorSession={
- sourceMode:'youtube'|'local';sourceUrl:string;sourceId:string;localFileName:string;sourceTitle:string;transcript:string;
+ sourceMode:'youtube'|'local';sourceUrl:string;sourceId:string;localFileName:string;localDraftId?:string;sourceTitle:string;transcript:string;
  sourceAdvancedOpen?:boolean;inspectorTab?:'appearance'|'text'|'music';editMode:'ai'|'manual';provider:import('./edit-plan').AiProvider;instruction:string;supplementalPrompt:string;
  plan?:EditPlan;hasEditPlan:boolean;sourceCaptions?:CaptionTrack|null;activePartIndex:number;workspace:'editor'|'batch'|'storage';previewTime:number;previewTimebase?:typeof PREVIEW_TIMEBASE;
- batchId:string;renderJobId:string;batchEditing?:{batchId:string;itemId:string;sourceId:string}|null;selectedBatchPreviewKey:string;batchUrls:string;
+ batchId:string;renderJobId:string;batchEditing?:{batchId:string;itemId:string;sourceId:string}|null;batchDraftItem?:{batchId:string;itemId:string;sourceId:string}|null;selectedBatchPreviewKey:string;batchUrls:string;
  manualPart1Title:string;manualPart2Title:string;manualPart1Ranges:string;manualPart2Ranges:string;
  webAiPrompt:string;webAiResult:string;webAiContext?:{sourceId:string;transcript:string;instruction:string;provider:import('./edit-plan').AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack}|null;
  controls:Controls;interrupted:string[];
@@ -62,15 +65,16 @@ function readCaptions(raw:unknown):CaptionTrack|undefined{
  if(!object(raw)||!managedId(raw.sourceId)||!Array.isArray(raw.cues))return;
  try{return sourceCaptionTrack(raw as unknown as CaptionTrack,{id:String(raw.sourceId),duration:finite(raw.sourceDuration)?Number(raw.sourceDuration):Infinity});}catch{return;}
 }
-export function readEditorSession():{draft?:Partial<EditorSession>;notice?:string;blocked?:boolean}{
+export type EditorSessionRead={draft?:Partial<EditorSession>;notice?:string;blocked?:boolean};
+export function readEditorSessionRaw(saved:string|null):EditorSessionRead{
  try{
-  const saved=localStorage.getItem(SESSION_KEY);if(!saved)return{};
-  if(saved.length*2>SESSION_LIMIT)return{blocked:true,notice:'Bản nháp vượt giới hạn; chưa ghi đè. Chọn Phiên mới nếu muốn bỏ bản nháp.'};
+  if(!saved)return{};
+  if(saved.length*2>SESSION_LIMIT)return{blocked:true,notice:'Bản nháp vượt giới hạn; bản gốc được giữ đến khi bảo toàn thành công hoặc bạn chọn Phiên mới.'};
   const envelope=JSON.parse(saved);
   if(!object(envelope)||envelope.version!==1||!object(envelope.data))throw Error('schema');
   const r=envelope.data,d:Partial<EditorSession>={};
   for(const key of ['sourceUrl','localFileName','sourceTitle','transcript','instruction','supplementalPrompt','batchUrls','manualPart1Title','manualPart2Title','manualPart1Ranges','manualPart2Ranges','webAiPrompt','webAiResult'] as const)if(typeof r[key]==='string')d[key]=r[key] as string;
-  d.sourceId=managedId(r.sourceId);d.batchId=managedId(r.batchId);d.renderJobId=managedId(r.renderJobId);
+  d.sourceId=managedId(r.sourceId);d.localDraftId=managedId(r.localDraftId);d.batchId=managedId(r.batchId);d.renderJobId=managedId(r.renderJobId);
   d.selectedBatchPreviewKey=text(r.selectedBatchPreviewKey,500);
   d.sourceAdvancedOpen=r.sourceAdvancedOpen===true;
   d.inspectorTab=r.inspectorTab==='text'||r.inspectorTab==='music'?r.inspectorTab:'appearance';
@@ -83,19 +87,93 @@ export function readEditorSession():{draft?:Partial<EditorSession>;notice?:strin
   if(r.previewTimebase!==PREVIEW_TIMEBASE&&d.hasEditPlan)d.previewTime=Number(d.previewTime)*PLAYBACK_RATE;
   d.previewTimebase=PREVIEW_TIMEBASE;
   d.sourceCaptions=readCaptions(r.sourceCaptions);
-  if(object(r.batchEditing)&&managedId(r.batchEditing.batchId)&&managedId(r.batchEditing.itemId)&&r.batchEditing.sourceId===d.sourceId)d.batchEditing=r.batchEditing as EditorSession['batchEditing'];
+  if(d.sourceId&&object(r.batchEditing)&&managedId(r.batchEditing.batchId)&&managedId(r.batchEditing.itemId)&&r.batchEditing.sourceId===d.sourceId)d.batchEditing=r.batchEditing as EditorSession['batchEditing'];
+  if(d.sourceId&&object(r.batchDraftItem)&&managedId(r.batchDraftItem.batchId)&&managedId(r.batchDraftItem.itemId)&&r.batchDraftItem.sourceId===d.sourceId)d.batchDraftItem=r.batchDraftItem as EditorSession['batchDraftItem'];
   if(object(r.webAiContext)&&r.webAiContext.sourceId===d.sourceId&&managedId(r.webAiContext.requestId)){
    d.webAiContext={...pick(r.webAiContext,['sourceId','transcript','instruction','provider','requestId','analysisKey','supplementalPrompt','mainSignature','promptVersion']),captionTrack:readCaptions(r.webAiContext.captionTrack),lockedPlan:readPlan(r.webAiContext.lockedPlan),hookPlan:readPlan(r.webAiContext.hookPlan)} as EditorSession['webAiContext'];
   }
-  d.controls=object(r.controls)?Object.fromEntries(Object.entries(r.controls).filter(([key])=>/:(?:main-[12]|teaser-(?:times|input|candidate|review-(?:catalog|focus))-[12]|music-(?:catalog|search|mood))$/.test(key)).slice(0,32)):{};d.interrupted=Array.isArray(r.interrupted)?[...new Set(r.interrupted.filter((s):s is string=>typeof s==='string').map(s=>s.slice(0,200)))].slice(0,12):[];
-  return{draft:d,notice:d.plan||!r.hasEditPlan?'Đã khôi phục phiên chỉnh sửa':'Đã khôi phục phần hợp lệ; plan hỏng chưa được áp dụng. Bản nháp gốc được giữ đến khi bạn chỉnh tiếp.',blocked:!!r.hasEditPlan&&!d.plan};
- }catch{return{blocked:true,notice:'Không đọc được bản nháp; app vẫn sử dụng được. Bản nháp chưa bị xóa/ghi đè. Chọn Phiên mới để bỏ.'};}
+  const controlEntries=object(r.controls)?Object.entries(r.controls).filter(([key])=>/:(?:main-[12]|teaser-(?:times|input|candidate|review-(?:catalog|focus))-[12]|music-(?:catalog|search|mood)|manual-cut)$/.test(key)):[];
+  // A growing set of source-scoped manual drafts is preserved whole. Exceeding
+  // the bound blocks replacement instead of silently discarding older entries.
+  if(controlEntries.length>256)return{blocked:true,notice:'Bản nháp có quá nhiều nhóm ô nhập; bản gốc được giữ đến khi bảo toàn thành công hoặc bạn chọn Phiên mới.'};
+  d.controls=Object.fromEntries(controlEntries);d.interrupted=Array.isArray(r.interrupted)?[...new Set(r.interrupted.filter((s):s is string=>typeof s==='string').map(s=>s.slice(0,200)))].slice(0,12):[];
+  return{draft:d,notice:d.plan||!r.hasEditPlan?'Đã khôi phục phiên chỉnh sửa':'Đã khôi phục phần hợp lệ; plan hỏng chưa được áp dụng. Bản gốc được giữ đến khi bảo toàn thành công hoặc bạn chọn Phiên mới.',blocked:!!r.hasEditPlan&&!d.plan};
+ }catch{return{blocked:true,notice:'Không đọc được bản nháp; bản gốc được giữ đến khi bảo toàn thành công hoặc bạn chọn Phiên mới.'};}
+}
+export function readEditorSession():EditorSessionRead{
+ try{return readEditorSessionRaw(localStorage.getItem(SESSION_KEY));}
+ catch{return{blocked:true,notice:'Chưa đọc được bộ nhớ bản nháp; không ghi đè cho tới khi bảo toàn thành công hoặc bạn chọn Phiên mới.'};}
+}
+function serializeEditorSession(data:EditorSession):string{
+ const safe={...data,previewTimebase:PREVIEW_TIMEBASE,sourceUrl:/^(?:data|blob):/i.test(data.sourceUrl)?'':data.sourceUrl,interrupted:[...new Set(data.interrupted)].slice(0,12)};
+ return JSON.stringify({version:1,savedAt:new Date().toISOString(),data:safe});
 }
 export function writeEditorSession(data:EditorSession):string{
  try{
-  const safe={...data,previewTimebase:PREVIEW_TIMEBASE,sourceUrl:/^(?:data|blob):/i.test(data.sourceUrl)?'':data.sourceUrl,interrupted:[...new Set(data.interrupted)].slice(0,12)};
-  const json=JSON.stringify({version:1,savedAt:new Date().toISOString(),data:safe});
+  const json=serializeEditorSession(data);
   if(json.length*2>SESSION_LIMIT)return'Bản nháp vượt 4 MiB; bản lưu trước vẫn được giữ. Rút gọn transcript/JSON nhập để lưu tiếp.';
   localStorage.setItem(SESSION_KEY,json);return'';
  }catch{return'Chưa lưu được bản nháp (bộ nhớ local không khả dụng hoặc đầy); bản lưu trước không bị xóa.';}
+}
+
+// A batch item owns its editor draft even when another item uses the same source.
+// Unmanaged/incomplete input still has an identity and can be preserved without
+// inventing a managed source ID or retaining an expired blob/data URL.
+export function editorSessionIdentity(data:Partial<EditorSession>):string{
+ const sourceId=managedId(data.sourceId),batch=data.batchDraftItem||data.batchEditing;
+ if(batch&&managedId(batch.batchId)&&managedId(batch.itemId)&&sourceId&&batch.sourceId===sourceId)return JSON.stringify(['batch',batch.batchId,batch.itemId,sourceId]);
+ if(sourceId)return JSON.stringify(['source',sourceId]);
+ const mode=data.sourceMode==='local'?'local':'youtube';
+ const input=mode==='local'?data.localDraftId||data.localFileName:data.sourceUrl;
+ return JSON.stringify(['unmanaged',mode,typeof input==='string'&&!/^(?:data|blob):/i.test(input)?input:'']);
+}
+type PreservedSession={key:string;label:string;savedAt:string;raw:string;opaque:boolean};
+type PreservedSessions={version:1;entries:PreservedSession[]};
+function readPreservedSessions():PreservedSessions{
+ const raw=localStorage.getItem(PRESERVED_SESSION_KEY);
+ if(raw===null)return{version:1,entries:[]};
+ if(raw.length*2>PRESERVED_SESSION_LIMIT)throw Error('Kho bản nháp đã vượt giới hạn; chưa thay phiên.');
+ let value:unknown;
+ try{value=JSON.parse(raw);}catch{throw Error('Không đọc được kho bản nháp; chưa thay phiên hoặc ghi đè.');}
+ if(!object(value)||value.version!==1||!Array.isArray(value.entries)||value.entries.length>PRESERVED_SESSION_COUNT||value.entries.some(entry=>!object(entry)||typeof entry.key!=='string'||typeof entry.label!=='string'||typeof entry.savedAt!=='string'||typeof entry.raw!=='string'||typeof entry.opaque!=='boolean')||new Set(value.entries.map(entry=>entry.key)).size!==value.entries.length)throw Error('Kho bản nháp không đúng định dạng; chưa thay phiên hoặc ghi đè.');
+ return value as PreservedSessions;
+}
+export function preserveEditorSession(data:EditorSession,{preserveBlockedRaw=false}:{preserveBlockedRaw?:boolean}={}):{key?:string;error?:string}{
+ try{
+  const archive=readPreservedSessions(),raw=serializeEditorSession(data),key=editorSessionIdentity(data);
+  if(raw.length*2>SESSION_LIMIT)return{error:'Bản nháp hiện tại vượt 4 MiB; chưa thay phiên. Giữ hoặc rút gọn dữ liệu trước khi mở item khác.'};
+  const savedAt=new Date().toISOString();
+  const baseLabel=(data.sourceTitle||data.localFileName||data.sourceUrl||'Phiên chưa có nguồn').slice(0,160);
+  const batch=data.batchDraftItem||data.batchEditing;
+  const label=batch&&managedId(batch.batchId)&&managedId(batch.itemId)&&batch.sourceId===managedId(data.sourceId)?`${baseLabel} · item ${batch.itemId.slice(0,8)}`:baseLabel;
+  const entries=archive.entries.filter(entry=>entry.key!==key);
+  if(preserveBlockedRaw){
+   // Opaque means no parse, migration, reserialization or trimming. Only an exact
+   // readback of this atomic archive permits the caller to unlock active saving.
+   const blockedRaw=localStorage.getItem(SESSION_KEY);
+   if(blockedRaw!==null&&!entries.some(entry=>entry.opaque&&entry.raw===blockedRaw)){
+    let opaqueKey=`raw:${savedAt}`;
+    while(entries.some(entry=>entry.key===opaqueKey))opaqueKey+=':copy';
+    entries.push({key:opaqueKey,label:'Bản gốc chưa đọc được',savedAt,raw:blockedRaw,opaque:true});
+   }
+  }
+  entries.push({key,label,savedAt,raw,opaque:false});
+  if(entries.length>PRESERVED_SESSION_COUNT)return{error:'Kho đã giữ đủ 12 bản nháp; chưa thay phiên. Không tự xóa bản cũ để lấy chỗ.'};
+  const json=JSON.stringify({version:1,entries});
+  if(json.length*2>PRESERVED_SESSION_LIMIT)return{error:'Kho bản nháp vượt 8 MiB; chưa thay phiên. Không tự bỏ dữ liệu đã giữ.'};
+  localStorage.setItem(PRESERVED_SESSION_KEY,json);
+  if(localStorage.getItem(PRESERVED_SESSION_KEY)!==json)return{error:'Chưa xác nhận được bản nháp đã bảo toàn; chưa thay phiên hoặc mở khóa ghi đè.'};
+  return{key};
+ }catch(error){return{error:error instanceof Error&&/^Kho |^Không đọc được kho /.test(error.message)?error.message:'Không bảo toàn được bản nháp (bộ nhớ local không khả dụng hoặc đầy); chưa thay phiên hoặc ghi đè.'};}
+}
+export function readPreservedEditorSession(key:string):EditorSessionRead{
+ try{
+  const entry=readPreservedSessions().entries.find(value=>value.key===key);
+  if(!entry)return{};
+  return readEditorSessionRaw(entry.raw);
+ }catch{return{blocked:true,notice:'Không đọc được bản nháp đã giữ; phiên hiện tại chưa thay đổi.'};}
+}
+export function listPreservedEditorSessions():{key:string;label:string}[]{
+ try{return readPreservedSessions().entries.map(({key,label})=>({key,label}));}
+ catch{return[];}
 }

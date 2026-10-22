@@ -10,6 +10,7 @@ import {validateTeaser,hookNeedsReselection,hookRangeKey,hookDurationLimits}from
 import {customTimestampPart,parseCustomTeaser}from'@/lib/custom-teaser.mjs';
 import {formatSourceTimecode,sourceTimecodeValue}from'@/lib/source-timecode.mjs';
 import type{Teaser}from'@/lib/teaser-hooks.mjs';
+import type {CaptionTrack} from '@/lib/subtitles.mjs';
 import {explainInVietnamese}from'@/lib/explanation-language.mjs';
 import {checkHookSpeechBoundaries,hookSpeechBoundaryWarning} from '@/lib/teaser-boundaries.mjs';
 import {PREVIEW_RATE}from'@/lib/preview-config.mjs';
@@ -25,7 +26,7 @@ function savedInput(part:EditPart){
  if(custom.mode==='timestamp'){try{const parsed=parseCustomTeaser(custom.input);if(parsed.mode==='timestamp')return`${formatSourceTimecode(parsed.start)} → ${formatSourceTimecode(parsed.end)}`;}catch{return'';}}
  return custom.input;
 }
-export function TeaserEditor({transition,progress,aiBusy=false,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,reviewSourceKey,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{transition?:ReactNode;progress?:ReactNode;aiBusy?:boolean;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;reviewSourceKey:string;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart)=>void;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<Teaser>}){
+export function TeaserEditor({issues=[],transition,progress,aiBusy=false,onAuditionControl,reviewTarget,reviewVisible=false,reviewRequest,reviewSourceKey,suspended=false,onDraft,part,cues,sourceUrl,active,onAudition,onChange,onResolve,onToggle}:{issues?:string[];transition?:ReactNode;progress?:ReactNode;aiBusy?:boolean;onAuditionControl?:(id:number,stop:(()=>void)|null)=>void;reviewTarget?:HTMLElement|null;reviewVisible?:boolean;reviewRequest:string;reviewSourceKey:string;suspended?:boolean;onDraft?:(id:number,key:string,message:string)=>void;part:EditPart;sourceUrl:string;active:boolean;onAudition:()=>void;cues:{start:number;end:number;text:string}[];onChange:(p:EditPart,captionTrack?:CaptionTrack)=>Promise<void>;onToggle:(enabled:boolean)=>void;onResolve:(input:string,signal:AbortSignal)=>Promise<{teaser:Teaser;captionTrack?:CaptionTrack}>}){
  const enabled=part.teaserEnabled!==false;
  // Playback URLs can be blob URLs, or empty while a saved managed source is
  // reopening. Neither is an analysis identity. Keep restored catalogs untouched
@@ -43,8 +44,9 @@ export function TeaserEditor({transition,progress,aiBusy=false,onAuditionControl
  const identity=useMemo(()=>draftIdentity([part.segments,part.teaser,part.customTeaser,cues]),[part,cues]);
  const baseline=useMemo(()=>savedTimes(part),[part]);
  const[draft,setDraft]=useEditorDraft<{key:string;times:Times}|null>(`teaser-times-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'times'in v&&!!v.times&&typeof v.times==='object'&&'start'in v.times&&typeof v.times.start==='string'&&'end'in v.times&&typeof v.times.end==='string'),[inputDraft,setInputDraft]=useEditorDraft<{key:string;text:string}|null>(`teaser-input-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'text'in v&&typeof v.text==='string');
- const[error,setError]=useState(''),[busy,setBusy]=useState(false),request=useRef<AbortController|null>(null);
- const[candidate,setCandidate]=useEditorDraft<{key:string;part:EditPart}|null>(`teaser-candidate-${part.id}`,null,v=>{try{if(v===null)return true;const c=v as {key:string;part:EditPart};if(typeof c.key!=='string'||c.part?.id!==part.id||draftIdentity(c.part.segments)!==draftIdentity(part.segments)||c.part.teaser?.status!=='selected'||!Array.isArray(c.part.teaser.limitations)||!Array.isArray(c.part.teaser.evidenceTimes))return false;validateTeaser(c.part);checkHookSpeechBoundaries(c.part.teaser,cues);return true;}catch{return false;}});
+ const[error,setError]=useState(''),[busy,setBusy]=useState(false),[applying,setApplying]=useState(false),applyPending=useRef(false),request=useRef<AbortController|null>(null);
+ const[candidate,setCandidate]=useEditorDraft<{key:string;part:EditPart;captionTrack?:CaptionTrack}|null>(`teaser-candidate-${part.id}`,null,v=>{try{if(v===null)return true;const c=v as {key:string;part:EditPart;captionTrack?:CaptionTrack};if(typeof c.key!=='string'||c.part?.id!==part.id||draftIdentity(c.part.segments)!==draftIdentity(part.segments)||c.part.teaser?.status!=='selected'||!Array.isArray(c.part.teaser.limitations)||!Array.isArray(c.part.teaser.evidenceTimes))return false;validateTeaser(c.part);checkHookSpeechBoundaries(c.part.teaser,c.captionTrack?.cues||cues);return true;}catch{return false;}});
+ const [applyAcknowledgement,setApplyAcknowledgement]=useState<{signature:string;revision:number}|null>(null);
  const audition=useRef<{pause:()=>void}|null>(null);
  const bindAudition=useCallback((control:{pause:()=>void}|null)=>{audition.current=control;},[]);
  useDraftActivity(`teaser Part ${part.id}`,enabled&&busy);
@@ -61,7 +63,7 @@ export function TeaserEditor({transition,progress,aiBusy=false,onAuditionControl
  },[input]);
  function writeInput(raw:string){
   if(raw===inputValue.current)return;
-  inputValue.current=raw;inputRevision.current++;
+  inputValue.current=raw;inputRevision.current++;setApplyAcknowledgement(null);
   request.current?.abort();setBusy(false);setError('');audition.current?.pause();setCandidate(null);
   setInputDraft({key:identity,text:raw});
  }
@@ -80,13 +82,14 @@ export function TeaserEditor({transition,progress,aiBusy=false,onAuditionControl
  useEffect(()=>{onAuditionControl?.(part.id,()=>audition.current?.pause());return()=>onAuditionControl?.(part.id,null);},[part.id,onAuditionControl]);
 
  function edit(boundary:'start'|'end',value:string){
+  inputRevision.current++;setApplyAcknowledgement(null);
   request.current?.abort();audition.current?.pause();setCandidate(null);setBusy(false);setError('');
   const nextTimes={...values,[boundary]:value,[boundary==='start'?'exactStart':'exactEnd']:undefined};setDraft({key:identity,times:nextTimes});
   try{const start=sourceTimecodeValue(nextTimes.start,nextTimes.exactStart),end=sourceTimecodeValue(nextTimes.end,nextTimes.exactEnd),next=customTimestampPart(part,`${start}–${end}`,cues);setCandidate({key:identity,part:next});}
   catch{/* Incomplete/invalid edits stay draft; the saved teaser remains effective. */}
  }
  async function generate(){
-  if(!enabled||busy||aiBusy||composing.current||(request.current&&!request.current.signal.aborted))return;
+  if(!enabled||busy||applyPending.current||aiBusy||composing.current||(request.current&&!request.current.signal.aborted))return;
   if(suspended){setError('Tạm dừng trong lúc export; thử lại sau khi xuất xong.');return;}
   request.current?.abort();audition.current?.pause();setCandidate(null);const controller=new AbortController();request.current=controller;setError('');setBusy(true);
   const revision=inputRevision.current;
@@ -96,11 +99,26 @@ export function TeaserEditor({transition,progress,aiBusy=false,onAuditionControl
    const raw=inputDraft?(inputElement.current?.value??inputValue.current):(part.customTeaser?.input??inputElement.current?.value??inputValue.current);
    const parsed=parseCustomTeaser(raw);
    if(parsed.mode==='timestamp'){const next=customTimestampPart(part,parsed.input,cues);setCandidate({key:identity,part:next});setDraft({key:identity,times:times(parsed.start,parsed.end)});return;}
-   const teaser=await onResolve(parsed.input,controller.signal);if(controller.signal.aborted||request.current!==controller||revision!==inputRevision.current)return;
+   const {teaser,captionTrack}=await onResolve(parsed.input,controller.signal);if(controller.signal.aborted||request.current!==controller||revision!==inputRevision.current)return;
    if(teaser.status!=='selected')throw Error(explainInVietnamese(teaser.reason,'Không tìm thấy teaser phù hợp với mô tả; thiếu bằng chứng.'));
-   setCandidate({key:identity,part:{...part,teaser,customTeaser:parsed.mode==='description'?{version:1,mode:'description',input:parsed.input}:undefined}});setDraft({key:identity,times:times(teaser.start,teaser.end)});
+   setCandidate({key:identity,captionTrack,part:{...part,teaser,customTeaser:parsed.mode==='description'?{version:1,mode:'description',input:parsed.input}:undefined}});setDraft({key:identity,times:times(teaser.start,teaser.end)});
   }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:String(e));}
   finally{if(request.current===controller){request.current=null;setBusy(false);}}
+ }
+ const detailMessages=[...new Set([rangeError,error,...issues,(part.teaserNeedsReselection||hookNeedsReselection(part))?'Main đã đổi hoặc teaser nằm ngoài phạm vi hợp lệ.':'',part.teaser?.status==='unavailable'?part.teaser.reason:'',boundaryWarning].filter(Boolean))];
+ const mainMessage=busy?'Đang chọn teaser…':applying?'Đang áp dụng…':rangeError?/vượt 9|dài.*9/i.test(rangeError)?'Teaser dài quá 9 giây.':'Mốc thời gian chưa hợp lệ.':error||issues.length||part.teaserNeedsReselection||hookNeedsReselection(part)?'Teaser cần cập nhật.':part.teaser?.status==='unavailable'?'Chưa chọn được teaser. Thử lại.':proposed?'Chọn phương án phía trên.':boundaryWarning?'Kiểm tra biên lời nói.':'';
+ useEffect(()=>{
+  if(!applyAcknowledgement)return;
+  if(applyAcknowledgement.revision!==inputRevision.current){setApplyAcknowledgement(null);return;}
+  if(JSON.stringify([part.teaser,part.customTeaser])!==applyAcknowledgement.signature)return;
+  setDraft(null);setInputDraft(null);setCandidate(null);setBusy(false);setApplyAcknowledgement(null);
+ },[applyAcknowledgement,part.teaser,part.customTeaser,setDraft,setInputDraft,setCandidate]);
+ async function applyChoice(next:EditPart,captionTrack?:CaptionTrack){
+  if(applyPending.current)return;applyPending.current=true;setApplying(true);request.current?.abort();audition.current?.pause();setError('');
+  const revision=inputRevision.current;
+  try{await onChange(next,captionTrack);setApplyAcknowledgement({signature:JSON.stringify([next.teaser,next.customTeaser]),revision});}
+  catch(e){setError(e instanceof Error?e.message:'Chưa áp dụng được teaser.');}
+  finally{applyPending.current=false;setApplying(false);}
  }
  return <><section className="studio-teaser-editor min-w-0 space-y-2 text-xs" aria-label={`Teaser Part ${part.id}`}>
   <div className="studio-teaser-header"><h4 className="font-semibold">Teaser {enabled&&(part.teaser?.status==='selected'&&!part.teaserNeedsReselection&&!hookNeedsReselection(part)?<span className="studio-connected" aria-label="Đã có teaser">✓</span>:<span className="studio-danger">· cần chọn</span>)}</h4>
@@ -112,21 +130,19 @@ export function TeaserEditor({transition,progress,aiBusy=false,onAuditionControl
    <input aria-label={`Teaser Part ${part.id} ${boundary==='start'?'Bắt đầu':'Kết thúc'}`} aria-invalid={Boolean(rangeError)} placeholder="00:00:00:00" autoComplete="off" spellCheck={false} inputMode="text" className="studio-input mt-1 w-full min-w-0 px-2 font-mono text-xs" value={values[boundary]} onChange={e=>edit(boundary,e.target.value)}/>
   </label>)}</div>{transition}</div>
   <p className="studio-teaser-duration">Preview {PREVIEW_RATE}×: {previewSeconds!==undefined&&previewSeconds>0?`${previewSeconds.toFixed(2)} giây`:'—'} · tối đa {hookDurationLimits().maxSourceSeconds/PREVIEW_RATE} giây preview ({hookDurationLimits().maxRenderedSeconds} giây export)</p>
-  {boundaryWarning&&<p className="text-amber-200">{boundaryWarning}</p>}
-  {rangeError&&<p role="alert" className="text-amber-200">{rangeError} Sửa mốc hoặc áp dụng một ứng viên hợp lệ phía trên trước khi xuất.</p>}
-  {(part.teaserNeedsReselection||hookNeedsReselection(part))&&<p role="alert" className="text-amber-200">Main đã đổi hoặc teaser không còn đủ điều kiện. Cần chọn lại; không tự thay footage.</p>}
-  {part.teaser?.status==='unavailable'&&<p role="alert" className="text-amber-200">Part {part.id}: {explainInVietnamese(part.teaser.reason,'Chưa có teaser hợp lệ. Chọn lại bằng AI hoặc nhập mốc nguồn trong Timeline.')}</p>}
   <label className="block min-w-0 text-zinc-400">Custom Teaser<textarea aria-label={`Custom Teaser Part ${part.id}`} className="studio-textarea mt-1 w-full min-w-0 border p-2 text-xs" rows={1} maxLength={1000} ref={inputElement} defaultValue={input} placeholder="Mô tả footage hoặc 00:01:00:00 → 00:01:10:00" onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={e=>{composing.current=false;writeInput(e.currentTarget.value);}} onChange={e=>writeInput(e.currentTarget.value)} onKeyDown={e=>{if(e.key==='Enter'&&(composing.current||e.nativeEvent.isComposing||e.nativeEvent.keyCode===229))e.stopPropagation();}} onBlur={e=>{composing.current=false;writeInput(e.currentTarget.value);}}/></label>
   <div className="studio-action-row">
-  <button type="button" disabled={busy||suspended||aiBusy} onClick={()=>void generate()} className="max-w-full rounded border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white">{busy?'Đang chọn teaser…':'Tạo/chọn lại teaser'}</button>
+  <button type="button" disabled={busy||applying||suspended||aiBusy} onClick={()=>void generate()} className="max-w-full rounded border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white">{busy?'Đang chọn teaser…':'Tạo/chọn lại teaser'}</button>
   {busy&&<button type="button" className="studio-control" onClick={()=>{request.current?.abort();audition.current?.pause();setBusy(false);setError('Đã dừng chọn teaser.');}}>Dừng chọn teaser</button>}
   </div>
-  {progress}
-  {error&&<p role="alert" className="text-amber-200">{explainInVietnamese(error,'Không chọn được teaser; kiểm tra nguồn, kết nối AI hoặc mốc đã nhập.')} Teaser/main hiện tại không thay đổi.</p>}
+  {(mainMessage||detailMessages.length>0||progress)&&<div className="studio-teaser-status">
+   {mainMessage&&<p role={rangeError||error||issues.length?'alert':'status'}>{mainMessage}</p>}
+   {(detailMessages.length>0||progress)&&<details><summary>Chi tiết</summary>{detailMessages.map((message,index)=><p key={index} className="break-words">{message}</p>)}{progress}</details>}
+  </div>}
   </div>
  </section>
- {active&&reviewVisible&&reviewTarget&&reviewSourceKey&&reviewRevision?.input===reviewInput&&createPortal(<TeaserCandidateReview part={part} proposed={enabled?proposed:null} contextKey={reviewRevision.key} legacyContextKey={reviewRevision.legacyKey} sourceUrl={sourceUrl} suspended={suspended||!enabled} onAudition={onAudition} onPlaybackControl={bindAudition}
+ {active&&reviewVisible&&reviewTarget&&reviewSourceKey&&reviewRevision?.input===reviewInput&&createPortal(<TeaserCandidateReview part={part} proposed={enabled?proposed:null} proposedCaptionTrack={candidate?.key===identity?candidate.captionTrack:undefined} contextKey={reviewRevision.key} legacyContextKey={reviewRevision.legacyKey} sourceUrl={sourceUrl} suspended={suspended||!enabled||applying} onAudition={onAudition} onPlaybackControl={bindAudition}
   hasEdits={Boolean(draft?.key===identity||inputDraft!==null||proposed)}
-  onApply={next=>{request.current?.abort();audition.current?.pause();onChange(next);setDraft(null);setInputDraft(null);setCandidate(null);setBusy(false);setError('');}}/>,reviewTarget)}
+  onApply={(next,captionTrack)=>{void applyChoice(next,captionTrack);}}/>,reviewTarget)}
  </>;
 }

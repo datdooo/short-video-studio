@@ -20,7 +20,9 @@ export function beginAiRequest(model,reasoning,metrics={}){
  if(metrics.requestedServiceTier==='fast'){row.requestedServiceTier='fast';row.actualServiceTier=null;}
  if(typeof metrics.phase==='string'&&/^[a-z-]{1,48}$/.test(metrics.phase))row.phase=metrics.phase;
  if(typeof metrics.inputFormat==='string'&&/^[a-z0-9-]{1,48}$/.test(metrics.inputFormat))row.inputFormat=metrics.inputFormat;
- for(const key of ['inputCharacters','rawInputCharacters','imageCount','partCount'])if(Number.isFinite(metrics[key])&&metrics[key]>=0)row[key]=metrics[key];
+ for(const key of ['inputCharacters','rawInputCharacters','imageCount','partCount','partId'])if(Number.isFinite(metrics[key])&&metrics[key]>=0)row[key]=metrics[key];
+ if(['roundtrip-verified','original-json'].includes(metrics.inputIntegrity))row.inputIntegrity=metrics.inputIntegrity;
+ if(metrics.dataCounts)row.dataCounts={...metrics.dataCounts};if(metrics.dataAvailability)row.dataAvailability={...metrics.dataAvailability};if(typeof metrics.textContract==='string')row.textContract=metrics.textContract;
  s.requests.push(row);publish(s);
  return values=>{Object.assign(row,values);publish(s);
   // A remaining shared consumer may receive completion after this operation's
@@ -32,5 +34,5 @@ export function safeUsage(usage){if(!usage||typeof usage!=='object')return undef
 export async function withAiOperation(kind,work,observer){
  if(context.getStore()?.live)return work();
  const s={id:randomUUID(),kind,start:performance.now(),startedAt:Date.now(),stage:'preparation',requests:[],events:[],memo:new Map(),observer,live:true};
- return context.run(s,async()=>{aiEvent('preparation');try{const result=await work();aiEvent('complete');return {...result,diagnostics:snapshot(s)};}catch(error){aiEvent(error?.name==='AbortError'||/cancel|huỷ|hủy/i.test(error?.message||'')?'cancelled':'error');error.diagnostics=snapshot(s);throw error;}finally{s.live=false;s.memo.clear();console.info('AI_OPERATION',JSON.stringify(snapshot(s)));}});
+ return context.run(s,async()=>{aiEvent('preparation');try{const result=await work();aiEvent(s.requests.some(r=>r.status==='error')||s.events.some(e=>e.stage==='error')?'error':'complete');return {...result,diagnostics:snapshot(s)};}catch(error){aiEvent(error?.name==='AbortError'||/cancel|huỷ|hủy/i.test(error?.message||'')?'cancelled':'error');error.diagnostics=snapshot(s);throw error;}finally{s.live=false;s.memo.clear();console.info('AI_OPERATION',JSON.stringify(snapshot(s)));}});
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import {ANALYSIS_MODEL,ANALYSIS_SERVICE_TIER,lowestReasoning} from "@/lib/ai-reasoning.mjs";
+import {ANALYSIS_MODEL,videoReasoning} from "@/lib/ai-reasoning.mjs";
 
 import {
   AnalyzeRequest,
@@ -115,14 +115,13 @@ async function analyzeWithOpenAI(request: AnalyzeRequest, signal: AbortSignal, d
   const apiKey = suppliedApiKey || process.env.OPENAI_API_KEY;
   const model = ANALYSIS_MODEL;
   diagnostics.model = model;
-  const policy = lowestReasoning(model);
+  const policy = videoReasoning();
   diagnostics.reasoningPolicy = policy.key;
   if (!apiKey) throw new ProviderRequestError("OpenAI chưa được cấu hình API key; không gửi AI hoặc tạo bản demo thay thế.", 503, "PROVIDER_NOT_CONFIGURED");
 
   const requestBody = JSON.stringify({
     model,
     reasoning: { effort: policy.effort },
-    service_tier:ANALYSIS_SERVICE_TIER,
     max_output_tokens:4500,
     store: false,
     instructions: "You are a precise short-form video editor. Return only the requested structured edit plan.",
@@ -140,7 +139,7 @@ async function analyzeWithOpenAI(request: AnalyzeRequest, signal: AbortSignal, d
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     signal.throwIfAborted();
-    const record: AiRequestRecord = {model, requestedReasoning: policy.effort,requestedServiceTier:ANALYSIS_SERVICE_TIER, status: "pending"};
+    const record: AiRequestRecord = {model, requestedReasoning: policy.effort,requestedServiceTier:"default", status: "pending"};
     diagnostics.requests.push(record); diagnostics.requestCount++;
     diagnostics.events.push({stage: "provider", elapsedMs: Date.now() - started});
     const providerStart = Date.now();

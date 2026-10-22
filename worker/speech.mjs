@@ -1,3 +1,4 @@
+import {baseLanguage} from './caption-tracks.mjs';
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
@@ -52,23 +53,27 @@ export function createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, ru
     if (busy.has(id)) return busy.get(id);
     const promise = task().finally(() => busy.delete(id)); busy.set(id, promise); return promise;
   }
-  async function captions(source, signal, { regenerate = false, provider = 'auto' } = {}) {
+  async function captions(source, signal, { regenerate = false, provider = 'auto',language='auto' } = {}) {
     if (!['auto', 'youtube', 'whisper'].includes(provider)) throw new Error('Nguồn phụ đề không hợp lệ.');
-    if (provider !== 'whisper' && source.captions?.length) return sourceCaptionTrack({ sourceId: source.id, cues: source.captions, origin: "youtube" }, source);
+    if(language!=='auto'&&!/^[a-z]{2,3}$/.test(language))throw Error('Ngôn ngữ lời nói phải là auto hoặc mã ngôn ngữ, ví dụ de, vi, ja.');
+    if(provider!=='whisper'&&source.captions?.length){
+      if(language!=='auto'&&(!source.captionLanguage||baseLanguage(source.captionLanguage)!==language))throw Error('Track YouTube không khớp ngôn ngữ đã chọn. Chọn Whisper để transcribe đúng tiếng nguồn.');
+      return sourceCaptionTrack({sourceId:source.id,cues:source.captions,origin:'youtube',language:source.captionLanguage||'unknown',trackId:source.captionTrackId,warning:source.captionWarning},source);
+    }
     if (provider === 'youtube') throw new Error('Video này không có phụ đề YouTube. Chọn dùng phụ đề Whisper để nhận diện từ audio.');
     const directory = path.join(sourcesRoot, source.id);
-    const cached = path.join(directory, CAPTION_FILE);
+    const cached = path.join(directory,language==='auto'?CAPTION_FILE:`speech-captions-small-transcribe-${language}-v1.json`);
     const readCurrent=async()=>{
       try{
         const saved=JSON.parse(await readFile(cached,'utf8'));
-        if(saved.asrIdentity!==ASR_ID)return null;
+        if(saved.asrIdentity!==ASR_ID||(language!=='auto'&&saved.requestedLanguage!==language))return null;
         return sourceCaptionTrack(saved,source);
       }catch{return null;}
     };
     if(!regenerate){const saved=await readCurrent();if(saved)return saved;}
     if (!source.hasAudio) return sourceCaptionTrack({ sourceId: source.id, cues: [], origin: "no-audio" }, source);
-    return shared(`${source.id}:${ASR_ID}:${resources.ownsLease?.()?'leased':'queued'}`,active=>{
-      const id=`${source.id}:${ASR_ID}`;
+    return shared(`${source.id}:${ASR_ID}:${language}:${resources.ownsLease?.()?'leased':'queued'}`,active=>{
+      const id=`${source.id}:${ASR_ID}:${language}`;
       const task=resources.use('analysis',async resourceSignal=>{
         const bounded=AbortSignal.any([active,...(resourceSignal?[resourceSignal]:[]),AbortSignal.timeout(1_800_000)]);
         bounded.throwIfAborted();
@@ -81,11 +86,11 @@ export function createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, ru
           await run(ffmpeg,["-y","-i",source.mediaPath,"-vn","-ar","16000","-ac","1","-c:a","pcm_s16le",wav],{signal:bounded});
           // Multilingual transcription (-l auto), no --translate/-tr. Two CPU
           // threads/one processor; whole ASR holds the shared heavy-task lease.
-          await run(whisper,["-t","2","-p","1","-m",model,"-f",wav,"-l","auto","-osrt","-of",stem,"-ml","24","-sow","-sns"],{signal:bounded});
-          const result=sourceCaptionTrack({sourceId:source.id,cues:parseCaptions(await readFile(stem+'.srt','utf8')),origin:'whisper-local-small'},source);
+          const recognized=await run(whisper,["-t","2","-p","1","-m",model,"-f",wav,"-l",language,"-osrt","-of",stem,"-ml","24","-sow","-sns"],{signal:bounded});
+          const result=sourceCaptionTrack({sourceId:source.id,cues:parseCaptions(await readFile(stem+'.srt','utf8')),origin:'whisper-local-small',language:language==='auto'?(recognized.stderr.match(/auto-detected language:\s*([a-z]{2,3})\b/i)?.[1]||'unknown'):language,task:'transcribe'},source);
           if(!result.cues.length)throw Error('Whisper small không trả phụ đề. Không tự dùng kết quả/model cũ; kiểm tra audio hoặc tạo lại.');
           bounded.throwIfAborted();
-          await writeFile(temporaryCache,JSON.stringify({...result,asrIdentity:ASR_ID}),{mode:0o600});
+          await writeFile(temporaryCache,JSON.stringify({...result,asrIdentity:ASR_ID,requestedLanguage:language}),{mode:0o600});
           await rename(temporaryCache,cached);return result;
         }finally{await unlink(wav).catch(()=>{});await unlink(stem+'.srt').catch(()=>{});await unlink(temporaryCache).catch(()=>{});}
       },active);

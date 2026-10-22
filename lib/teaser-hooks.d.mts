@@ -14,7 +14,7 @@ export const HOOK_MAX_SECONDS: number;
 export const LEGACY_HOOK_PROMPT_VERSION: string;
 export const LEGACY_HOOK_SELECTION_POLICY: "later-main-v1";
 export function isLaterHookPolicy(policy: unknown): boolean;
-export function hookDurationLimits(playbackRate?:number): {playbackRate:number;preferredMinRenderedSeconds:number;maxRenderedSeconds:number;preferredMinSourceSeconds:number;maxSourceSeconds:number};
+export function hookDurationLimits(playbackRate?:number): {playbackRate:number;minRenderedSeconds:number;minSourceSeconds:number;preferredMinRenderedSeconds:number;maxRenderedSeconds:number;preferredMinSourceSeconds:number;maxSourceSeconds:number};
 export function hookCandidates(part:Pick<EditPart,"segments">,cues?:{start:number;end:number;text:string}[],playbackRate?:number,signals?:object):import("./teaser-candidates.mjs").HookCandidate[];
 export function mainRanges(part: EditPart): Segment[];
 export function hookRangeKey(part: EditPart): string;
@@ -35,3 +35,5 @@ export function chooseTeaserAlternative(part:EditPart,index:number):EditPart;
 export function adjustTeaserRange(part:EditPart,start:number,end:number,cues?:{start:number;end:number;text:string}[]):EditPart;
 export function teaserReadiness(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[]):{partId:number;reason:string}[];
 export function requireBothTeasers(plan:Pick<EditPlan,"parts">,sourceDuration?:number,cues?:{start:number;end:number;text:string}[]):void;
+
+export function hookDurationCheck(start:number,end:number,playbackRate?:number):{valid:boolean;violation:"invalid-range"|"minimum"|"maximum"|null;clock:"source";timeUnit:"seconds";start:number|null;end:number|null;sourceSeconds:number|null;renderedSeconds:number|null;playbackRate:number;minSourceSeconds:number;maxSourceSeconds:number;minRenderedSeconds:number;maxRenderedSeconds:number};

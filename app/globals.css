@@ -312,7 +312,7 @@ button, input, textarea { font: inherit; }
 .studio-part-switcher button[aria-pressed=true] { background:var(--studio-accent-soft); color:var(--studio-accent-text); }
 .studio-part-switcher .studio-active-title { margin-left:auto; }
 .studio-source-gap { padding:2px 0 0 calc(var(--timeline-index-size) + var(--timeline-column-gap)); font-size:10px; color:var(--studio-dim); font-variant-numeric:tabular-nums; }
-.studio-teaser-editor { border:1px solid var(--studio-border); border-radius:var(--radius); padding:8px; background:transparent; }
+:is(.studio-teaser-editor,.studio-main-editor) { border:1px solid var(--studio-border); border-radius:var(--radius); padding:8px; background:transparent; }
 .studio-teaser-editor .studio-primary { border-color:transparent; font-weight:600; }
 .studio-teaser-time-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(135px,180px); gap:8px; align-items:end; }
 .studio-teaser-time-row > label { margin-top:0; }
@@ -371,7 +371,7 @@ button, input, textarea { font: inherit; }
 [data-slot=slider-thumb]:is(:hover,:focus-visible) { box-shadow:none; outline:2px solid var(--primary); outline-offset:2px; }
 [data-slot=select-content],[data-slot=popover-content] { background-color:var(--popover); color:var(--foreground); border-color:var(--border); border-radius:var(--control-radius); }
 [data-slot=select-item][data-highlighted] { background-color:var(--selection-bg); color:var(--selection-text); }
-.prototype-shell :is([data-slot=card],.studio-source-status,.studio-teaser-editor,.studio-candidate),
+.prototype-shell :is([data-slot=card],.studio-source-status,.studio-teaser-editor,.studio-main-editor,.studio-candidate),
 .studio-inspector-body > :is(details,section,div) { border-radius:var(--card-radius); border-color:var(--border); }
 .prototype-shell :is([data-slot=badge],.studio-header-status > span) { border-radius:9999px; }
 .prototype-shell :is(.studio-source-panel,.studio-inspector-body,.studio-timeline-scroll,.studio-library-workspace) :is(.text-zinc-200,.text-zinc-300) { color:var(--foreground); }
@@ -870,3 +870,24 @@ button, input, textarea { font: inherit; }
  .studio-teaser-player-controls input { grid-column:1 / -1; grid-row:2; height:16px; }
  .studio-teaser-player-controls span { grid-column:3; grid-row:1; text-align:right; font-size:9px; }
 }
+
+/* Shared task telemetry: measured percentages only, within the existing panels. */
+.studio-task-progress { min-width:0; display:grid; gap:5px; font-size:12px; line-height:1.4; }
+.studio-task-progress-label { min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; justify-content:space-between; column-gap:10px; row-gap:2px; }
+.studio-task-progress-label > span { min-width:0; overflow-wrap:anywhere; }
+.studio-task-progress-label > span:last-child { color:var(--muted-foreground,#a9a49c); font-variant-numeric:tabular-nums; }
+.studio-task-progress progress { appearance:none; display:block; border:0; width:100%; height:4px; border-radius:99px; overflow:hidden; background:#302b25; accent-color:#ff5733; }
+.studio-task-progress progress::-webkit-progress-bar { background:#302b25; border-radius:99px; }
+.studio-task-progress progress::-webkit-progress-value { background:#ff5733; border-radius:99px; }
+.studio-task-progress progress::-moz-progress-bar { background:#ff5733; border-radius:99px; }
+.studio-task-progress p { margin:0; overflow-wrap:anywhere; font-size:11px; }
+.studio-task-progress-compact { width:100%; max-width:420px; font-size:11px; }
+.studio-web-ai-actions .studio-web-prompt-copy { grid-column:1 / -1; }
+.studio-web-prompt-copy textarea { display:block; width:100%; max-width:100%; resize:vertical; overflow-wrap:anywhere; }
+.studio-web-prompt-copy > div { display:flex; gap:6px; flex-wrap:wrap; }
+.prototype-shell .studio-web-ai-actions .studio-web-prompt-copy button { width:auto; flex:1 1 auto; }
+.studio-teaser-status { min-width:0; padding:6px 8px; border:1px solid #3b332b; border-radius:8px; background:#1c1915; }
+.studio-teaser-status > p { margin:0; line-height:1.4; }
+.studio-teaser-status details { margin-top:4px; min-width:0; }
+.studio-teaser-status summary { cursor:pointer; color:#bcb2a5; }
+.studio-teaser-status details p { margin:5px 0 0; overflow-wrap:anywhere; }

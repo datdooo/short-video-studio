@@ -3,6 +3,7 @@
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {Check,Play,Pause,RotateCcw,Film} from 'lucide-react';
 import type {EditPart} from '@/lib/edit-plan';
+import type {CaptionTrack} from '@/lib/subtitles.mjs';
 import {chooseTeaserAlternative,validateTeaser,hookRangeKey,type Teaser} from '@/lib/teaser-hooks.mjs';
 import {formatSourceTimecode} from '@/lib/source-timecode.mjs';
 import {PREVIEW_RATE} from '@/lib/preview-config.mjs';
@@ -10,21 +11,21 @@ import {explainInVietnamese} from '@/lib/explanation-language.mjs';
 import {useEditorDraft} from './editor-draft-context';
 
 type Selected=Extract<Teaser,{status:'selected'}>;
-type Choice={id:string;part:EditPart;draft?:boolean};
+type Choice={id:string;part:EditPart;captionTrack?:CaptionTrack;draft?:boolean};
 type PlaybackControl={pause:()=>void};
 const choiceId=(h:Selected)=>JSON.stringify([h.selection,h.inputKey,h.start,h.end,h.candidateId||'']);
 const seconds=(n:number)=>`${Math.max(0,n).toFixed(1)}s`;
 const MAX_CHOICES=24;
-function choicesOf(part:EditPart):Choice[]{
+function choicesOf(part:EditPart,captionTrack?:CaptionTrack):Choice[]{
  const h=part.teaser;if(h?.status!=='selected')return[];
  const choices:Choice[]=[];
- try{validateTeaser(part);choices.push({id:choiceId(h),part:structuredClone(part)});}catch{return[];}
- for(let index=0;index<(h.alternatives?.length||0);index++)try{const next=chooseTeaserAlternative(part,index);if(next.teaser?.status==='selected')choices.push({id:choiceId(next.teaser),part:next});}catch{/* Malformed optional choices never hide the valid selected excerpt. */}
+ try{validateTeaser(part);choices.push({id:choiceId(h),part:structuredClone(part),captionTrack});}catch{return[];}
+ for(let index=0;index<(h.alternatives?.length||0);index++)try{const next=chooseTeaserAlternative(part,index);if(next.teaser?.status==='selected')choices.push({id:choiceId(next.teaser),part:next,captionTrack});}catch{/* Malformed optional choices never hide the valid selected excerpt. */}
  return choices;
 }
-export function TeaserCandidateReview({part,proposed,contextKey,legacyContextKey,hasEdits,sourceUrl,suspended,onAudition,onPlaybackControl,onApply}:{
- part:EditPart;proposed:EditPart|null;contextKey:string;legacyContextKey?:string;hasEdits:boolean;sourceUrl:string;suspended:boolean;onAudition:()=>void;
- onPlaybackControl:(control:PlaybackControl|null)=>void;onApply:(choice:EditPart)=>void;
+export function TeaserCandidateReview({part,proposed,proposedCaptionTrack,contextKey,legacyContextKey,hasEdits,sourceUrl,suspended,onAudition,onPlaybackControl,onApply}:{
+ part:EditPart;proposed:EditPart|null;proposedCaptionTrack?:CaptionTrack;contextKey:string;legacyContextKey?:string;hasEdits:boolean;sourceUrl:string;suspended:boolean;onAudition:()=>void;
+ onPlaybackControl:(control:PlaybackControl|null)=>void;onApply:(choice:EditPart,captionTrack?:CaptionTrack)=>void;
 }){
  const h=part.teaser?.status==='selected'?part.teaser:null,currentId=h?choiceId(h):'';
  const pending=proposed?.teaser?.status==='selected'?proposed.teaser:null;
@@ -32,7 +33,7 @@ export function TeaserCandidateReview({part,proposed,contextKey,legacyContextKey
   if(v===null)return true;
   try{const value=v as {key:string;items:Choice[]};return typeof value.key==='string'&&Array.isArray(value.items)&&value.items.length<=MAX_CHOICES&&value.items.every(c=>{if(typeof c.id!=='string'||c.part?.id!==part.id||hookRangeKey(c.part)!==hookRangeKey(part)||c.part.teaser?.status!=='selected')return false;validateTeaser(c.part);return c.id===choiceId(c.part.teaser);});}catch{return false;}
  });
- const incoming=[...choicesOf(part),...(proposed&&pending?.selection!=='manual'?choicesOf(proposed):[])];
+ const incoming=[...choicesOf(part),...(proposed&&pending?.selection!=='manual'?choicesOf(proposed,proposedCaptionTrack):[])];
  const catalogMatches=catalog&&(catalog.key===contextKey||catalog.key===legacyContextKey);
  const choices:Choice[]=catalogMatches&&catalog?[...catalog.items]:[];
  for(const choice of incoming)if(!choices.some(c=>c.id===choice.id))choices.push(choice);
@@ -72,7 +73,7 @@ export function TeaserCandidateReview({part,proposed,contextKey,legacyContextKey
      <p>{teaser.provider} / {teaser.model}</p>
     </details></div>
    </div>
-   <footer className="studio-teaser-review-footer"><span title="Phát video và tiếng nguồn; không render style hoặc trộn nhạc lại">Video nguồn · 1×</span><button type="button" className="studio-primary" disabled={suspended||Boolean(used&&!hasEdits)} onClick={()=>onApply(selected.part)}>{used&&!hasEdits?<><Check size={14}/>Đang dùng</>:used?'Dùng teaser này':'Áp dụng teaser'}</button></footer>
+   <footer className="studio-teaser-review-footer"><span title="Phát video và tiếng nguồn; không render style hoặc trộn nhạc lại">Video nguồn · 1×</span><button type="button" className="studio-primary" disabled={suspended||Boolean(used&&!hasEdits)} onClick={()=>onApply(selected.part,selected.captionTrack)}>{used&&!hasEdits?<><Check size={14}/>Đang dùng</>:used?'Dùng teaser này':'Áp dụng teaser'}</button></footer>
   </>:<div className="studio-teaser-review-empty"><Film size={24}/><strong>Chưa có ứng viên đã lưu</strong><p>Chọn lại bằng AI hoặc nhập mốc trong Timeline.</p></div>}
  </aside>;
 }

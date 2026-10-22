@@ -11,9 +11,10 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
       const settings=item.settings||_body;
       if(authBlocked&&settings.provider==='chatgpt'){item.state='paused';item.error='Cần kết nối lại ChatGPT rồi chủ động tiếp tục mục này.';item.errorCode='auth-required';await persist();continue;}
       try{
+        item.startedAt=new Date().toISOString();delete item.sourceProgress;
         let source;
         if(item.sourceId)source=await load(item.sourceId); // A missing saved source needs user action; never redownload it silently.
-        else{item.state='downloading';await persist();source=await acquire(item.url,signal);signal.throwIfAborted();item.sourceId=source.id;item.title=source.title;item.checkpoint='source';await persist();}
+        else{item.state='downloading';await persist();source=await acquire(item.url,signal,progress=>{item.sourceProgress=progress;});signal.throwIfAborted();item.sourceId=source.id;item.title=source.title;item.checkpoint='source';await persist();}
         if(item.jobId){
           const job=getJob(item.jobId);if(!job)throw new Error('Saved render record missing; inspect outputs before submitting again.');
           if(job.state!=='done')validateRenderPlan(job.plan,source);

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, Film, FolderOpen, Loader2, Play, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import {TaskProgress} from './task-progress';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -9,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 export type LibraryFile = {
   id: string; kind: "original" | "part" | "parts"; storageId: string; sourceId: string;
   jobId?: string; part?: number; title: string; filename: string; size: number; busy: boolean;
-  renderUrl?: string | null; createdAt?: string; deletedAt?: string;
+  renderUrl?: string | null; createdAt?: string; deletedAt?: string; inUseByEditor?:boolean;
   restoredItemIds?: string[]; restoredUrls?: string[];
 };
 type Library = {
@@ -23,7 +24,8 @@ function sizeLabel(value: number) {
   return `${Math.ceil(value / 1e3)} KB`;
 }
 
-export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, renderCount, renderList }: {
+export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrigin, ready, onMoved, onRestored, renderCount, renderList }: {
+  editorSourceId:string;ensureEditorSource:()=>Promise<void>;
   renderCount: number; renderList: (query: string) => ReactNode;
   workerOrigin: string; ready: boolean; onMoved: (file: LibraryFile) => void; onRestored: (file: LibraryFile) => void;
 }) {
@@ -35,15 +37,26 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
   const [previewError, setPreviewError] = useState("");
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
+  const [operation,setOperation]=useState<{startedAt:number;completed:number;total:number;label:string}|null>(null);
   const requestPending = useRef(false);
+  const loadSerial=useRef(0),refreshPending=useRef(false),mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;loadSerial.current++;};},[]);
   const previewVideo = useRef<HTMLVideoElement | null>(null);
+  // React clears refs before passive unmount cleanup. Pause the owned node
+  // while it is still available, including workspace/file replacement.
+  const bindPreviewVideo = useCallback((node: HTMLVideoElement | null) => {
+    const previous = previewVideo.current;
+    if (previous && previous !== node) previous.pause();
+    previewVideo.current = node;
+  }, []);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const load = useCallback(async (signal?: AbortSignal) => {
+    const serial=++loadSerial.current;
     const response = await fetch(`${workerOrigin}/api/storage`, { cache: "no-store", signal });
     const data = await response.json() as { library?: Library; error?: string };
     if (!response.ok || !data.library) throw new Error(data.error || "Không đọc được kho video.");
-    if (!signal?.aborted) setLibrary(data.library);
+    if (!signal?.aborted&&mounted.current&&serial===loadSerial.current) setLibrary(data.library);
   }, [workerOrigin]);
   useEffect(() => {
     if (!ready) return;
@@ -56,19 +69,30 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
     return () => { clearTimeout(timer); controller.abort(); };
   }, [ready, load]);
   async function refresh() {
+    if(refreshPending.current||requestPending.current)return;refreshPending.current=true;
     setLoading(true); setError("");
     try { await load(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Không đọc được kho video."); }
-    finally { setLoading(false); }
+    finally { refreshPending.current=false;if(mounted.current)setLoading(false); }
   }
   async function action(kind: "move" | "restore" | "purge", files: LibraryFile[]) {
     if (requestPending.current || !files.length) return;
+    // Refresh this renderer's ownership before asking the server to delete.
+    // The worker independently checks every active Editor lease, not this flag.
+    requestPending.current=true;setWorking(true);setError('');
+    try{
+      if(kind!=='restore'&&files.some(file=>file.storageId==='current'&&file.kind==='original')){
+        await ensureEditorSource();
+        if(!mounted.current){requestPending.current=false;return;}
+        if(files.some(file=>file.storageId==='current'&&file.kind==='original'&&file.sourceId===editorSourceId))throw Error(kind==='purge'?'Nguồn đang dùng trong Editor; đổi nguồn hoặc mở Phiên mới trước khi xoá vĩnh viễn.':'Nguồn đang dùng trong Editor; đổi nguồn hoặc mở Phiên mới trước khi chuyển vào Thùng rác.');
+      }
+    }catch(caught){setError(caught instanceof Error?caught.message:'Chưa kiểm tra được nguồn Editor.');requestPending.current=false;setWorking(false);return;}
     const permanent = kind === "purge";
     const message = permanent
       ? `Xoá VĨNH VIỄN ${files.length} mục (${sizeLabel(files.reduce((sum, file) => sum + file.size, 0))})?\n\nKhông thể khôi phục qua app. Chỉ xoá những mục này trong Thùng rác, không đụng tới Downloads hay các video đang lưu khác.`
       : kind === "restore" ? `Khôi phục “${files[0].title}” về vị trí cũ? App sẽ không ghi đè file đã tồn tại.`
         : `Chuyển ${files.length} ${tab === "originals" ? "video gốc" : "part"} vào Thùng rác?\n\nCó thể khôi phục. Video gốc và các part được quản lý riêng: xoá gốc không xoá part, xoá part không xoá gốc. Bản trong Downloads không bị ảnh hưởng.`;
-    if (!window.confirm(message)) return;
-    requestPending.current = true; setWorking(true); setError(""); setNotice("");
+    if (!window.confirm(message)) {requestPending.current=false;setWorking(false);return;}
+    requestPending.current = true;loadSerial.current++; setOperation({startedAt:Date.now(),completed:0,total:files.length,label:permanent?'Xóa mục đã chọn':kind==='restore'?'Khôi phục':'Chuyển vào thùng rác'});setWorking(true); setError(""); setNotice("");
     let completed = 0;
     try {
       if (permanent) {
@@ -82,7 +106,7 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
           const response = await fetch(`${workerOrigin}/api/storage/${kind === "move" ? "trash" : "restore"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: file.id }) });
           const data = await response.json() as { error?: string; moved?: LibraryFile; restored?: LibraryFile };
           if (!response.ok) throw new Error(data.error || "Không xử lý được video.");
-          completed++;
+          completed++;setOperation(current=>current?{...current,completed}:current);
           if (kind === "move") {
             onMoved(data.moved || file);
             setPreview((current) => current?.id === file.id ? null : current);
@@ -96,7 +120,7 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
       setError(`${completed ? `Đã xử lý ${completed} mục. ` : ""}${caught instanceof Error ? caught.message : "Không xử lý được video."}`);
     } finally {
       try { await load(); } catch { /* The next refresh can reconnect. */ }
-      requestPending.current = false; setWorking(false);
+      requestPending.current = false; setWorking(false);setOperation(null);
     }
   }
   const files = (tab === "renders" ? [] : library?.[tab] || []).filter((file) => `${file.title} ${file.filename}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
@@ -116,6 +140,7 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
       <TabsTrigger value="trash">Thùng rác <span className="studio-count">{library ? library.trash.length : '…'}</span></TabsTrigger>
     </TabsList>
     {!ready && <p className="mt-4 text-sm text-amber-200">App chưa kết nối media worker.</p>}
+    {operation&&<TaskProgress label={operation.label} startedAt={operation.startedAt} percent={operation.total>1&&operation.label!=='Xóa mục đã chọn'?operation.completed/operation.total*100:null} detail={`${operation.completed}/${operation.total} mục đã được worker xác nhận`}/>}
     {error && <p role="alert" className="mt-4 break-words text-sm text-red-300">{error}</p>}
     {notice && <p role="status" className="mt-4 text-sm text-emerald-300">{notice}</p>}
     {library?.warnings.map((warning) => <p key={warning} className="mt-2 text-xs text-amber-200">{warning}</p>)}
@@ -129,14 +154,14 @@ export function MediaLibraryPanel({ workerOrigin, ready, onMoved, onRestored, re
     <div className="studio-library-content-grid mt-4 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="studio-library-file-list max-h-[65vh] space-y-3 overflow-y-auto pr-1">
         {files.map((file) => <div key={file.id} className="studio-library-card rounded-2xl border border-white/10 bg-white/[.025] p-4">
-          <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Chọn ${file.title} ${file.filename}`} checked={selected.has(file.id)} disabled={file.busy || working} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(file.id); else next.delete(file.id); return next; })} className="mt-1 size-4 shrink-0 accent-[#ff4d2e]" /><span className="studio-library-file-icon" aria-hidden="true"><Film size={20}/></span><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold leading-6">{file.title}</p><p className="mt-1 break-all text-xs text-zinc-400">{file.kind === "original" ? "Video gốc" : file.kind === "parts" ? "Bộ Part" : `Part ${file.part}`} · {file.filename} · {sizeLabel(file.size)}</p><p className="mt-1 text-[11px] text-zinc-500">{library?.storages.find((store) => store.id === file.storageId)?.label}{file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}</p>{file.busy && <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>}</div></div>
+          <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Chọn ${file.title} ${file.filename}`} checked={selected.has(file.id)} disabled={file.busy || working} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(file.id); else next.delete(file.id); return next; })} className="mt-1 size-4 shrink-0 accent-[#ff4d2e]" /><span className="studio-library-file-icon" aria-hidden="true"><Film size={20}/></span><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold leading-6">{file.title}</p><p className="mt-1 break-all text-xs text-zinc-400">{file.kind === "original" ? "Video gốc" : file.kind === "parts" ? "Bộ Part" : `Part ${file.part}`} · {file.filename} · {sizeLabel(file.size)}</p><p className="mt-1 text-[11px] text-zinc-500">{library?.storages.find((store) => store.id === file.storageId)?.label}{file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}</p>{!file.busy&&(file.inUseByEditor||file.storageId==='current'&&file.kind==='original'&&file.sourceId===editorSourceId)&&<p className="mt-2 text-xs text-amber-200">Nguồn đang dùng trong Editor.</p>}{file.busy && <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>}</div></div>
           <div className="mt-3 flex flex-wrap gap-2">
             {tab !== "trash" ? <><Button variant="outline" size="sm" onClick={() => { setPreview(file); setPreviewError(""); }} className="border-white/15 bg-transparent"><Play className="size-3.5" /> Xem</Button><a href={`${workerOrigin}/api/storage/media/${encodeURIComponent(file.id)}?download=1`} download={file.filename} className="studio-control studio-download flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs"><Download className="size-3.5" /> Tải file</a><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("move", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Chuyển vào thùng rác</Button></> : <><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("restore", [file])} className="border-emerald-400/20 bg-transparent text-emerald-300"><RotateCcw className="size-3.5" /> Khôi phục</Button><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("purge", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Xoá vĩnh viễn</Button></>}
           </div>
         </div>)}
         {!files.length && <p className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">{loading ? "Đang đọc kho video…" : tab === "trash" ? "Thùng rác đang trống." : "Không có video phù hợp."}</p>}
       </div>
-      <aside className="rounded-2xl border border-white/10 bg-[#111216] p-4 lg:sticky lg:top-20"><p className="eyebrow">XEM TRƯỚC FILE</p>{preview ? <><video ref={previewVideo} key={preview.id} src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`} controls playsInline preload="metadata" onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")} onLoadedMetadata={() => setPreviewError("")} className="mt-3 max-h-[360px] w-full rounded-xl bg-black object-contain" /><p className="mt-3 break-words text-xs leading-5">{preview.title}</p>{previewError && <p className="mt-2 text-xs text-red-300">{previewError}</p>}</> : <p className="mt-3 text-xs leading-6 text-zinc-500">Chưa chọn video.</p>}</aside>
+      <aside className="rounded-2xl border border-white/10 bg-[#111216] p-4 lg:sticky lg:top-20"><p className="eyebrow">XEM TRƯỚC FILE</p>{preview ? <><video ref={bindPreviewVideo} key={preview.id} src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`} controls playsInline preload="metadata" onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")} onLoadedMetadata={() => setPreviewError("")} className="mt-3 max-h-[360px] w-full rounded-xl bg-black object-contain" /><p className="mt-3 break-words text-xs leading-5">{preview.title}</p>{previewError && <p className="mt-2 text-xs text-red-300">{previewError}</p>}</> : <p className="mt-3 text-xs leading-6 text-zinc-500">Chưa chọn video.</p>}</aside>
     </div>
     </TabsContent>
     </Tabs>

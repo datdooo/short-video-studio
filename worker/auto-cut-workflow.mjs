@@ -2,13 +2,15 @@ import {buildExternalEditingContext} from './external-editing-context.mjs';
 import {measureAiStage} from './ai-operation.mjs';
 import {hookFailure,hookFailureNotice} from './teaser-selection.mjs';
 import {captureAiMainRanges} from '../lib/main-ranges.mjs';
+import {assertTeaserContexts,selectionDigest,selectionRequestValue,transcriptValue} from '../lib/teaser-context.mjs';
+import {externalHooksCurrent} from '../lib/teaser-import.mjs';
 import {externalPlanAnalysis} from '../lib/auto-cut/main-content.mjs';
 import {attachExternalHooks} from '../lib/teaser-import.mjs';
 import {assertMainLocks} from '../lib/auto-cut/locks.mjs';
-import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook} from '../lib/teaser-hooks.mjs';
+import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTeaser,mainRanges} from '../lib/teaser-hooks.mjs';
 import {validatePlan} from './plan-validation.mjs';
 // One orchestration path for single-source Auto, external context/import and batch.
-export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
+export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
     const {context,options}=await measureAiStage('preparation',()=>prepareInputs(source,body,signal));
@@ -27,11 +29,54 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks}) {
     }
     let plan=await mainContent.select(source,context,options);
     if(options.captionTrack)plan.captionCues=structuredClone(options.captionTrack);
-    for(const part of plan.parts){
-      const previous=body.currentPlan?.parts?.find(p=>p.id===part.id);
-      if(typeof previous?.teaserEnabled==='boolean')part.teaserEnabled=previous.teaserEnabled;
-      if(previous?.teaserEnabled===false){part.teaser=structuredClone(previous.teaser);part.customTeaser=structuredClone(previous.customTeaser);}
-      else if(previous?.customTeaser){part.customTeaser=structuredClone(previous.customTeaser);part.teaser=hookRangeKey(previous)===hookRangeKey(part)?structuredClone(previous.teaser):unavailableHook(part,'Main đã đổi; Custom Teaser cần kiểm tra lại. Không tự chọn đoạn thay thế.');}
+    if(body.currentPlan){
+      // A re-run of MAIN is not permission to select new teasers. Validate the
+      // previous source/citation identity first, then preserve it explicitly.
+      const content=String(body.transcript??source.transcript??''),cues=options.cues||[];
+      plan.teaserPolicy=body.currentPlan.teaserPolicy||TEASER_POLICY;
+      plan.teaserTranscriptKey=await selectionDigest(transcriptValue(content));
+      for(const part of plan.parts){
+        const previous=body.currentPlan.parts.find(p=>p.id===part.id);
+        if(!previous)continue;
+        if(typeof previous.teaserEnabled==='boolean')part.teaserEnabled=previous.teaserEnabled;
+        part.customTeaser=structuredClone(previous.customTeaser);
+        part.teaser=previous.teaser?{...structuredClone(previous.teaser),rangeKey:hookRangeKey(part)}:unavailableHook(part,'Chưa có teaser. Chọn riêng trong Timeline.');
+        part.teaserNeedsReselection=previous.teaserNeedsReselection===true;
+        if(previous.teaserEnabled===false||previous.teaser?.status!=='selected')continue;
+        try{
+          const binding=previous.teaser.binding;
+          if(['ai','external-import'].includes(previous.teaser.selection)&&binding){
+            const original=binding.retainedMainContext;
+            const {manualMainContext,retainedMainContext,...identity}=binding;void retainedMainContext;
+            const originalRanges=structuredClone(original?.originalRanges||manualMainContext?.originalRanges||mainRanges(previous).map(s=>[s.start,s.end]));
+            // The excerpt may currently need review after a manual exclusion.
+            // Verify against its actual ORIGINAL selection context, then check
+            // containment in the newly selected main separately below.
+            const selectionPart={...previous,title:original?.partTitle??previous.title,hook:original?.partContext??previous.hook,
+              segments:originalRanges.map(([start,end])=>({start,end})),
+              teaser:{...previous.teaser,binding:identity,rangeKey:JSON.stringify(originalRanges)}};
+            const isolated={...body.currentPlan,parts:[selectionPart]};
+            validateTeaser(selectionPart,source.duration);
+            await assertTeaserContexts(isolated,source,cues,content);
+            if(!await externalHooksCurrent(isolated,source,content))throw Error('Teaser import đã cũ.');
+            await verifyPreservedTeasers?.(isolated,source,signal);
+            part.teaser.binding={...identity,retainedMainContext:{version:1,
+              originalRanges,
+              rangeKey:hookRangeKey(part),requestKey:await selectionDigest(selectionRequestValue({instruction:body.instruction,supplementalPrompt:body.supplementalPrompt},part)),
+              partTitle:original?.partTitle??previous.title,partContext:original?.partContext??previous.hook}};
+          }
+          if(part.teaser.alternatives)part.teaser.alternatives=part.teaser.alternatives.filter(choice=>{try{validateTeaser({...part,teaser:{...part.teaser,...choice,heatmapEvidence:undefined,alternatives:undefined}},source.duration);return true;}catch{return false;}});
+          validateTeaser(part,source.duration);
+          await assertTeaserContexts({...plan,parts:[part]},source,cues,content,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
+          part.teaserNeedsReselection=false;
+        }catch(error){
+          signal?.throwIfAborted();
+          // Keep endpoints/evidence for editing, but never bless stale evidence
+          // or hide a range outside the new main/gap. Readiness blocks export.
+          part.teaserNeedsReselection=true;
+        }
+      }
+      plan=captureAiMainRanges(plan,body.currentPlan);validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);signal?.throwIfAborted();return{plan};
     }
     if(plan.analysis?.method==='deterministic-fallback'&&/provider-(auth|rate-limited|model-unavailable|reasoning-unsupported|fast-unsupported)/.test(plan.analysis.fallbackReason||'')&&!body.currentPlan?.parts?.every(p=>p.manualLocked)){
       plan={...plan,hookTransition:plan.hookTransition??(plan.teaserPolicy?undefined:"vr-light-leak-v2"),teaserPolicy:TEASER_POLICY,parts:plan.parts.map(p=>p.teaserEnabled===false?p:({...p,teaser:(p.customTeaser||p.manualLocked)&&p.teaser?p.teaser:unavailableHook(p,'Bước phân tích main: '+hookFailureNotice(plan.analysis.fallbackReason))}))};
