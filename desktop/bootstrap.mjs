@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { userInfo } from "node:os";
 import path from "node:path";
 import { resolveRuntime, runtimeEnvironment, prepareRuntimeDirectories, assertRuntimePortsAvailable } from "./runtime-config.mjs";
 
 const resources = path.resolve(import.meta.dirname, "..");
 const appRoot = path.join(resources, "app");
 const config = JSON.parse(await readFile(path.join(resources, "config.json"), "utf8"));
-const runtime = resolveRuntime({ profile: config.profile, home: homedir(), existingDataRoot: config.existingDataRoot });
+if(config.profile!=="beta"||config.webPort!==5373||config.workerPort!==8987)throw Error("Invalid Beta bundle configuration.");
+const runtime = resolveRuntime({ profile: config.profile, home: userInfo().homedir, existingDataRoot: config.existingDataRoot });
 const { dataRoot } = runtime;
 await assertRuntimePortsAvailable(runtime);
 await prepareRuntimeDirectories(runtime);

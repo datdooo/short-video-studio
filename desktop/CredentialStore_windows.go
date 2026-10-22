@@ -21,13 +21,13 @@ type dataBlob struct {
 
 var crypt = syscall.NewLazyDLL("crypt32.dll")
 var kernel = syscall.NewLazyDLL("kernel32.dll")
-var magic = []byte("ShortCutStudio.DPAPI.v1\n")
+var magic = []byte("ShortCutStudio.Beta.DPAPI.v1\n")
 
 func protect(data []byte, decrypt bool) ([]byte, error) {
 	if len(data) == 0 || len(data) > 2*1024*1024 {
 		return nil, errors.New("invalid credential size")
 	}
-	entropy := []byte("ShortCutStudio.ChatGPT.v1")
+	entropy := []byte("ShortCutStudio.Beta.ChatGPT.v1")
 	in, extra := dataBlob{uint32(len(data)), &data[0]}, dataBlob{uint32(len(entropy)), &entropy[0]}
 	var out dataBlob
 	name := "CryptProtectData"

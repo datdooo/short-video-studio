@@ -8,8 +8,8 @@ import { ensureMediaTools } from "./setup-media-tools.mjs";
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const children = [];
-const isolated = process.argv.includes("--isolated");
-const runtime = resolveRuntime({ profile: isolated ? "development" : "production" });
+const isolated = true;
+const runtime = resolveRuntime({ profile: "beta" });
 const childEnv = isolated ? {
   ...runtimeEnvironment(runtime),
   PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ""}`,
@@ -69,7 +69,7 @@ try {
   start(process.execPath, ["worker/server.mjs"], "Media worker");
   if (isolated) start(process.execPath, ["scripts/run-framework.mjs", "dev", "--port", String(runtime.webPort), "--hostname", "127.0.0.1"], "Web app");
   else start(npmCommand, ["run", "dev", "--", "--port", "5173"], "Web app");
-  process.stdout.write(`\n${runtime.name}: ${runtime.webOrigin}\nMedia worker: ${runtime.workerOrigin}\n${isolated ? `DEV data: ${runtime.dataRoot}\nLegacy lookup: disabled\n` : ""}\n`);
+  process.stdout.write(`\n${runtime.name}: ${runtime.webOrigin}\nMedia worker: ${runtime.workerOrigin}\n${isolated ? `Beta data: ${runtime.dataRoot}\nLegacy lookup: disabled\n` : ""}\n`);
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;

@@ -1,3 +1,5 @@
+import {BETA_RELEASE} from '../desktop/beta-release.mjs';
+import {resolveRuntime,runtimeEnvironment} from '../desktop/runtime-config.mjs';
 import { copyWorkerLibraries } from "./worker-runtime-files.mjs";
 // Cross-build a single-file Windows x64 EXE on macOS/Linux using a verified Go SDK.
 // Generated downloads/staging live only in ignored .local-tools/ and release/.
@@ -12,7 +14,12 @@ import sharp from 'sharp';
 const project = path.resolve(import.meta.dirname, '..');
 if (!['darwin', 'linux'].includes(process.platform)) throw new Error('Cross-packaging currently runs on macOS/Linux.');
 const cache = path.join(project, '.local-tools', 'windows-x64');
-const release = path.join(project, 'release', 'windows-x64');
+const release = path.join(project, 'release', 'beta', 'windows-x64');
+const runtime=resolveRuntime({profile:'beta'});
+const buildCommit=spawnSync('git',['rev-parse','HEAD'],{cwd:project,encoding:'utf8'});
+const dirty=spawnSync('git',['status','--porcelain'],{cwd:project,encoding:'utf8'});
+if(buildCommit.status!==0||dirty.status!==0||dirty.stdout.trim())throw Error('Commit reviewed Beta changes before packaging.');
+const revision=buildCommit.stdout.trim();
 await mkdir(cache, { recursive: true }); await mkdir(release, { recursive: true });
 const stage = await mkdtemp(path.join(release, '.build-'));
 const resources = path.join(stage, 'resources'), app = path.join(resources, 'app'), bin = path.join(resources, 'runtime', 'bin');
@@ -62,14 +69,22 @@ async function walk(folder) {
   return files;
 }
 
-console.log('Building the existing production frontend (no architecture changes)…');
-run(process.execPath, ['scripts/run-framework.mjs', 'build'], { stdio: 'inherit', env: { ...process.env, SHORTCUT_PERSONAL_BUILD: '1' } });
+if(!process.argv.includes('--reuse-frontend')){
+ console.log('Building Beta frontend…');
+ run(process.execPath,['scripts/run-framework.mjs','build'],{stdio:'inherit',env:{...runtimeEnvironment(runtime),SHORTCUT_PERSONAL_BUILD:'1'}});
+}else{
+ const receipt=JSON.parse(readFileSync(path.join(project,'release/beta/ShortCut Studio Beta.app/Contents/Resources/config.json'),'utf8'));
+ if(receipt.profile!=='beta'||receipt.commit!==revision||receipt.version!==BETA_RELEASE.version)throw Error('Frontend reuse requires matching Beta macOS build commit/version.');
+ console.log('Reusing the identical committed Beta frontend from macOS packaging.');
+}
 await cp(path.join(project, 'dist', 'standalone'), app, { recursive: true, dereference: true });
 await cp(path.join(project, 'worker'), path.join(app, 'worker'), { recursive: true, filter: (file) => !file.endsWith('.test.mjs') });
 await mkdir(path.join(app, 'lib'), { recursive: true });
 await copyWorkerLibraries(project, app);
 await mkdir(path.join(resources, 'desktop'));
-for (const file of ['windows-bootstrap.mjs', 'windows-config.mjs']) await copyFile(path.join(project, 'desktop', file), path.join(resources, 'desktop', file));
+for (const file of ['windows-bootstrap.mjs', 'windows-config.mjs','runtime-config.mjs','beta-release.mjs']) await copyFile(path.join(project, 'desktop', file), path.join(resources, 'desktop', file));
+
+await writeFile(path.join(resources,'config.json'),JSON.stringify({profile:'beta',webPort:5373,workerPort:8987,version:BETA_RELEASE.version,build:BETA_RELEASE.build,commit:revision,baseCommit:BETA_RELEASE.baseCommit},null,2));
 
 // Copy only JS runtime dependencies. Never ship Mac native bindings on Windows.
 const resolver = createRequire(path.join(project, 'package.json')), copied = new Set();
@@ -97,7 +112,7 @@ const sharpRoot = path.join(app, 'node_modules', '@img', 'sharp-win32-x64');
 await mkdir(sharpRoot, { recursive: true }); run('/usr/bin/tar', ['-xzf', sharpArchive, '--strip-components=1', '-C', sharpRoot]);
 sources.push({ name: sharpPackage.name, version: sharpVersion, url: sharpPackage.dist.tarball, integrity: sharpPackage.dist.integrity });
 
-const nodeVersion = 'v24.21.0', nodeName = `node-${nodeVersion}-win-x64.zip`;
+const nodeVersion = process.version, nodeName = `node-${nodeVersion}-win-x64.zip`;
 const sumsResponse = await fetch(`https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt`);
 if (!sumsResponse.ok) throw new Error('Node checksums unavailable');
 const nodeSha = (await sumsResponse.text()).split('\n').find((line) => line.endsWith(`  ${nodeName}`))?.split(/\s+/)[0];
@@ -198,6 +213,7 @@ await writeFile(path.join(resources, 'runtime-manifest.json'), JSON.stringify({ 
 const payload = path.join(stage, 'payload.zip');
 run('/usr/bin/zip', ['-q', '-r', payload, '.'], { cwd: resources });
 await copyFile(path.join(project, 'desktop/Launcher_windows.go'), path.join(stage, 'main.go'));
+await copyFile(path.join(project,'desktop/Installer_windows.go'),path.join(stage,'installer.go'));
 
 const hostGoEnv = { ...goEnv, GOOS: process.platform, GOARCH: process.arch === 'arm64' ? 'arm64' : 'amd64' };
 const imports = JSON.parse(run(go, ['run', 'scripts/audit-windows-runtime.go', resources], { env: hostGoEnv }));
@@ -219,20 +235,35 @@ run('/usr/bin/zip', ['-q', payload, 'windows-dependencies.json'], { cwd: resourc
 const png = await sharp(path.join(project, 'public/favicon.svg')).resize(256, 256).png().toBuffer();
 const ico = Buffer.alloc(22); ico.writeUInt16LE(1, 2); ico.writeUInt16LE(1, 4); ico.writeUInt16LE(1, 10); ico.writeUInt16LE(32, 12); ico.writeUInt32LE(png.length, 14); ico.writeUInt32LE(22, 18);
 await writeFile(path.join(stage, 'Studio.ico'), Buffer.concat([ico, png]));
-await writeFile(path.join(stage, 'winres.json'), JSON.stringify({ RT_GROUP_ICON: { APP: { '0409': 'Studio.ico' } }, RT_MANIFEST: { '#1': { '0409': { identity: { name: 'ShortCutStudio', version: '1.1.0.0' }, description: 'ShortCut Studio', 'minimum-os': 'win10', 'execution-level': 'as invoker', 'long-path-aware': true } } } }));
+await writeFile(path.join(stage, 'winres.json'), JSON.stringify({ RT_GROUP_ICON: { APP: { '0409': 'Studio.ico' } }, RT_MANIFEST: { '#1': { '0409': { identity: { name: 'ShortCutStudioBeta', version: BETA_RELEASE.shortVersion+'.'+BETA_RELEASE.build }, description: 'ShortCut Studio Beta', 'minimum-os': 'win10', 'execution-level': 'as invoker', 'long-path-aware': true } } } }));
 const nativeEnv = { ...goEnv, GO111MODULE: 'on', GOOS: process.platform, GOARCH: process.arch === 'arm64' ? 'arm64' : 'amd64', GOBIN: path.join(cache, 'go-tools') };
 run(go, ['install', 'github.com/tc-hib/go-winres@v0.3.3'], { env: nativeEnv });
 run(path.join(cache, 'go-tools/go-winres'), ['make', '--in', 'winres.json', '--arch', 'amd64'], { cwd: stage });
-console.log('Compiling the native Windows launcher with embedded app payload…');
-const output = path.join(stage, 'ShortCut Studio.exe');
-run(go, ['build', '-trimpath', '-ldflags=-s -w', '-o', output, '.'], { cwd: stage, env: goEnv });
-const destination = path.join(release, 'ShortCut Studio.exe');
+console.log('Compiling Beta Windows x64 installer and launcher with embedded runtime…');
+const filename=`ShortCut-Studio-Beta-Setup-${BETA_RELEASE.version}-x64.exe`;
+const output=path.join(stage,filename);
+run(go, ['build', '-trimpath', `-ldflags=-s -w -X main.releaseVersion=${BETA_RELEASE.version} -X main.releaseCommit=${revision}`, '-o', output, '.'], { cwd: stage, env: goEnv });
+const destination=path.join(release,filename);
 if (existsSync(destination)) await rename(destination, path.join(stage, 'previous-build.exe'));
 await rename(output, destination);
 const sha256 = createHash('sha256').update(await readFile(destination)).digest('hex');
-await writeFile(path.join(release, 'SHA256SUMS.txt'), `${sha256}  ShortCut Studio.exe\n`);
-await writeFile(path.join(release, 'README.txt'), `ShortCut Studio — Windows 10/11 x64\n\nDouble-click ShortCut Studio.exe. No Node/Python/FFmpeg installation needed.\nFirst launch extracts the bundled runtime under %LOCALAPPDATA%\\ShortCut Studio\\runtime.\nKeep the launcher window open; press Enter to stop, or close its window. Active jobs stop with the app.\nMedia and history: %LOCALAPPDATA%\\ShortCut Studio\\media\nLog: %LOCALAPPDATA%\\ShortCut Studio\\logs\\startup.log\nWhisper small multilingual model is downloaded only when requested in Auto Subtitle.\nChatGPT: click Continue with ChatGPT, sign in and authorize in your browser.\nOAuth tokens are encrypted using Windows DPAPI (this Windows account), not browser storage.\nRestart preserves the connection. Disconnect removes only this app's local saved tokens.\nEligible plan/permissions/usage limits still apply; login alone does not grant plan usage.\nThis personal build is unsigned and has not been runtime-tested on a Windows machine.\nDo not disable Windows security protections; verify origin/checksum before running.\n`);
-const zip = path.join(release, 'ShortCut-Studio-Windows-x64.zip');
-if (existsSync(zip)) await rename(zip, path.join(stage, 'previous-build.zip'));
-run('/usr/bin/zip', ['-q', zip, 'ShortCut Studio.exe', 'README.txt', 'SHA256SUMS.txt'], { cwd: release });
-console.log(JSON.stringify({ executable: destination, bytes: (await readFile(destination)).length, sha256, nativeRuntimeFiles: manifest.filter((file) => /\.(exe|dll|node)$/.test(file.path)).length, windowsRuntimeTested: false }));
+await writeFile(path.join(release, 'SHA256SUMS.txt'), `${sha256}  ${filename}\n`);
+await writeFile(path.join(release,'README.txt'),`ShortCut Studio Beta ${BETA_RELEASE.version} — Windows 10/11 x64
+Commit: ${revision}
+Base: ${BETA_RELEASE.baseCommit}
+Run ${filename} to install for the current account (no admin).
+Installed app: %LOCALAPPDATA%\\Programs\\ShortCut Studio Beta\\ShortCut Studio Beta.exe
+Desktop/Start Menu shortcuts and Windows Apps uninstall entry are created.
+Close Beta normally before updating/uninstalling; installer does not kill jobs.
+One previous installed executable/receipt is retained for rollback on update.
+Media/history/cache/runtime: %LOCALAPPDATA%\\ShortCut Studio Beta
+App services: 127.0.0.1:5373 / :8987. OAuth callback :8987/auth/callback.
+Credentials: Beta-only CurrentUser DPAPI; sign in separately. DEV/production data is not imported.
+Uninstall removes program/shortcuts/registration and keeps user data/credentials.
+Whisper models are NOT bundled or downloaded by packaging.
+Bundled Node/FFmpeg/ffprobe/yt-dlp/Whisper CLI/Sharp/VAD and DLLs are x64 Windows binaries.
+Unsigned personal build; no Authenticode certificate was provided.
+Build/static PE dependency audit completed; install/runtime/video quality not tested on real Windows.
+`);
+await writeFile(path.join(release,'build-receipt.json'),JSON.stringify({version:BETA_RELEASE.version,commit:revision,baseCommit:BETA_RELEASE.baseCommit,arch:'x64',platform:'win32',executable:filename,bytes:(await readFile(destination)).length,sha256,signed:false,runtimeSources:sources,nativeFiles:manifest.filter(f=>/\.(exe|dll|node)$/i.test(f.path)),runtimeTested:false,stage},null,2));
+console.log(JSON.stringify({executable:destination,version:BETA_RELEASE.version,commit:revision,bytes:(await readFile(destination)).length,sha256,nativeRuntimeFiles:manifest.filter(f=>/\.(exe|dll|node)$/i.test(f.path)).length,windowsRuntimeTested:false}));

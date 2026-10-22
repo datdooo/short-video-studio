@@ -9,11 +9,11 @@ final class StudioApp: NSObject, NSApplicationDelegate {
     private var quitting = false
     private var logHandle: FileHandle?
     private var appName: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "ShortCut Studio" }
-    private var webURL: URL {
+    private var webURL: URL? {
         let configURL = Bundle.main.resourceURL!.appendingPathComponent("config.json")
         let config = (try? Data(contentsOf: configURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        let port = config?["webPort"] as? Int ?? 5173
-        return URL(string: "http://127.0.0.1:\(port)/")!
+        guard config?["profile"] as? String == "beta", let port = config?["webPort"] as? Int, port == 5373 else { return nil }
+        return URL(string: "http://127.0.0.1:\(port)/")
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -71,7 +71,7 @@ final class StudioApp: NSObject, NSApplicationDelegate {
     private var logURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/\(appName)/launcher.log")
     }
-    @objc private func openBrowser() { NSWorkspace.shared.open(webURL) }
+    @objc private func openBrowser() { guard let url = webURL else { showError("Cấu hình Beta không hợp lệ."); return }; NSWorkspace.shared.open(url) }
     @objc private func openLog() { NSWorkspace.shared.open(logURL) }
     @objc private func quitApp() { NSApplication.shared.terminate(nil) }
 

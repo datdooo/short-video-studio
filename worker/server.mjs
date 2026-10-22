@@ -1,3 +1,4 @@
+import {resolveRuntime,runtimeEnvironment,prepareRuntimeDirectories} from '../desktop/runtime-config.mjs';
 import {canonicalVideoInput,VIDEO_TEXT_INSTRUCTIONS,VIDEO_TEXT_VERSION} from '../lib/video-ai-input.mjs';
 import {createEditorSourceLeases} from './editor-source-leases.mjs';
 import {createRequestOriginPolicy} from './request-origin.mjs';
@@ -46,7 +47,7 @@ import {
 } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { homedir,setPriority } from "node:os";
+import { homedir,setPriority,userInfo } from "node:os";
 import { pipeline } from "node:stream/promises";
 import sharp from "sharp";
 import { cutTransitionFilters } from './cut-transition.mjs';
@@ -92,10 +93,20 @@ import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTra
 sharp.concurrency(2);sharp.cache({memory:32,files:8,items:32});
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
-const dataRoot = path.resolve(process.env.MEDIA_WORKER_DATA_DIR || path.join(projectRoot, "worker-data"));
-const sourcesRoot = path.join(dataRoot, "sources");
-const port = Number(process.env.MEDIA_WORKER_PORT || 8787);
-const webPort=Number(process.env.PORT||(process.env.SHORTCUT_RUNTIME_PROFILE==='development'||port===8887?5273:5173));
+const betaRuntime=resolveRuntime({profile:process.env.SHORTCUT_RUNTIME_PROFILE||'beta',home:userInfo().homedir,supportRoot:process.env.SHORTCUT_BETA_SUPPORT_ROOT});
+for(const [key,expected] of Object.entries({MEDIA_WORKER_DATA_DIR:betaRuntime.dataRoot,MEDIA_WORKER_PORT:String(betaRuntime.workerPort),PORT:String(betaRuntime.webPort),CHATGPT_KEYCHAIN_SERVICE:betaRuntime.credentialService})){
+ if(process.env[key]!==undefined&&process.env[key]!==expected)throw Error(`Beta isolation: invalid ${key}; refusing cross-profile access.`);
+}
+const inheritedFontConfig=process.env.FONTCONFIG_FILE,credentialHelper=process.env.CHATGPT_CREDENTIAL_HELPER;
+const isolatedEnvironment=runtimeEnvironment(betaRuntime);
+for(const key of Object.keys(process.env))if(!(key in isolatedEnvironment))delete process.env[key];
+Object.assign(process.env,isolatedEnvironment);
+if(inheritedFontConfig){if(path.resolve(inheritedFontConfig)!==path.join(betaRuntime.dataRoot,'fontconfig.xml'))throw Error('Beta fontconfig must be app-local.');process.env.FONTCONFIG_FILE=inheritedFontConfig;}
+if(credentialHelper){if(process.platform!=='win32'||path.resolve(credentialHelper)!==path.resolve(projectRoot,'../runtime/bin/chatgpt-credential-store.exe'))throw Error('Beta credential helper must be bundled.');process.env.CHATGPT_CREDENTIAL_HELPER=credentialHelper;}
+await prepareRuntimeDirectories(betaRuntime);
+const dataRoot=betaRuntime.dataRoot;
+const sourcesRoot=path.join(dataRoot,'sources');
+const port=betaRuntime.workerPort,webPort=betaRuntime.webPort;
 const requestOrigins=createRequestOriginPolicy({webPort,workerPort:port});
 const editorSourceLeases=createEditorSourceLeases();
 const host = "127.0.0.1";
@@ -195,7 +206,7 @@ const mediaLibrary = createMediaLibrary({
   editorInUse:({storageId,sourceId,kind})=>storageId==='current'&&kind==='original'&&editorSourceLeases.has(sourceId),
   roots: [
     { id: "current", label: "Dữ liệu app hiện tại", root: dataRoot },
-    ...(process.env.MEDIA_WORKER_DISABLE_LEGACY === "1" || path.resolve(legacyDataRoot) === dataRoot ? [] : [{ id: "legacy", label: "Dữ liệu cũ trong Documents", root: legacyDataRoot }]),
+    // Beta never mounts another profile's library.
   ],
   isBusy: ({ storageId, sourceId, jobId, kind }) => storageId === "current" && (["part","parts"].includes(kind) ? (
     // Outputs belong to a specific job directory. Playback/analysis of the
@@ -486,7 +497,7 @@ async function startChatGPTAuthorization() {
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("ext_agent_host_id", extAgentHostId);
   if (clientId === "dynamic_agent_client") {
-    url.searchParams.set("agent_name_hint", process.env.CHATGPT_KEYCHAIN_SERVICE?.includes("Dev") ? "ShortCut Studio Dev" : "ShortCut Studio");
+    url.searchParams.set("agent_name_hint", betaRuntime.name);
   } else {
     if (existing && !existing.scopes?.includes("chatgpt.tokens.use.direct")) url.searchParams.set("prompt", "consent");
     if (existing?.id_token) url.searchParams.set("id_token_hint", existing.id_token);

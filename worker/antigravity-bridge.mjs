@@ -137,7 +137,7 @@ export function createAntigravityBridge(dataRoot, options = {}) {
     const script = path.join(profileRoot, "Connect Antigravity.command");
     const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
     const env = antigravityEnvironment();
-    const login = env.SHORTCUT_RUNTIME_PROFILE === "development"
+    const login = env.SHORTCUT_RUNTIME_PROFILE === "beta"
       ? `/usr/bin/env -i ${["HOME", "CFFIXED_USER_HOME", "PATH", "TMPDIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "AGY_CLI_DISABLE_AUTO_UPDATE"].filter((key) => env[key]).map((key) => `${key}=${quote(env[key])}`).join(" ")} `
       : "";
     await writeFile(script, `#!/bin/zsh\ncd ${quote(workspace)} || exit 1\nunset GEMINI_API_KEY GOOGLE_API_KEY GOOGLE_APPLICATION_CREDENTIALS\nexport AGY_CLI_DISABLE_AUTO_UPDATE=1\nprint 'Đăng nhập Google trong Antigravity. Hoàn tất các bước onboarding rồi quay lại ShortCut Studio.'\n${login}${quote(binary)} --agent ${AGENT} --mode plan\n`, { mode: 0o700 });

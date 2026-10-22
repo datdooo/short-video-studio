@@ -1,3 +1,4 @@
+import {BETA_RELEASE} from '../desktop/beta-release.mjs';
 import { copyWorkerLibraries } from "./worker-runtime-files.mjs";
 import { spawnSync } from "node:child_process";
 import { createRequire, isBuiltin } from "node:module";
@@ -7,14 +8,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { trimRuntime } from "./trim-runtime.mjs";
-import { macPackageTarget, runtimeEnvironment } from "../desktop/runtime-config.mjs";
+import { macPackageTarget, runtimeEnvironment, prepareRuntimeDirectories } from "../desktop/runtime-config.mjs";
 import { auditMacOSRuntime } from "./audit-macos-runtime.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
 if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("This packaging script targets Apple Silicon Macs.");
 const compatible26 = process.argv.includes("--macos26");
-const target = macPackageTarget({ development: process.argv.includes("--dev"), compatible26, projectRoot });
+const target = macPackageTarget({ beta: process.argv.includes("--beta"), development: process.argv.includes("--dev"), compatible26, projectRoot });
 const { runtime, releaseRoot, outputAppPath } = target;
+const revision=spawnSync('git',['rev-parse','HEAD'],{cwd:projectRoot,encoding:'utf8'});
+const dirty=spawnSync('git',['status','--porcelain'],{cwd:projectRoot,encoding:'utf8'});
+if(revision.status!==0||dirty.status!==0||dirty.stdout.trim())throw Error('Commit reviewed Beta isolation changes before packaging.');
+Object.assign(target.config,{version:BETA_RELEASE.version,build:BETA_RELEASE.build,commit:revision.stdout.trim(),baseCommit:BETA_RELEASE.baseCommit});
 const runtimeManifestPath = path.join(projectRoot, ".local-tools/macos26/runtime-manifest.json");
 if (compatible26 && !existsSync(runtimeManifestPath)) throw new Error("Run npm run setup:macos26 first to fetch verified compatible runtime binaries.");
 const compatibleRuntime = compatible26 ? JSON.parse(readFileSync(runtimeManifestPath, "utf8")) : null;
@@ -27,6 +32,7 @@ function run(binary, args, options = {}) {
   if (result.error || result.status !== 0) throw new Error(`${binary}: ${result.error?.message || result.stderr || result.stdout}`);
   return result.stdout || "";
 }
+await prepareRuntimeDirectories(runtime);
 console.log(`Building frontend for ${runtime.name}…`);
 run(process.execPath, ["scripts/run-framework.mjs", "build"], { stdio: "inherit", env: { ...(runtime.isolated ? runtimeEnvironment(runtime) : process.env), NEXT_PUBLIC_MEDIA_WORKER_ORIGIN: runtime.workerOrigin, SHORTCUT_PERSONAL_BUILD: "1" } });
 const contents = path.join(appPath, "Contents");
@@ -181,12 +187,7 @@ if (compatibleRuntime) {
 
 const bundledYtDlp = path.join(projectRoot, ".local-tools", "yt-dlp-macos-bundle");
 if (!existsSync(bundledYtDlp)) {
-  console.log("Downloading official standalone yt-dlp for macOS…");
-  const response = await fetch("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos", { redirect: "follow" });
-  if (!response.ok) throw new Error(`yt-dlp download failed: ${response.status}`);
-  await mkdir(path.dirname(bundledYtDlp), { recursive: true });
-  await writeFile(bundledYtDlp, new Uint8Array(await response.arrayBuffer()));
-  await chmod(bundledYtDlp, 0o755);
+  throw new Error('Missing verified local yt-dlp runtime; no automatic download for Beta macOS.');
 }
 await copyFile(bundledYtDlp, path.join(binRoot, "yt-dlp"));
 await chmod(path.join(binRoot, "yt-dlp"), 0o755);
@@ -211,7 +212,7 @@ run("/usr/bin/iconutil", ["-c", "icns", iconset, "-o", path.join(resources, "Stu
 await writeFile(path.join(contents, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
 <key>CFBundleName</key><string>${runtime.name}</string><key>CFBundleDisplayName</key><string>${runtime.name}</string>
 <key>CFBundleIdentifier</key><string>${runtime.bundleId}</string><key>CFBundleExecutable</key><string>${runtime.name}</string>
-<key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>1.1.0</string><key>CFBundleVersion</key><string>2</string>
+<key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${BETA_RELEASE.shortVersion}</string><key>CFBundleVersion</key><string>${BETA_RELEASE.build}</string>
 <key>CFBundleIconFile</key><string>Studio.icns</string><key>LSMinimumSystemVersion</key><string>${minimumOS}</string><key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>`);

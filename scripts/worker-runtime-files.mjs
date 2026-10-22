@@ -6,6 +6,8 @@ export const WORKER_LIB_FILES = Object.freeze(['video-ai-input.mjs','main-instru
 export const WORKER_LIB_DIRS = Object.freeze(['visual-style','source-context','auto-cut','music']);
 export async function copyWorkerLibraries(project, app) {
  await mkdir(path.join(app,'lib'),{recursive:true});
+ await mkdir(path.join(app,'desktop'),{recursive:true});
+ for(const file of ['runtime-config.mjs','beta-release.mjs'])await copyFile(path.join(project,'desktop',file),path.join(app,'desktop',file));
  await cp(path.join(project,'third_party'),path.join(app,'third_party'),{recursive:true});
  for(const file of WORKER_LIB_FILES) await copyFile(path.join(project,'lib',file),path.join(app,'lib',file));
  for(const directory of WORKER_LIB_DIRS) await cp(path.join(project,'lib',directory),path.join(app,'lib',directory),{recursive:true});

@@ -9,9 +9,9 @@ import {sourceCaptionTrack,type CaptionTrack} from './subtitles.mjs';
 import {validateTeaser} from './teaser-hooks.mjs';
 import {validateMainRangeMetadata} from './main-ranges.mjs';
 import {validateMainAnalysis} from './auto-cut/analysis.mjs';
-export const SESSION_KEY='shortcut-dev-editor-session-v1';
+export const SESSION_KEY='shortcut-beta-editor-session-v1';
 export const SESSION_LIMIT=4*1024*1024; // UTF-16 upper bound, one atomic localStorage value.
-const PRESERVED_SESSION_KEY='shortcut-dev-editor-preserved-sessions-v1';
+const PRESERVED_SESSION_KEY='shortcut-beta-editor-preserved-sessions-v1';
 const PRESERVED_SESSION_LIMIT=8*1024*1024;
 const PRESERVED_SESSION_COUNT=12;
 export type Controls=Record<string,unknown>;

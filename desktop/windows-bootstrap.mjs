@@ -1,12 +1,16 @@
 // The Windows launcher owns a Job Object, so closing it also stops render children.
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
 import { windowsEnvironment } from './windows-config.mjs';
+import {prepareRuntimeDirectories} from './runtime-config.mjs';
 
 const resources = path.resolve(import.meta.dirname, '..');
-const { appRoot, dataRoot, fontConfig, fontXml, env } = windowsEnvironment(resources, process.env);
+const config=JSON.parse(await readFile(path.join(resources,'config.json'),'utf8'));
+if(config.profile!=='beta'||config.webPort!==5373||config.workerPort!==8987)throw Error('Invalid Beta package configuration.');
+const { runtime, appRoot, dataRoot, fontConfig, fontXml, env } = windowsEnvironment(resources, process.env);
+await prepareRuntimeDirectories(runtime);
 await mkdir(path.join(dataRoot, 'cache'), { recursive: true });
 await writeFile(fontConfig, fontXml);
 async function occupied(port) {
@@ -17,7 +21,7 @@ async function occupied(port) {
     socket.once('connect', () => done(true)); socket.once('error', () => done(false)); socket.once('timeout', () => done(false));
   });
 }
-if (await occupied(5173) || await occupied(8787)) throw new Error('Ports 5173/8787 are occupied. Close the other ShortCut Studio instance first.');
+if (await occupied(5373) || await occupied(8987)) throw new Error('Beta ports 5373/8987 are occupied. Close the other ShortCut Studio Beta instance first.');
 let stopping = false;
 const children = [];
 function stop(code) {
@@ -35,7 +39,7 @@ for (const script of [path.join(appRoot, 'worker', 'server.mjs'), path.join(appR
 let ready = false;
 for (let attempt = 0; attempt < 120 && !stopping; attempt++) {
   try {
-    const [worker, web] = await Promise.all([fetch('http://127.0.0.1:8787/health', { signal: AbortSignal.timeout(1500) }), fetch('http://127.0.0.1:5173/', { signal: AbortSignal.timeout(1500) })]);
+    const [worker, web] = await Promise.all([fetch('http://127.0.0.1:8987/health', { signal: AbortSignal.timeout(1500) }), fetch('http://127.0.0.1:5373/', { signal: AbortSignal.timeout(1500) })]);
     if (worker.ok && (await worker.json()).ok && web.ok) { ready = true; console.log('SHORTCUT_READY'); break; }
   } catch { /* Still starting. */ }
   await new Promise((resolve) => setTimeout(resolve, 500));

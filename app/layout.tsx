@@ -3,10 +3,10 @@ import "./globals.css";
 import { fontFaceCss } from "@/lib/visual-style/fonts.mjs";
 
 export const metadata: Metadata = {
-  title: "ShortCut Studio — AI Vertical Video Editor",
+  title: "ShortCut Studio Beta — AI Vertical Video Editor",
   description: "Turn long videos into polished vertical short-form stories with source-accurate edit plans.",
   other: {
-    "codex-preview": "development",
+    "shortcut-channel": "beta",
   },
   icons: {
     icon: "/favicon.svg?v=play-3",

@@ -493,7 +493,7 @@ export default function Home() {
     if(result.notice)setSessionNotice(result.notice);
     if(d){
       restoreEditorDraft(d);setSaveEnabled(!result.blocked);
-    }else if(!result.blocked){try{setBatchId(managedId(localStorage.getItem('shortcut-batch-id')));setRestorePassive(true);}catch{/* Storage is optional. */}}
+    }else if(!result.blocked){try{setBatchId(managedId(localStorage.getItem('shortcut-beta-batch-id')));setRestorePassive(true);}catch{/* Storage is optional. */}}
     setSaveState(result.blocked?'error':d?'saved':'idle');setSessionReady(true);
   },[]);
   // A saved managed source is reopened read-only; never fall back to download.
@@ -555,7 +555,7 @@ export default function Home() {
   }
   function newSession(){
     // Remove the single draft only. Worker jobs/media/library/auth are untouched.
-    try{localStorage.removeItem(SESSION_KEY);localStorage.removeItem('shortcut-batch-id');}catch{setSaveState('error');setSaveError('Không bỏ được bản nháp trong bộ nhớ local; phiên hiện tại chưa bị xóa.');return;}
+    try{localStorage.removeItem(SESSION_KEY);localStorage.removeItem('shortcut-beta-batch-id');}catch{setSaveState('error');setSaveError('Không bỏ được bản nháp trong bộ nhớ local; phiên hiện tại chưa bị xóa.');return;}
     sessionEpoch.current++;batchSubmitPending.current=false;setIsStartingBatch(false);setIsStartingRender(false);saveGeneration.current++;maySave.current=false;latestSession.current=null;draftWriteBlocked.current=false;setRestoreBlocked(false);setSaveEnabled(false);setInterruptedTasks([]);
     resetSourceSelection();setControls({});setDraftActivities({});setRestorePassive(false);setMusicIntent(false);setRetainedSourceId('');restoringSource.current=false;pendingPreviewRestore.current=null;
     setSaveState('idle');setSourceAdvancedOpen(false);setInspectorTab('appearance');setLocalFile(null);setLocalVideoUrl('');setLocalFileName('');setLocalDraftId('');setSourceMode('youtube');setSourceUrl('');setEditMode('ai');setProvider('chatgpt');setPlan(mockPlan(DEFAULT_REQUEST));setSourceTitle(DEFAULT_REQUEST.originalTitle);
@@ -915,7 +915,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    const historyKey = "shortcut-auto-download-requests";
+    const historyKey = "shortcut-beta-auto-download-requests";
     let history: Set<string>;
     try {
       const saved = JSON.parse(localStorage.getItem(historyKey) || "[]");
@@ -1182,7 +1182,7 @@ export default function Home() {
       // polling even if the batch ID is unchanged or a last poll said finished.
       batchPollEpoch.current += 1;
       setBatchPollVersion((version) => version + 1);
-      try { localStorage.setItem("shortcut-batch-id", data.batch.id); } catch { /* The current queue still runs without browser storage. */ }
+      try { localStorage.setItem("shortcut-beta-batch-id", data.batch.id); } catch { /* The current queue still runs without browser storage. */ }
       setBatch(data.batch);
       setBatchId(data.batch.id);
       setBatchUrls((current) => clearSubmittedBatchInput(current, submittedInput));
@@ -1210,7 +1210,7 @@ export default function Home() {
       if (!response.ok || !data.url) throw new Error(data.error || "Không bắt đầu được ChatGPT sign-in.");
       if (!popup) throw new Error("Trình duyệt đang chặn popup. Cho phép popup rồi thử lại.");
       attemptId = data.attemptId;
-      if (!attemptId) throw new Error("Worker chưa hỗ trợ trạng thái đăng nhập. Khởi động DEV bản mới.");
+      if (!attemptId) throw new Error("Worker chưa hỗ trợ trạng thái đăng nhập. Khởi động Beta bản mới.");
       popup.location.href = data.url;
 
       for (let attempt = 0; attempt < 360; attempt += 1) {
@@ -1427,7 +1427,7 @@ export default function Home() {
     const current=()=>epoch===sourceSelectionEpoch.current&&requestId===subtitleRequestSerial.current;
     setSubtitleStartedAt(Date.now());setSubtitleBusy(true); setSubtitleNotice('Đang tải Whisper small · 465 MiB…');
     try {
-      if(speechModel?.modelId!=='ggml-small.bin')throw new Error('Worker đang chạy chưa cấu hình Whisper small. Khi job kết thúc, mở lại bản DEV mới; không tải/nhận base là small.');
+      if(speechModel?.modelId!=='ggml-small.bin')throw new Error('Worker đang chạy chưa cấu hình Whisper small. Khi job kết thúc, mở lại bản Beta mới; không tải/nhận base là small.');
       const response = await fetch(`${WORKER_ORIGIN}/api/speech/model`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const data = await response.json() as { modelReady: boolean; installing: boolean; model?:string; backend?:string; modelId?:string; downloadedBytes?: number; totalBytes?: number; error?: string };
       if (!response.ok) throw new Error(data.error || 'Không tải được model.');

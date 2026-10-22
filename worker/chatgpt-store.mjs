@@ -5,7 +5,7 @@ import { userInfo } from 'node:os';
 
 // Only this app's own OAuth connection is read/written. No browser/Codex tokens.
 export function createChatGPTStore({ dataRoot, platform = process.platform, env = process.env, exists = existsSync, execute = spawnSync, accountHome = () => userInfo().homedir }) {
-  const service = env.CHATGPT_KEYCHAIN_SERVICE || 'ShortCut Studio ChatGPT', account = 'default';
+  const service = env.CHATGPT_KEYCHAIN_SERVICE || 'ShortCut Studio Beta ChatGPT', account = 'default';
   const helper = env.CHATGPT_CREDENTIAL_HELPER || '';
   const filename = (platform === 'win32' ? path.win32 : path).join(dataRoot, 'chatgpt-credentials.dpapi');
   const available = platform === 'darwin' ? exists('/usr/bin/security') : platform === 'win32' && Boolean(helper && exists(helper));
