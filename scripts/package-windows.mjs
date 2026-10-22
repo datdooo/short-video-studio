@@ -1,5 +1,5 @@
 import {BETA_RELEASE} from '../desktop/beta-release.mjs';
-import {resolveRuntime,runtimeEnvironment} from '../desktop/runtime-config.mjs';
+import {resolveRuntime,runtimeEnvironment,prepareRuntimeDirectories} from '../desktop/runtime-config.mjs';
 import { copyWorkerLibraries } from "./worker-runtime-files.mjs";
 // Cross-build a single-file Windows x64 EXE on macOS/Linux using a verified Go SDK.
 // Generated downloads/staging live only in ignored .local-tools/ and release/.
@@ -20,6 +20,7 @@ const buildCommit=spawnSync('git',['rev-parse','HEAD'],{cwd:project,encoding:'ut
 const dirty=spawnSync('git',['status','--porcelain'],{cwd:project,encoding:'utf8'});
 if(buildCommit.status!==0||dirty.status!==0||dirty.stdout.trim())throw Error('Commit reviewed Beta changes before packaging.');
 const revision=buildCommit.stdout.trim();
+await prepareRuntimeDirectories(runtime);
 await mkdir(cache, { recursive: true }); await mkdir(release, { recursive: true });
 const stage = await mkdtemp(path.join(release, '.build-'));
 const resources = path.join(stage, 'resources'), app = path.join(resources, 'app'), bin = path.join(resources, 'runtime', 'bin');
@@ -197,7 +198,7 @@ const goArchive = await download(`https://go.dev/dl/${goFile.filename}`, goFile.
 const goRoot = path.join(cache, `${goVersion.version}-${process.platform}-${process.arch}`);
 if (!existsSync(path.join(goRoot, 'go/bin/go'))) { await mkdir(goRoot, { recursive: true }); run('/usr/bin/tar', ['-xzf', goArchive, '-C', goRoot]); }
 const go = path.join(goRoot, 'go/bin/go');
-const goEnv = { ...process.env, GOTOOLCHAIN: 'local', GO111MODULE: 'off', CGO_ENABLED: '0', GOOS: 'windows', GOARCH: 'amd64', GOCACHE: path.join(cache, 'go-cache') };
+const goEnv = { ...process.env, GOTOOLCHAIN: 'local', GO111MODULE: 'off', CGO_ENABLED: '0', GOOS: 'windows', GOARCH: 'amd64', GOCACHE: path.join(cache, 'go-cache'), GOPATH:path.join(cache,'go-path'), GOMODCACHE:path.join(cache,'go-modules') };
 run(go, ['build', '-trimpath', '-ldflags=-s -w', '-o', path.join(bin, 'chatgpt-credential-store.exe'), 'desktop/CredentialStore_windows.go'], { env: goEnv });
 
 // Refuse a cross-platform package with any Mach-O binaries copied from this Mac.
