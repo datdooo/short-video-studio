@@ -1,4 +1,4 @@
-import {mainInstruction} from '../lib/main-instructions.mjs';
+import {mainInstruction,MAIN_EDITING_CRITERIA} from '../lib/main-instructions.mjs';
 import {lockedParts} from '../lib/auto-cut/locks.mjs';
 import {WEB_AI_PROMPT_VERSION} from '../lib/muse-plan.mjs';
 import {createHash} from 'node:crypto';
@@ -19,6 +19,7 @@ export function buildExternalEditingContext(source,context,options,prepared,body
  const request={instruction:mainInstruction(options.instruction).text,supplementalPrompt:options.supplementalPrompt};
  const whole={id:0,title:source.title,hook:'Toàn bộ video nguồn, chưa phải một part đã chọn.',segments:[{start:0,end:source.duration}]};
  const evidence=collectTeaserEvidence(whole,inputSource,cues,{...request,permittedRanges:[],fullOnly:true}).full;
+ if(evidence.userRequest.instruction===MAIN_EDITING_CRITERIA)evidence.userRequest.instruction='Use the shared current MAIN editing policy in instructions (exact factory default; no additional user requirement).';
  // The shared full transcript/comments/replay appear once, with no catalog-only
  // substitution or tail truncation in this manual text transport.
  const supporting={...context.metadata,chapters:context.chapters,heatmap:context.heatmap,

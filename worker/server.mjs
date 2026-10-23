@@ -732,7 +732,7 @@ async function resolveEditingProvider(signal,task='main') {
       if(images.length)throw Object.assign(Error('VIDEO_TEXT_ONLY: đường phân tích không nhận ảnh.'),{code:'VIDEO_TEXT_ONLY'});
       const canonical=canonicalVideoInput(input),packed=compactAiInput(canonical.value),serializedInput=packed.text;
       const content=[{type:'input_text',text:serializedInput}];
-      const requestMetrics={phase:input.phase||'select-main',inputCharacters:serializedInput.length,rawInputCharacters:JSON.stringify(input).length,inputFormat:packed.format,imageCount:0,dataCounts:canonical.counts,dataAvailability:canonical.availability,textContract:VIDEO_TEXT_VERSION,partCount:Array.isArray(input.parts)?input.parts.length:input.partId?1:0,...(input.partId?{partId:input.partId}:{}),inputIntegrity:packed.encoded?"roundtrip-verified":"original-json"};
+      const requestMetrics={phase:input.phase||'select-main',inputCharacters:serializedInput.length,rawInputCharacters:JSON.stringify(input).length,inputFormat:packed.format,imageCount:0,dataCounts:canonical.counts,dataAvailability:canonical.availability,textContract:VIDEO_TEXT_VERSION,partCount:Array.isArray(input.parts)?input.parts.length:input.partId?1:0,...(input.partId?{partId:input.partId}:{}),inputIntegrity:packed.encoded||canonical.encoded?"roundtrip-verified":"original-json"};
       const result = await analyzeWithChatGPTPlan({ model, schema, instructions:VIDEO_TEXT_INSTRUCTIONS+'\n'+(packed.encoded?AI_INPUT_INSTRUCTIONS+'\n':'')+(instructions||'You are a precise source-accurate video editor.'), maxTokens,requestMetrics }, signal, content,reasoning);
       return { value: result.plan };
     } };
@@ -2018,8 +2018,9 @@ const server = createServer(async (request, response) => {
             sendJson(request,response,200,{plan:next});return;
           }
           if(body.mode!==undefined)throw Error('Invalid teaser operation.');
+          if(body.previousRanges!==undefined&&(body.partId===undefined||!Array.isArray(body.previousRanges)||body.previousRanges.length>26||body.previousRanges.some(r=>!r||!Number.isFinite(r.start)||!Number.isFinite(r.end)||r.start<0||r.end<=r.start||r.end>source.duration)))throw Error('Danh sách teaser trước không đúng source/range.');
           await serveAiOperation(request,response,body,'teaser-retry',async()=>{
-            const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:body.singleAttempt===true?1:2,customInstruction:body.customInstruction,instruction:body.instruction,supplementalPrompt:body.supplementalPrompt,forceRefresh:true});
+            const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:1,previousRanges:body.previousRanges,customInstruction:body.customInstruction,instruction:body.instruction,supplementalPrompt:body.supplementalPrompt,forceRefresh:true});
             await measureAiStage('validation',()=>{validatePlan(next, source, {teasers:false});for(const part of next.parts)if(body.partId===undefined||part.id===body.partId)if(part.teaserEnabled!==false)validateTeaser(part,source.duration,source.id);});
             return {plan:next};
           });

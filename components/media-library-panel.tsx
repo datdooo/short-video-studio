@@ -59,7 +59,7 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
     if (!signal?.aborted&&mounted.current&&serial===loadSerial.current) setLibrary(data.library);
   }, [workerOrigin]);
   useEffect(() => {
-    if (!ready) return;
+    if (!ready) {setLoading(false);return;}
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
@@ -71,7 +71,7 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
   async function refresh() {
     if(refreshPending.current||requestPending.current)return;refreshPending.current=true;
     setLoading(true); setError("");
-    try { await load(); } catch (caught) { setError(caught instanceof Error ? caught.message : "Không đọc được kho video."); }
+    try { await load(); } catch (caught) { if(mounted.current)setError(caught instanceof Error ? caught.message : "Không đọc được kho video."); }
     finally { refreshPending.current=false;if(mounted.current)setLoading(false); }
   }
   async function action(kind: "move" | "restore" | "purge", files: LibraryFile[]) {

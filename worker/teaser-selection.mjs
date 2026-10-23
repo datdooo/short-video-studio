@@ -73,7 +73,7 @@ export function hookFailureNotice(code){
  'provider-no-ranked-selection':'ChatGPT chưa trả winner sau lượt yêu cầu xếp hạng/sửa. Chọn lại bằng AI hoặc nhập mốc thủ công.',
  'preparation-failed':'Không chuẩn bị được dữ liệu/bằng chứng của part. Thử lại teaser hoặc nhập mốc thủ công.'})[code]||'Lựa chọn ChatGPT chưa qua kiểm tra kỹ thuật; xem bước lỗi bên dưới rồi chọn lại hoặc nhập mốc thủ công.';
 }
-const rejectNotice=code=>({HOOK_MISSING_LOCAL_SPEECH_END_EVIDENCE:'chưa đối chiếu được cue lời nói trong đoạn chọn; không phải lỗi so khớp quote',HOOK_SPEECH_CITATION_MISSING:'thiếu cueId hoặc mốc bằng chứng để đối chiếu lời nói trong đoạn chọn',HOOK_SPEECH_CITATIONS_OUTSIDE_RANGE:'cue lời nói được dẫn nằm ngoài đoạn teaser',HOOK_UNKNOWN_CUE_ID:'cueId không tồn tại hoặc chưa được gửi trong dữ liệu nguồn'})[code]||(/DURATION/.test(code)?'thời lượng nằm ngoài giới hạn min/max':/PERMITTED|OUTSIDE|RANGE|PLAN_VALIDATION/.test(code)?'range/schema không hợp lệ':/SPEECH_TAIL|SPLITS_TIMED/.test(code)?'biên từ có timestamp hoặc đuôi âm':/SEMANTIC_GATES/.test(code)?'AI chưa xác nhận ý trọn vẹn':/VISUAL|END_STATE|CONTINUOUS/.test(code)?'nhận định hình ảnh thiếu frame/video tương ứng':/SPEECH|CUE/.test(code)?'chưa đối chiếu được cue/bằng chứng lời nói':/INVALID_HOOK/.test(code)?'schema phản hồi':/NO_RANKED|UNAVAILABLE/.test(code)?'AI chưa xếp hạng/chọn winner':'kết quả chưa hợp lệ');
+const rejectNotice=code=>({HOOK_REPEAT_SELECTION:'AI trả lại đoạn đã có; bản đang dùng được giữ, không tạo phương án mới giả',HOOK_MISSING_LOCAL_SPEECH_END_EVIDENCE:'chưa đối chiếu được cue lời nói trong đoạn chọn; không phải lỗi so khớp quote',HOOK_SPEECH_CITATION_MISSING:'thiếu cueId hoặc mốc bằng chứng để đối chiếu lời nói trong đoạn chọn',HOOK_SPEECH_CITATIONS_OUTSIDE_RANGE:'cue lời nói được dẫn nằm ngoài đoạn teaser',HOOK_UNKNOWN_CUE_ID:'cueId không tồn tại hoặc chưa được gửi trong dữ liệu nguồn'})[code]||(/DURATION/.test(code)?'thời lượng nằm ngoài giới hạn min/max':/PERMITTED|OUTSIDE|RANGE|PLAN_VALIDATION/.test(code)?'range/schema không hợp lệ':/SPEECH_TAIL|SPLITS_TIMED/.test(code)?'biên từ có timestamp hoặc đuôi âm':/SEMANTIC_GATES/.test(code)?'AI chưa xác nhận ý trọn vẹn':/VISUAL|END_STATE|CONTINUOUS/.test(code)?'nhận định hình ảnh thiếu frame/video tương ứng':/SPEECH|CUE/.test(code)?'chưa đối chiếu được cue/bằng chứng lời nói':/INVALID_HOOK/.test(code)?'schema phản hồi':/NO_RANKED|UNAVAILABLE/.test(code)?'AI chưa xếp hạng/chọn winner':'kết quả chưa hợp lệ');
 
 const durationNotice=d=>`nguồn ${d.start} → ${d.end}s (${d.sourceSeconds}s); export ${d.renderedSeconds}s ở ${d.playbackRate}×; hợp lệ ${d.minSourceSeconds}–${d.maxSourceSeconds}s nguồn / ${d.minRenderedSeconds}–${d.maxRenderedSeconds}s export; ${d.violation==='minimum'?'ngắn hơn min':d.violation==='maximum'?'dài hơn max':'start/end không hợp lệ'}`;
 
@@ -100,6 +100,7 @@ function rankedSelection(value, {part,source,cues,boundaryCues,input,images,prov
       let {alternatives:ignored,...fields}=choice;void ignored;
       const {start,end}=fields;
       if(!input.allowedRanges.some(r=>start>=r.start&&end<=r.end))throw Error('HOOK_OUTSIDE_PERMITTED_RANGE');
+      if(input.reselection?.previousRanges.some(r=>r.start===start&&r.end===end))throw Error('HOOK_REPEAT_SELECTION');
       const duration=hookDurationCheck(start,end);
       if(!duration.valid)throw Object.assign(Error('HOOK_DURATION_OUT_OF_BOUNDS'),{durationDiagnostic:{...duration,sourceDuration:source.duration}});
       fields=validateEditorialEvidence(fields,{candidates:input.transcriptCandidates,images,cues,visibleCueIds:suppliedCueIds(input)});
@@ -109,7 +110,7 @@ function rankedSelection(value, {part,source,cues,boundaryCues,input,images,prov
       validateTeaser({...part,teaser:result},source.duration);
       valid.push({fields,result,rank:i});
     }catch(error){
-      // Only local validation codes go back into repair, never remote payloads.
+      // Only safe local validation codes enter diagnostics, never remote payloads.
       const code=String(error.message||'').match(/^(?:HOOK_[A-Z_]+|INVALID_HOOK_[A-Z_]+)/)?.[0]||'HOOK_PLAN_VALIDATION_FAILED';
       if(error.speechEvidenceDiagnostic)aiEvent('validation',{partId:part.id,reason:code});
       rejected.push({rank:i,code,...(error.durationDiagnostic?{duration:error.durationDiagnostic}:{}),...(error.speechEvidenceDiagnostic?{speechEvidence:error.speechEvidenceDiagnostic}:{}),start:Number.isFinite(choices[i]?.start)?choices[i].start:null,end:Number.isFinite(choices[i]?.end)?choices[i].end:null});
@@ -140,12 +141,13 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
     }
     return rows;
   }
-  async function preparePart(part,source,cues,boundaryCues,supporting,provider,sourceHash,customInstruction,forceRefresh){
+  async function preparePart(part,source,cues,boundaryCues,supporting,provider,sourceHash,customInstruction,forceRefresh,previousRanges=[]){
     let input=hookInput(part,source,cues,supporting);
     let evidence=collectTeaserEvidence(part,source,cues,{...source.selectionRequest,customInstruction,permittedRanges:input.allowedRanges,completeTransport:true});
     input.videoEvidence={...evidence.full,coverage:{complete:true,policy:'Full original text in current part and adjacent context; never summarized for a request.'}};
     input.analysisCapabilities={text:true,timestampedStills:false,continuousVideo:false,audioInput:false,wordTiming:cues.some(c=>c.timing==='word')};
     if(customInstruction)input.customTeaserRequest=customInstruction;
+    if(previousRanges.length)input.reselection={previousRanges:previousRanges.map(({start,end})=>({start,end})),instruction:'User explicitly requests a NEW candidate. Compare different substantive moments, not cosmetic boundary variants of these excerpts. Do not return these exact ranges. If no different supported complete choice exists, return unavailable and explain; never manufacture evidence.'};
     input.speechBoundaryCues=boundaryCues.slice(0,20_000).map((c,i)=>({...c,...(boundaryCues===cues?{cueId:`cue-${i}`}:{})})).filter(c=>Number.isFinite(c.start)&&Number.isFinite(c.end)&&c.end>c.start&&c.end-c.start<=10&&String(c.text||'').trim()&&input.allowedRanges.some(r=>c.start<r.end&&c.end>r.start)).slice(0,240).map(({cueId,start,end,text,timing})=>({...((cueId&&boundaryCues===cues)?{cueId}:{}),start,end,text:clean(text,240),timing:timing||'cue'}));
     input.speechEndingOptions=speechEndingOptions(boundaryCues,input.allowedRanges,input.supporting.speechSilences).map(option=>{if(boundaryCues===cues)return option;const {cueId,...withoutGlobalId}=option;void cueId;return withoutGlobalId;});
     const key=hash({version:HOOK_PROMPT_VERSION,evidenceVersion:TEASER_EVIDENCE_VERSION,evidenceInputHash:hash(evidence.full),sourceHash,sourceId:source.id,cuesHash:hash(cues),evidenceHash:hash(teaserEvidenceValue(source)),transcriptHash:hash(source.transcript||''),ranges:hookRangeKey(part),input,provider:provider?.id||'none',model:provider?.model||'none',reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured',selectorVersion:'paired-relative-speech-duration-v4-full-canonical-text',instructions:WINNER_INSTRUCTIONS,schema:WINNER_SCHEMA,frames:'disabled-text-only-v1'});
@@ -159,6 +161,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
           if(cached.teaser.selectionPolicy===HOOK_SELECTION_POLICY&&cached.teaser.selection==='ai')cachedTeaser=cached.teaser;}
       }
     }catch{/* Old/missing/unavailable selection is not a successful new choice. */}
+    if(forceRefresh)savedDiscovery=undefined;
     // Representation-only change: the complete source evidence is already in
     // the cache identity above. Keep valid prior winners/caches; do not spend AI
     // again merely because an exact transport is smaller now.
@@ -181,9 +184,8 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
       if(provider){
         const images=[];let finalAttempts=context.seedResponse?1:0;
         if(context.seedResponse){const selection=await measureAiStage('validation',()=>rankedSelection(context.seedResponse,{part,source,cues,boundaryCues,input,images,provider,key,supporting}),{partId:part.id});result=selection.result;rejected=selection.rejected;if(!result)failure=rejected.some(r=>r.code==='HOOK_NO_RANKED_SELECTION')?'provider-no-ranked-selection':'provider-selection-rejected';}
-        for(let attempt=(context.seeded?1:0)+(context.discoveryConsumed?1:0);!result&&attempt<maxAttempts;attempt++){
-          if(context.seedFailure&&!['provider-schema-invalid','provider-output-incomplete'].includes(failure))break;
-          if(finalAttempts||attempt&&!discovery)aiEvent('retry',{partId:part.id,reason:rejected.map(r=>r.code).join(',').slice(0,120)||context.discoveryFailure||'provider-schema-invalid',attempt:attempt+1});
+        for(let attempt=(context.seeded?1:0)+(context.discoveryConsumed?1:0);!result&&!context.seeded&&finalAttempts===0&&attempt<maxAttempts;attempt++){
+          if(context.seedFailure||context.discoveryFailure)break;
           activeSignal.throwIfAborted();
           if(attempt||discovery){
             const expanded=hookInput(part,source,cues,supporting,1);
@@ -198,17 +200,16 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
             if(discovery){const regions=discoveryRegions(discovery,input.allowedRanges);input.discoveredMoments={partUnderstanding:discovery.partUnderstanding,moments:regions};input.refinedEvidence=evidenceAround(evidence,regions);}
             else if(evidence.needsDiscovery&&attempt)input.refinedEvidence=evidenceAround(evidence,diverseExcerpts(input.transcriptCandidates,4));
             input.visualCoverage={imagesProvided:0,limitation:'Text-only; numeric local signals do not prove visual actions.'};
-            const repair=finalAttempts||attempt&&!discovery?{retry:{rejected,permittedIntervals:input.allowedRanges,durationLimits:input.durationLimits,instruction:'Rank and return the best relative winner, even if the part is quiet; do not return null for an absolute appeal threshold. This pass has expanded/rebalanced candidates; source-range is allowed anywhere in permitted intervals using actual supplied context. Choose again using these exact permitted source intervals and actual supplied evidence. Do not adjust old timestamps mechanically. Compare the strongest remaining real moments. Keep explanations concise in Vietnamese; return exactly one winner and an empty alternatives array. Return null only for unreadable source data or no technically eligible interval.'}}:{};
-            const phase=finalAttempts||attempt&&!discovery?'repair-teaser':discovery?'finalize-moments':'select-teaser';
+            const phase=discovery?'finalize-moments':'select-teaser';
             finalAttempts++;
-            const response=await provider.analyze({input:{...input,...repair,phase},images:[],instructions:WINNER_INSTRUCTIONS+'\n'+TEXT_ONLY_INSTRUCTIONS+(customInstruction?'\nUSER CUSTOM REQUEST is a strict footage-search constraint, not a request to create speech/images. Select ONLY matching real footage in customTeaserRequest. If supplied transcript/text cannot establish that event, return unavailable; never substitute another attractive event. Numeric proxies do not prove visual size or completed motion.':''),maxTokens:2500,schema:WINNER_SCHEMA,signal:AbortSignal.any([activeSignal,AbortSignal.timeout(90_000)])});
+            const response=await provider.analyze({input:{...input,phase},images:[],instructions:WINNER_INSTRUCTIONS+'\n'+TEXT_ONLY_INSTRUCTIONS+(customInstruction?'\nUSER CUSTOM REQUEST is a strict footage-search constraint, not a request to create speech/images. Select ONLY matching real footage in customTeaserRequest. If supplied transcript/text cannot establish that event, return unavailable; never substitute another attractive event. Numeric proxies do not prove visual size or completed motion.':''),maxTokens:2500,schema:WINNER_SCHEMA,signal:AbortSignal.any([activeSignal,AbortSignal.timeout(90_000)])});
             const selection=await measureAiStage('validation',()=>rankedSelection(response.value,{part,source,cues,boundaryCues,input,images,provider,key,supporting}),{partId:part.id});
             rejected=selection.rejected;
             if(selection.result){result=selection.result;break;}
             failure=rejected.some(r=>r.code==='HOOK_NO_RANKED_SELECTION')?'provider-no-ranked-selection':'provider-selection-rejected';
           }catch(error){
             activeSignal.throwIfAborted();failure=hookFailure(error);rejected=[{code:failure}];
-            if(!['provider-schema-invalid','provider-output-incomplete','provider-selection-rejected','provider-no-ranked-selection'].includes(failure)&&error.code!=='IMAGE_UNSUPPORTED')break;
+            break; // Never retry/repair automatically after a rejected response.
           }
         }
       }
@@ -228,7 +229,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
       return result;
     },signal));
   }
-  return async function select(plan,source,{cues=[],boundaryCues=cues,supporting={},signal,targetPartId,maxAttempts=2,customInstruction,forceRefresh=false}={}){
+  return async function select(plan,source,{cues=[],boundaryCues=cues,supporting={},signal,targetPartId,maxAttempts=2,customInstruction,forceRefresh=false,previousRanges=[]}={}){
     if(!plan.parts.some(p=>p.teaserEnabled!==false&&(targetPartId===undefined||targetPartId===p.id)&&((p.customTeaser?.mode!=='timestamp'&&p.teaser?.selection!=='manual')||customInstruction))){signal?.throwIfAborted();return structuredClone(plan);}
     signal?.throwIfAborted();let provider,providerFailure;
     try{provider=await resolveProvider(signal);}catch(error){signal?.throwIfAborted();providerFailure=hookFailure(error);}
@@ -240,18 +241,18 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
     const contexts=new Map();
     for(const part of targets){
       const request=customInstruction??(part.customTeaser?.mode==='description'?part.customTeaser.input:undefined);
-      try{contexts.set(part.id,await measureAiStage('preparation',()=>preparePart(part,source,cues,boundaryCues,supporting,provider,sourceHash,request,forceRefresh),{partId:part.id}));}
+      try{contexts.set(part.id,await measureAiStage('preparation',()=>preparePart(part,source,cues,boundaryCues,supporting,provider,sourceHash,request,forceRefresh,part.id===targetPartId?previousRanges:[]),{partId:part.id}));}
       catch{signal?.throwIfAborted();contexts.set(part.id,{preparationFailure:true});}
     }
     // Full two-part discovery used to run independently even though its source
     // catalog was identical. Share that pass, then share the final comparison.
     // Each part still consumes at most its existing two inference opportunities.
-    const pairEligible=provider&&attempts>1&&targets.length===2&&targets.every(part=>{
+    const pairEligible=provider&&targets.length===2&&targets.every(part=>{
       const c=contexts.get(part.id);
       return !c.preparationFailure&&!c.cachedTeaser&&!c.input.customTeaserRequest&&c.input.allowedRanges.some(r=>r.end-r.start>=hookDurationLimits().minSourceSeconds);
     });
     if(pairEligible){
-      const needsDiscovery=targets.some(part=>contexts.get(part.id).evidence.needsDiscovery);
+      const needsDiscovery=attempts>1&&targets.some(part=>contexts.get(part.id).evidence.needsDiscovery);
       const missingDiscovery=targets.filter(part=>contexts.get(part.id).evidence.needsDiscovery&&!contexts.get(part.id).savedDiscovery);
       if(needsDiscovery&&missingDiscovery.length){
         try{
@@ -287,7 +288,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
         }
       }
       const canFinalize=targets.every(part=>{
-        const c=contexts.get(part.id);return !c.seedFailure||['provider-schema-invalid','provider-output-incomplete','provider-selection-rejected'].includes(c.seedFailure);
+        const c=contexts.get(part.id);return !c.seedFailure&&!c.discoveryFailure;
       });
       if(canFinalize){
         aiEvent('preparation',{combined:true,count:2});
@@ -297,13 +298,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,slee
             for(const part of targets){
               const c=contexts.get(part.id);
               if(c.savedDiscovery){const regions=discoveryRegions(c.savedDiscovery,c.input.allowedRanges);c.input.discoveredMoments={partUnderstanding:c.savedDiscovery.partUnderstanding,moments:regions};c.input.refinedEvidence=evidenceAround(c.evidence,regions);}
-              else if(c.evidence.needsDiscovery){
-                // A discovery failure is repaired inside the SAME final paired
-                // request. Unranked local proposals provide evidence, never a winner.
-                c.input.refinedEvidence=evidenceAround(c.evidence,diverseExcerpts(c.input.transcriptCandidates,4));
-                aiEvent('retry',{partId:part.id,reason:c.discoveryFailure||c.seedFailure||'HOOK_DISCOVERY_SCHEMA_INVALID',attempt:2});
-                c.input.discoveryRepair={rejected:c.discoveryRejected||[{code:c.seedFailure||c.discoveryFailure||'HOOK_DISCOVERY_SCHEMA_INVALID'}],permittedIntervals:c.input.allowedRanges,instruction:'Discovery could not establish valid inspection anchors for THIS part. Use the supplied original source evidence and unranked proposals to compare and select ONE technically valid final teaser. Do not rerun main or copy another part. Never invent evidence or mechanically adjust a failed timestamp.'};
-              }
+
             }
             const response=await provider.analyze({input:{phase:needsDiscovery?'finalize-two-part-moments':'select-two-parts',...pairEvidence(targets.map(part=>contexts.get(part.id).input))},
               images:[],schema:pairSchema(targets,WINNER_SCHEMA,'selection'),maxTokens:5000,

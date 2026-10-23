@@ -16,6 +16,7 @@ export function CopyButton({ text, label = "Copy title + hashtag", ariaLabel, cl
 }) {
   const [result, setResult] = useState<{ text: string; status: "pending" | "done" | "error" } | null>(null);
   const status = result?.text === text ? result.status : null;
+  const latestText = useRef(text); latestText.current = text;
   const pending = useRef(false);
   const mounted = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -30,9 +31,9 @@ export function CopyButton({ text, label = "Copy title + hashtag", ariaLabel, cl
     setResult({ text, status: "pending" });
     try {
       await navigator.clipboard.writeText(text);
-      if (mounted.current) { setResult({ text, status: "done" }); onCopied?.(); }
+      if (mounted.current && latestText.current === text) { setResult({ text, status: "done" }); onCopied?.(); }
     } catch {
-      if (mounted.current) { setResult({ text, status: "error" }); onError?.(); }
+      if (mounted.current && latestText.current === text) { setResult({ text, status: "error" }); onError?.(); }
     } finally {
       pending.current = false;
       if (mounted.current) timer.current = setTimeout(() => setResult(null), 2500);

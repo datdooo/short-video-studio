@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { trimRuntime } from "./trim-runtime.mjs";
-import { macPackageTarget, runtimeEnvironment, prepareRuntimeDirectories, assertRuntimePortsAvailable } from "../desktop/runtime-config.mjs";
+import { macPackageTarget, runtimeEnvironment, prepareRuntimeDirectories } from "../desktop/runtime-config.mjs";
 import { auditMacOSRuntime } from "./audit-macos-runtime.mjs";
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
@@ -19,9 +19,12 @@ const { runtime, releaseRoot, outputAppPath } = target;
 async function requireStoppedBeta() {
   const result=spawnSync('/bin/ps',['-axo','pid=,command='],{encoding:'utf8'});
   if(result.error||result.status!==0)throw Error('Cannot verify Beta processes; leave the existing app untouched.');
-  const active=result.stdout.split('\n').filter(line=>line.includes(`${outputAppPath}/Contents/`));
+  const targetPaths=[outputAppPath,...(existsSync(outputAppPath)?[realpathSync(outputAppPath)]:[])];
+  const active=result.stdout.split('\n').filter(line=>targetPaths.some(target=>line.includes(`${target}/Contents/`)));
   if(active.length)throw Error('Beta is running. Save and Quit normally before packaging; no processes were stopped.');
-  await assertRuntimePortsAvailable(runtime);
+  // Packaging does not launch servers. A separate installed Beta may keep
+  // rendering on these ports; only the bundle being replaced must be stopped.
+  // bootstrap.mjs still checks ports before starting the packaged runtime.
 }
 await requireStoppedBeta();
 const revision=spawnSync('git',['rev-parse','HEAD'],{cwd:projectRoot,encoding:'utf8'});

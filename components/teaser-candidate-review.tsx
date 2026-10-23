@@ -11,16 +11,26 @@ import {explainInVietnamese} from '@/lib/explanation-language.mjs';
 import {useEditorDraft} from './editor-draft-context';
 
 type Selected=Extract<Teaser,{status:'selected'}>;
-type Choice={id:string;part:EditPart;captionTrack?:CaptionTrack;draft?:boolean};
+export type TeaserChoice={id:string;part:EditPart;captionTrack?:CaptionTrack;draft?:boolean};
+type Choice=TeaserChoice;
 type PlaybackControl={pause:()=>void};
 const choiceId=(h:Selected)=>JSON.stringify([h.selection,h.inputKey,h.start,h.end,h.candidateId||'']);
 const seconds=(n:number)=>`${Math.max(0,n).toFixed(1)}s`;
 const MAX_CHOICES=24;
-function choicesOf(part:EditPart,captionTrack?:CaptionTrack):Choice[]{
+export function choicesOf(part:EditPart,captionTrack?:CaptionTrack):Choice[]{
  const h=part.teaser;if(h?.status!=='selected')return[];
  const choices:Choice[]=[];
  try{validateTeaser(part);choices.push({id:choiceId(h),part:structuredClone(part),captionTrack});}catch{return[];}
  for(let index=0;index<(h.alternatives?.length||0);index++)try{const next=chooseTeaserAlternative(part,index);if(next.teaser?.status==='selected')choices.push({id:choiceId(next.teaser),part:next,captionTrack});}catch{/* Malformed optional choices never hide the valid selected excerpt. */}
+ return choices;
+}
+export function validTeaserCatalog(value:unknown,part:EditPart):value is {key:string;items:Choice[]}{
+ try{const catalog=value as {key:string;items:Choice[]};return typeof catalog.key==='string'&&Array.isArray(catalog.items)&&catalog.items.length<=MAX_CHOICES&&catalog.items.every(c=>{if(typeof c.id!=='string'||c.part?.id!==part.id||hookRangeKey(c.part)!==hookRangeKey(part)||c.part.teaser?.status!=='selected')return false;validateTeaser(c.part);return c.id===choiceId(c.part.teaser);});}catch{return false;}
+}
+export function appendTeaserChoices(existing:Choice[],incoming:Choice[],part:EditPart):Choice[]{
+ const choices=[...existing],currentId=part.teaser?.status==='selected'?choiceId(part.teaser):'';
+ for(const choice of incoming)if(!choices.some(c=>c.id===choice.id))choices.push(choice);
+ while(choices.length>MAX_CHOICES){const index=choices.findIndex(c=>c.id!==currentId);choices.splice(index<0?0:index,1);}
  return choices;
 }
 export function TeaserCandidateReview({part,proposed,proposedCaptionTrack,contextKey,legacyContextKey,hasEdits,sourceUrl,suspended,onAudition,onPlaybackControl,onApply}:{
@@ -31,15 +41,13 @@ export function TeaserCandidateReview({part,proposed,proposedCaptionTrack,contex
  const pending=proposed?.teaser?.status==='selected'?proposed.teaser:null;
  const[catalog,setCatalog]=useEditorDraft<{key:string;items:Choice[]}|null>(`teaser-review-catalog-${part.id}`,null,v=>{
   if(v===null)return true;
-  try{const value=v as {key:string;items:Choice[]};return typeof value.key==='string'&&Array.isArray(value.items)&&value.items.length<=MAX_CHOICES&&value.items.every(c=>{if(typeof c.id!=='string'||c.part?.id!==part.id||hookRangeKey(c.part)!==hookRangeKey(part)||c.part.teaser?.status!=='selected')return false;validateTeaser(c.part);return c.id===choiceId(c.part.teaser);});}catch{return false;}
+  return validTeaserCatalog(v,part);
  });
  const incoming=[...choicesOf(part),...(proposed&&pending?.selection!=='manual'?choicesOf(proposed,proposedCaptionTrack):[])];
  const catalogMatches=catalog&&(catalog.key===contextKey||catalog.key===legacyContextKey);
- const choices:Choice[]=catalogMatches&&catalog?[...catalog.items]:[];
- for(const choice of incoming)if(!choices.some(c=>c.id===choice.id))choices.push(choice);
+ const choices=appendTeaserChoices(catalogMatches&&catalog?catalog.items:[],incoming,part);
  // Append new analysis results. Apply only changes the current badge; it never
  // sorts/replaces the catalog. Bound UI history, preserving the active choice.
- while(choices.length>MAX_CHOICES){const index=choices.findIndex(c=>c.id!==currentId);choices.splice(index<0?0:index,1);}
  const ids=JSON.stringify(choices.map(c=>c.id));
  const savedChoices=[...choices];
  useEffect(()=>{if(savedChoices.length&&(catalog?.key!==contextKey||JSON.stringify(catalog.items.map(c=>c.id))!==ids))setCatalog({key:contextKey,items:savedChoices});},[contextKey,ids,catalog,setCatalog]);

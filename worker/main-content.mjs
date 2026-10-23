@@ -33,7 +33,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
       let provider, failure;
       try { provider = await resolveProvider(options.signal); } catch (e) { options.signal?.throwIfAborted(); failure = hookFailure(e); }
       const { sourceId, analysisKey, ...stableInput } = prepared;
-      const key = hash({ explanationLanguage:'vi-v1',analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none', reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured', retryVersion:'technical-repair-v2',logicVersion:MAIN_EDITING_VERSION,prompt:MAIN_INSTRUCTIONS,schema:MAIN_SCHEMA });
+      const key = hash({ explanationLanguage:'vi-v1',analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none', reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured', retryVersion:'explicit-only-v1',logicVersion:MAIN_EDITING_VERSION,prompt:MAIN_INSTRUCTIONS,schema:MAIN_SCHEMA });
       const result = await shared(key, signal => cache.using(key, async () => {
         const cached = await cache.get(key);
         if (cached) {
@@ -43,24 +43,21 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
         let plan, textOnly = false;
         if (provider) {
           const images=[];textOnly=true;
-          let repair;
-          for (let attempt=0; attempt<2; attempt++) {
-            let localValidation=false;
-            if(attempt)aiEvent('retry',{reason:repair?.code||failure,attempt:attempt+1});
-            try {
-              const input={...modelSelectionInput(stableInput),phase:attempt?'repair-main':'select-main',...(repair?{retry:repair}:{})};
-              const response = await provider.analyze({ input, images, schema:MAIN_SCHEMA, instructions:MAIN_INSTRUCTIONS, signal:AbortSignal.any([signal,AbortSignal.timeout(90000)]), maxTokens:3600 });
-              localValidation=true;
-              plan=await measureAiStage('validation',()=>{
-                const next=selectionToPlan(prepared,response.value,{currentPlan:options.currentPlan,provider:provider.id,model:provider.model});
-                validatePlan(next,source,{teasers:false});return next;
-              });break;
-            } catch (e) {
-              signal.throwIfAborted();if(e.code==='INPUT_TEXT_TOO_LARGE')throw e; failure = localValidation?'provider-selection-rejected':hookFailure(e);
-              if(localValidation)repair={code:'MAIN_PLAN_VALIDATION_FAILED',reason:String(e.message||'Invalid main selection').slice(0,240),instruction:'Repair only the failed main ranges using the exact source evidence and locks; recipes are suggestions, not a closed list. Preserve complete source coverage and all unmodified input evidence; do not invent timestamps.'};
-              else if(!['provider-schema-invalid','provider-output-incomplete'].includes(failure))break;
-              else repair={code:failure,instruction:'Return complete valid JSON in the supplied schema. Keep the same source evidence, recipes and locks; repair only the response shape.'};
-            }
+          let localValidation=false;
+          try {
+            const input={...modelSelectionInput(stableInput),phase:'select-main'};
+            const response=await provider.analyze({input,images,schema:MAIN_SCHEMA,instructions:MAIN_INSTRUCTIONS,signal:AbortSignal.any([signal,AbortSignal.timeout(90000)]),maxTokens:3600});
+            localValidation=true;
+            plan=await measureAiStage('validation',()=>{
+              const next=selectionToPlan(prepared,response.value,{currentPlan:options.currentPlan,provider:provider.id,model:provider.model});
+              validatePlan(next,source,{teasers:false});return next;
+            });
+          } catch(e) {
+            signal.throwIfAborted();if(e.code==='INPUT_TEXT_TOO_LARGE')throw e;
+            failure=localValidation?'provider-selection-rejected':hookFailure(e);
+            aiEvent('error',{reason:localValidation?'MAIN_PLAN_VALIDATION_FAILED':failure});
+            // Technical failure is user-visible, never a second paid request.
+            if(localValidation)throw Object.assign(Error(`Main chưa hợp lệ: ${String(e.message||'Sai range/schema').slice(0,240)}. Plan hiện tại được giữ; không tự gọi sửa.`),{code:'MAIN_PLAN_VALIDATION_FAILED'});
           }
         }
         if(!plan&&options.currentPlan&&failure)throw Object.assign(Error(hookFailureNotice(failure)),{code:failure});

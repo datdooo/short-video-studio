@@ -360,6 +360,9 @@ export default function Home() {
   const [deletingBatchItems, setDeletingBatchItems] = useState<string[]>([]);
   const [batchNotice, setBatchNotice] = useState("");
   const deletedBatchItems = useRef(new Set<string>());
+  // Synchronous event guards; React disabled/state updates are not a mutex.
+  const mutationPending = useRef(new Set<string>());
+  const [resumingBatchItems,setResumingBatchItems]=useState<string[]>([]);
   const [autoDownloadRequests, setAutoDownloadRequests] = useState(0);
   const [autoDownloadError, setAutoDownloadError] = useState("");
   const batchDownloadQueue = useRef<ReturnType<typeof createBatchDownloadQueue> | null>(null);
@@ -1026,8 +1029,10 @@ export default function Home() {
   }
 
   async function deleteBatchVideo(group: BatchJob, item: BatchJob["items"][number]) {
-    if (!item.id) return;
+    const operationKey=`delete-batch:${group.id}:${item.id}`;
+    if (!item.id||batchSubmitPending.current||mutationPending.current.has(operationKey)) return;
     if (!window.confirm(`Chuyển các Part của “${item.title || item.url}” vào Thùng rác và bỏ video khỏi hàng đợi?\n\nVideo nguồn và bản đã tải về Downloads vẫn được giữ. Có thể khôi phục hoặc xoá vĩnh viễn trong tab Thùng rác.`)) return;
+    mutationPending.current.add(operationKey);batchPollEpoch.current++;
     setDeletingBatchItems((ids) => [...ids, item.id]);
     setBatchError("");
     try {
@@ -1037,30 +1042,34 @@ export default function Home() {
       deletedBatchItems.current.add(item.id);
       batchDownloadQueue.current?.remove(collectBatchDownloads({ id: group.id, items: [item] }).map((output) => output.key));
       data.batch.items = data.batch.items.filter((candidate) => !deletedBatchItems.current.has(candidate.id));
-      if (batch?.id === group.id) setBatch(data.batch);
+      setBatch(current=>current?.id===group.id?data.batch!:current);
       setPastBatches((history) => history.map((previous) => previous.id === group.id ? data.batch! : previous));
       setBatchNotice(data.recoveryPath ? "Đã chuyển các Part vào Thùng rác. Có thể khôi phục hoặc xoá vĩnh viễn ở tab Thùng rác; video gốc và Downloads vẫn giữ nguyên." : "Đã xoá video khỏi danh sách.");
     } catch (error) {
       setBatchError(error instanceof Error ? error.message : "Không xoá được video.");
-    } finally { setDeletingBatchItems((ids) => ids.filter((id) => id !== item.id)); }
+    } finally { mutationPending.current.delete(operationKey);batchPollEpoch.current++;setBatchPollVersion(v=>v+1);setDeletingBatchItems((ids) => ids.filter((id) => id !== item.id)); }
   }
 
   async function stopBatch() {
-    if (!batch || batch.finished) return;
+    if (!batch || batch.finished||batchSubmitPending.current) return;
+    const operationKey=`stop-batch:${batch.id}`;if(mutationPending.current.has(operationKey))return;mutationPending.current.add(operationKey);batchPollEpoch.current++;
     setIsStoppingBatch(true);
     try {
       const response = await fetch(`${WORKER_ORIGIN}/api/batches/${batch.id}/cancel`, { method: "POST" });
       const data = await response.json() as { batch?: BatchJob; error?: string };
       if (!response.ok || !data.batch) throw new Error(data.error || "Không dừng được hàng đợi.");
-      setBatch(data.batch);
+      setBatch(current=>current?.id===data.batch!.id?data.batch!:current);
+      setPastBatches(history=>history.map(group=>group.id===data.batch!.id?data.batch!:group));
       setBatchError("");
     } catch (error) {
       setBatchError(error instanceof Error ? error.message : "Không dừng được hàng đợi.");
-    } finally { setIsStoppingBatch(false); }
+    } finally { mutationPending.current.delete(operationKey);batchPollEpoch.current++;setBatchPollVersion(v=>v+1);setIsStoppingBatch(false); }
   }
 
   async function stopRender(job: RenderJob) {
-    if (stoppingRenderIds.includes(job.id)) return;
+    const operationKey=`stop-render:${job.id}`;
+    if (mutationPending.current.has(operationKey)||!['queued','rendering'].includes(job.state)) return;
+    mutationPending.current.add(operationKey);
     setEditorRenderError("");
     setStoppingRenderIds((ids) => [...ids, job.id]);
     try {
@@ -1072,12 +1081,14 @@ export default function Home() {
       setEditorRenderJobs((jobs) => jobs.map((current) => current.id === job.id ? data.job! : current));
     } catch (error) {
       setEditorRenderError(error instanceof Error ? error.message : "Không dừng được render.");
-    } finally { setStoppingRenderIds((ids) => ids.filter((id) => id !== job.id)); }
+    } finally { mutationPending.current.delete(operationKey);setStoppingRenderIds((ids) => ids.filter((id) => id !== job.id)); }
   }
 
   async function deleteEditorRender(job: RenderJob, confirmed = false) {
-    if (deletingRenderIds.includes(job.id) || job.stopping || ["queued", "rendering"].includes(job.state)) return false;
+    const operationKey=`delete-render:${job.id}`;
+    if (mutationPending.current.has(operationKey) || job.stopping || ["queued", "rendering"].includes(job.state)) return false;
     if (!confirmed && !window.confirm(`Chuyển các Part của “${job.plan?.originalTitle || "video này"}” vào Thùng rác và xoá khỏi danh sách render?\n\nVideo gốc và bản trong Downloads vẫn được giữ. Có thể khôi phục các Part trong tab Thùng rác.`)) return false;
+    mutationPending.current.add(operationKey);
     setDeletingRenderIds((ids) => [...ids, job.id]);
     setEditorRenderError("");
     try {
@@ -1091,7 +1102,7 @@ export default function Home() {
       setEditorRenderNotice(data.trashId ? "Đã chuyển các Part vào Thùng rác. Video gốc và Downloads vẫn được giữ." : "Đã xoá tác vụ khỏi danh sách render.");
       return true;
     } catch (caught) { setEditorRenderError(caught instanceof Error ? caught.message : "Không xoá được render."); return false; }
-    finally { setDeletingRenderIds((ids) => ids.filter((id) => id !== job.id)); }
+    finally { mutationPending.current.delete(operationKey);setDeletingRenderIds((ids) => ids.filter((id) => id !== job.id)); }
   }
 
   async function deleteAllEditorRenders() {
@@ -1108,9 +1119,11 @@ export default function Home() {
   }
 
   async function resumeBatchItem(group:BatchJob,item:BatchJob["items"][number]){
-    setBatchError("");
+    if(batchSubmitPending.current||mutationPending.current.has(`stop-batch:${group.id}`)||mutationPending.current.has(`delete-batch:${group.id}:${item.id}`))return;
+    batchSubmitPending.current=true;setResumingBatchItems(ids=>[...ids,item.id]);setBatchError("");
     try{const response=await fetch(`${WORKER_ORIGIN}/api/batches/${group.id}/resume`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({itemIds:[item.id]})});const data=await response.json() as {batch?:BatchJob;error?:string};if(!response.ok||!data.batch)throw new Error(data.error||"Không tiếp tục được item.");batchPollEpoch.current++;setBatchPollVersion(v=>v+1);setBatch(data.batch);setBatchId(data.batch.id);}
     catch(error){setBatchError(error instanceof Error?error.message:"Không tiếp tục được item.");}
+    finally{batchSubmitPending.current=false;setResumingBatchItems(ids=>ids.filter(id=>id!==item.id));}
   }
   async function openBatchItem(group:BatchJob,item:BatchJob["items"][number]){
     if(!item.sourceId)return;
@@ -1161,6 +1174,7 @@ export default function Home() {
   }
 
   async function startBatch() {
+    if(isStoppingBatch||batch&&mutationPending.current.has(`stop-batch:${batch.id}`))return;
     if (batchSubmitPending.current || isStoppingBatch) return;
     batchSubmitPending.current = true;
     const submittedInput = batchUrls,epoch=sessionEpoch.current;
@@ -1324,7 +1338,7 @@ export default function Home() {
 
   // A custom proposal is not installed until the per-part editor confirms it.
   // Reuse the canonical selector; timestamps never enter this request path.
-  async function resolveCustomTeaser(partId:number,input:string,signal:AbortSignal) {
+  async function resolveCustomTeaser(partId:number,input:string,signal:AbortSignal,previousRanges:{start:number;end:number}[]=[]) {
     setInterruptedTasks(current=>current.filter(s=>s!==`teaser Part ${partId}`));
     if(timing.error||draftError)throw new Error(timing.error||draftError);
     const source=preparedSource;
@@ -1342,7 +1356,7 @@ export default function Home() {
     const requestPlan={...previewPlan,parts:previewPlan.parts.map(p=>p.id===partId?{...p,teaser:undefined,customTeaser:undefined}:p),...(captionCues?{captionCues}:{})};
     const response=await fetch(`${WORKER_ORIGIN}/api/sources/${sourceId}/teaser-hooks`,{
       method:'POST',signal:combined,headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({progress:true,plan:requestPlan,partId,instruction,supplementalPrompt,transcript,...(input?{customInstruction:input}:{})})
+      body:JSON.stringify({progress:true,plan:requestPlan,partId,previousRanges,instruction,supplementalPrompt,transcript,...(input?{customInstruction:input}:{})})
     });
     const result=await readAiOperation<{plan?:EditPlan}>(response,diagnostics=>{if(current())setTeaserOperations(previous=>({...previous,[partId]:{...previous[partId],diagnostics}}));});
     if(!response.ok||!result.plan)throw new Error(result.error||"Không chọn được teaser.");
@@ -1818,14 +1832,14 @@ export default function Home() {
                 <div key={item.id || item.url} data-batch-state={item.state} className="rounded-xl border border-white/8 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="min-w-0 break-words text-xs font-semibold leading-5">{index + 1}. {item.title || item.url}</p>
-                    <Button variant="outline" size="sm" onClick={() => void deleteBatchVideo(group, item)} disabled={!item.id || !["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) || deletingBatchItems.includes(item.id)} title={["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) ? "Xoá video và file render" : "Dừng hoặc chờ xử lý xong trước khi xoá"} className="h-8 shrink-0 rounded-lg border-red-400/20 bg-transparent text-xs text-red-300 hover:bg-red-400/10">
+                    <Button variant="outline" size="sm" onClick={() => void deleteBatchVideo(group, item)} disabled={!item.id || !["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) || deletingBatchItems.includes(item.id)||resumingBatchItems.length>0||isStartingBatch} title={["done", "error", "cancelled", "paused", "awaiting-import", "review-required", "render-ready"].includes(item.state) ? "Xoá video và file render" : "Dừng hoặc chờ xử lý xong trước khi xoá"} className="h-8 shrink-0 rounded-lg border-red-400/20 bg-transparent text-xs text-red-300 hover:bg-red-400/10">
                       {deletingBatchItems.includes(item.id) ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />} Xoá
                     </Button>
                   </div>
                   {item.job?<RenderProgress job={item.job} compact/>:<TaskProgress label={{paused:'Tạm dừng · có thể tiếp tục','awaiting-import':'Chờ import trong Editor','review-required':'Cần kiểm tra trong Editor','render-ready':'Plan đã lưu · chuẩn bị render',submitting:'Ghi render submission',pending:'Đang chờ',downloading:'Chuẩn bị nguồn',analyzing:'Phân tích nội dung',queued:'Chờ render',rendering:'Đang render',done:'Hoàn tất',error:'Lỗi',cancelled:'Đã dừng'}[item.state]} state={item.state==='done'?'done':['error','cancelled'].includes(item.state)?item.state as 'error'|'cancelled':['downloading','analyzing','submitting'].includes(item.state)?'running':'waiting'} startedAt={item.startedAt?Date.parse(item.startedAt):undefined} percent={item.state==='downloading'?item.sourceProgress?.percent:null} estimated={item.sourceProgress?.estimated} detail={item.state==='downloading'&&item.sourceProgress?sourcePreparationLabel({...item.sourceProgress,percent:null}):undefined} compact/>}
                   <div className="mt-2 flex flex-wrap gap-2">
                     {item.sourceId&&<Button variant="outline" size="sm" onClick={()=>void openBatchItem(group,item)} className="h-8 text-xs">{["awaiting-import","review-required"].includes(item.state)?"Mở editor · chọn/import/duyệt":"Mở bản sao trong editor"}</Button>}
-                    {["error","cancelled","paused","render-ready"].includes(item.state)&&<Button variant="outline" size="sm" onClick={()=>void resumeBatchItem(group,item)} className="h-8 text-xs">Tiếp tục / thử lại item</Button>}
+                    {["error","cancelled","paused","render-ready"].includes(item.state)&&<Button variant="outline" size="sm" onClick={()=>void resumeBatchItem(group,item)} disabled={resumingBatchItems.length>0||isStartingBatch||isStoppingBatch||deletingBatchItems.includes(item.id)} className="h-8 text-xs">{resumingBatchItems.includes(item.id)?'Đang tiếp tục…':'Tiếp tục / thử lại item'}</Button>}
                   </div>
                   {item.error && <p className="mt-2 text-xs leading-5 text-red-300">{item.error}</p>}
                   {item.plan?.parts.map((part) => <div key={part.id} className="mt-3">
@@ -2160,7 +2174,7 @@ export default function Home() {
             >
             <TeaserEditor sourceId={preparedSource?.id||''} sourceDuration={preparedSource?.duration||previewDuration} issues={teaserIssues.filter(issue=>issue.partId===part.id).map(issue=>issue.reason)} reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={workspace!=='editor'} aiBusy={isAnalyzing} progress={teaserOperations[part.id]&&<AiOperationStatus {...teaserOperations[part.id]}/>} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
-              onResolve={(input,signal)=>resolveCustomTeaser(part.id,input,signal)}
+              onResolve={(input,signal,previousRanges)=>resolveCustomTeaser(part.id,input,signal,previousRanges)}
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
               onAudition={()=>{stopWorkspacePlayback(part.id);setActivePartIndex(index);}}
               onChange={async (next,proposalTrack)=>{
