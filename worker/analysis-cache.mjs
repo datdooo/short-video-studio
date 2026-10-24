@@ -8,12 +8,14 @@ export async function requireDiskSpace(directory, bytes) {
 }
 export function createAnalysisCache(root, { maxBytes = ANALYSIS_CACHE_BYTES, maxAgeMs = ANALYSIS_CACHE_AGE_MS, protectedKeys = () => new Set() } = {}) {
   if (!path.isAbsolute(root)) throw new Error('Analysis cache requires an absolute path');
-  const active = new Set();
+  // A cancelled shared operation may still be cleaning up when a new operation
+  // with the same key starts. One completion must not unprotect the other.
+  const active = new Map();
   const file = key => { if (!/^[a-f0-9]{64}$/.test(key)) throw new Error('Invalid cache key'); return path.join(root, key + '.json'); };
   async function prune(reserve = 0, keep) {
     await mkdir(root, { recursive: true, mode: 0o700 });
     if (!(await lstat(root)).isDirectory()) throw new Error('Unsafe cache directory');
-    const protectedSet = new Set([...active, ...protectedKeys(), keep]);
+    const protectedSet = new Set([...active.keys(), ...protectedKeys(), keep]);
     const entries = [];
     for (const name of (await readdir(root)).filter(n => /^[a-f0-9]{64}\.json$/.test(n))) {
       const location = path.join(root, name), s = await lstat(location);
@@ -49,7 +51,7 @@ export function createAnalysisCache(root, { maxBytes = ANALYSIS_CACHE_BYTES, max
         return true;
       } catch { return false; }
     },
-    async using(key, task) { active.add(key); try { return await task(); } finally { active.delete(key); } },
+    async using(key, task) { active.set(key,(active.get(key)||0)+1); try { return await task(); } finally { const remaining=active.get(key)-1;if(remaining>0)active.set(key,remaining);else active.delete(key); } },
     prune,
   };
 }

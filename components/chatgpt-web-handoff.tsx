@@ -34,6 +34,12 @@ export function ChatGptWebHandoff({ prompt, requestId, sourceId, analysisKey, di
       const current = pending.current;
       if (event.source !== window || event.origin !== window.location.origin || event.data?.channel !== CHANNEL || !current
         || event.data.operationId !== current.operationId || current.identity !== latest.current) return;
+      // Props are reflected in the ref during render, before the cancellation effect runs.
+      if (current.mode === "auto" && !autoAllowed.current) {
+        clearTimeout(current.timer); pending.current = null; setBusy(false); setProgress("");
+        window.postMessage({ channel: CHANNEL, type: "cancel-request", operationId: current.operationId }, window.location.origin);
+        return;
+      }
       if (event.data.type === "auto-confirm-send" && current.mode === "auto") {
         window.postMessage({ channel: CHANNEL, type: autoAllowed.current ? "confirm-auto-send" : "cancel-request", operationId: current.operationId }, window.location.origin); return;
       }
@@ -83,8 +89,10 @@ export function ChatGptWebHandoff({ prompt, requestId, sourceId, analysisKey, di
       clearTimeout(current.timer); pending.current = null; setBusy(false); setProgress("");
       window.postMessage({ channel: CHANNEL, type: "cancel-request", operationId: current.operationId }, window.location.origin);
     }
-    setReceived(null); setResult(null);
   }, [identity, disabled, attachmentConfirmed]);
+  useEffect(() => {
+    setReceived(null); setResult(null);
+  }, [identity]);
   useEffect(() => {
     if (!busy) return;
     const update = () => { const current = pending.current; if (current) setElapsed(Math.max(0, Math.floor((Date.now() - current.startedAt) / 1000))); };

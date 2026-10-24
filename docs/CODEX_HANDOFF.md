@@ -1,4 +1,33 @@
-# Beta source in progress — 2026-10-24
+# Beta build 1105 — 2026-10-24
+
+Packaging checkpoint on `beta/maintenance`, based on `0708d250a98a252996b3f2f41ba66d433301547a`.
+Includes the project sweep and focused UI/progress fixes described below.
+User authorized local checkpoint + package and installation in `/Applications`.
+Fixed release target: `release/beta/ShortCut Studio Beta.app`; installed target:
+`/Applications/ShortCut Studio Beta.app`. Previous bundles are retained for rollback.
+Exact source commit is recorded by the packager in `Contents/Resources/config.json`.
+See `BETA-BUILD-1105.md`. Build/static audit is not runtime acceptance.
+
+# Historical source-only sweep notes (before build 1105)
+
+# Latest Beta source sweep — 2026-10-24
+
+Additional focused UI/progress pass: see `BETA-UI-PROGRESS-REVIEW-2026-10-24.md`.
+Primary-source web/GitHub research; fix duplicate preparation %, cancelled/stopping
+presentation/telemetry, Batch cleanup polling, footer error density/mobile cascade
+and narrow-drawer keyboard isolation. Existing correct button/select/progress
+layout rules retained. No runtime, tests or build; app1104 remains unchanged.
+
+Base `0708d250a98a252996b3f2f41ba66d433301547a`, branch `beta/maintenance`.
+Uncommitted source fixes after packaged build 1104: HTTP stream/range/input
+handling, polling/sign-in state, subtitle cancellation, Batch cancellation,
+music publication/audition/library refresh, one-scan library metadata cache,
+manual web bridge lifecycle and analysis-cache reference protection.
+See `BETA-PROJECT-SWEEP-2026-10-24.md` for evidence, files and acceptance steps.
+No build, tests, AI, ASR, browser or render in this sweep. App 1104 stays unchanged;
+no commit/push/merge, user data or credential mutations. Preserve these changes.
+
+# Previous Beta build source — 2026-10-24
 
 Checkout: `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`, branch
 `beta/maintenance`, base `4fd5e4e402e6445b837e0522a169beaf16c82ac4`.

@@ -77,19 +77,19 @@ export function createMediaLibrary({ roots, isBusy = () => false, editorInUse = 
       return { title: item?.title || (history.jobs || []).find((job) => job.sourceId === sourceId)?.plan?.originalTitle || sourceId };
     } catch { return { title: sourceId }; }
   }
-  async function entry(data) {
+  async function entry(data, readMetadata = metadata) {
     const store = storage(data.storageId);
     const target = await safePath(store.root, pieces(data));
     const info = await lstat(target);
     if (!info.isFile()) fail("Không phải file video.");
-    const source = await metadata(store, data.sourceId);
+    const source = await readMetadata(store, data.sourceId);
     return { ...data, id: Buffer.from(JSON.stringify(data)).toString("base64url"), title: source.title || data.sourceId,
       size: info.size, createdAt: info.mtime.toISOString(), busy: busy(data),inUseByEditor:editorInUse(data),
       renderUrl: data.storageId === "current" && data.kind === "part" ? `/files/${data.sourceId}/outputs/${data.jobId}/part-${data.part}/${encodeURIComponent(data.filename)}` : null,
       target };
   }
   function publicEntry(value) { const item = { ...value }; delete item.target; return item; }
-  async function trashEntry(id) {
+  async function trashEntry(id, readMetadata = metadata) {
     const parts = String(id).split(":");
     if (parts.length !== 3) fail("Mã thùng rác không hợp lệ.");
     const [storageId, category, key] = parts;
@@ -111,7 +111,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, editorInUse = 
       const [sourceId, jobId] = ids;
       const directory = await safePath(store.root, ["trash", "renders", key]);
       if (!(await lstat(directory)).isDirectory()) fail("Thư mục render không hợp lệ.");
-      const source = await metadata(store, sourceId);
+      const source = await readMetadata(store, sourceId);
       const data = { storageId, sourceId, jobId, kind: "parts" };
       return { ...data, id, title: source.title || sourceId, filename: "Bộ Part đã xoá", size: await bytes(directory),
         deletedAt: (await lstat(directory)).mtime.toISOString(), busy: busy(data), directory, target: directory };
@@ -127,18 +127,25 @@ export function createMediaLibrary({ roots, isBusy = () => false, editorInUse = 
         if (!task) {
           task = (async () => {
             const originals = [], parts = [], trash = [], warnings = [];
+            // One source can have many completed Parts. Read its title/history
+            // once per scan; mutations and the next refresh still read fresh data.
+            const sourceMetadata = new Map();
+            const readMetadata = (store, sourceId) => {
+              if (!sourceMetadata.has(sourceId)) sourceMetadata.set(sourceId, metadata(store, sourceId));
+              return sourceMetadata.get(sourceId);
+            };
         try {
           for (const source of await children(path.join(store.root, "sources"))) {
             if (!source.isDirectory() || !uuid.test(source.name)) continue;
             for (const file of await children(await safePath(store.root, ["sources", source.name]))) {
-              if (file.isFile() && sourceName.test(file.name)) originals.push(publicEntry(await entry({ storageId: store.id, sourceId: source.name, kind: "original", filename: file.name })));
+              if (file.isFile() && sourceName.test(file.name)) originals.push(publicEntry(await entry({ storageId: store.id, sourceId: source.name, kind: "original", filename: file.name }, readMetadata)));
             }
             for (const job of await children(path.join(store.root, "sources", source.name, "outputs"))) {
               if (!job.isDirectory() || !uuid.test(job.name)) continue;
               for (const part of [1, 2]) {
                 const folder = path.join(store.root, "sources", source.name, "outputs", job.name, `part-${part}`);
                 for (const file of await children(folder)) {
-                  if (file.isFile() && /\.mp4$/i.test(file.name)) parts.push(publicEntry(await entry({ storageId: store.id, sourceId: source.name, jobId: job.name, part, kind: "part", filename: file.name })));
+                  if (file.isFile() && /\.mp4$/i.test(file.name)) parts.push(publicEntry(await entry({ storageId: store.id, sourceId: source.name, jobId: job.name, part, kind: "part", filename: file.name }, readMetadata)));
                 }
               }
             }
@@ -146,7 +153,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, editorInUse = 
           for (const category of ["media", "renders"]) {
             for (const folder of await children(path.join(store.root, "trash", category))) {
               if (!folder.isDirectory()) continue;
-              try { trash.push(publicTrash(await trashEntry(`${store.id}:${category}:${folder.name}`))); }
+              try { trash.push(publicTrash(await trashEntry(`${store.id}:${category}:${folder.name}`, readMetadata))); }
               catch (error) { warnings.push(`Không đọc được một mục trong thùng rác ${store.label}: ${error.message}`); }
             }
           }
@@ -215,7 +222,7 @@ export function createMediaLibrary({ roots, isBusy = () => false, editorInUse = 
     }); },
     purge(ids) { return serialized(async () => {
       if (!Array.isArray(ids) || !ids.length || ids.length > 500 || new Set(ids).size !== ids.length) fail("Chọn từ 1 đến 500 mục khác nhau để xoá.");
-      const items = await Promise.all(ids.map(trashEntry));
+      const items = await Promise.all(ids.map(id => trashEntry(id)));
       items.forEach(item=>guard(item,'purge'));
       const keys = new Set(items.map((item) => `${item.storageId}:${item.sourceId}`));
       keys.forEach((key) => locks.add(key));

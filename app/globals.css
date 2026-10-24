@@ -782,7 +782,7 @@ button, input, textarea { font: inherit; }
 .prototype-shell .studio-header-status { gap:8px; }
 .prototype-shell .studio-header-status > span { padding:3px 6px; font-size:11px; }
 .prototype-shell .studio-brand-logo { width:28px; height:28px; flex-basis:28px; }
-.prototype-shell .studio-statusbar > .studio-render-state { max-height:76px; padding:0; }
+.prototype-shell .studio-statusbar > .studio-render-state { padding:0; }
 .prototype-shell .studio-statusbar .studio-panel-toggles button { width:28px; height:28px; min-width:28px; min-height:28px; }
 
 /* All Inspector section headers share one box model. Outer padding used to
@@ -882,6 +882,9 @@ button, input, textarea { font: inherit; }
 .studio-task-progress progress::-moz-progress-bar { background:#ff5733; border-radius:99px; }
 .studio-task-progress p { margin:0; overflow-wrap:anywhere; font-size:11px; }
 .studio-task-progress-compact { width:100%; max-width:420px; font-size:11px; }
+.studio-render-error-details { flex:1 1 100%; min-width:0; }
+.prototype-shell .studio-render-error-details > summary { min-height:24px; font-size:var(--ui-text-caption); font-weight:500; }
+.studio-render-error-details p { margin:4px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
 .studio-web-ai-actions .studio-web-prompt-copy { grid-column:1 / -1; }
 .studio-web-prompt-copy textarea { display:block; width:100%; max-width:100%; resize:vertical; overflow-wrap:anywhere; }
 .studio-web-prompt-copy > div { display:flex; gap:6px; flex-wrap:wrap; }

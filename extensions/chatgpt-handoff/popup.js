@@ -27,7 +27,7 @@ selectButton.addEventListener("click", () => {
 });
 forgetButton.addEventListener("click", () => {
   if (busy) return; busy = true;
-  void chrome.runtime.sendMessage({ channel, type: "forget-tab" }).then(() => { status.textContent = "Đã ngắt liên kết."; })
+  void chrome.runtime.sendMessage({ channel, type: "forget-tab" }).then((response) => { status.textContent = response?.ok ? "Đã ngắt liên kết." : response?.message || "Chưa xác nhận được trạng thái ngắt liên kết."; })
     .catch(() => { status.textContent = "Không ngắt được liên kết. Mở lại extension."; }).finally(() => { busy = false; });
 });
 void refresh().catch(() => { status.textContent = "Không đọc được danh sách tab."; selectButton.disabled = true; });

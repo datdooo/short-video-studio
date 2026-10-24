@@ -13,12 +13,13 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
       try{
         item.startedAt=new Date().toISOString();delete item.sourceProgress;
         let source;
-        if(item.sourceId)source=await load(item.sourceId); // A missing saved source needs user action; never redownload it silently.
+        if(item.sourceId){source=await load(item.sourceId,signal);signal.throwIfAborted();} // A missing saved source needs user action; never redownload it silently.
         else{item.state='downloading';await persist();source=await acquire(item.url,signal,progress=>{item.sourceProgress=progress;});signal.throwIfAborted();item.sourceId=source.id;item.title=source.title;item.checkpoint='source';await persist();}
+        signal.throwIfAborted();
         if(item.jobId){
           const job=getJob(item.jobId);if(!job)throw new Error('Saved render record missing; inspect outputs before submitting again.');
           if(job.state!=='done')validateRenderPlan(job.plan,source);
-          if(['error','cancelled'].includes(job.state))await resumeRender(job,signal);
+          if(['error','cancelled'].includes(job.state)){await resumeRender(job,signal);signal.throwIfAborted();}
           item.state=job.state;item.error=job.error;await persist();continue;
         }
         if(!item.plan||item.needsAnalysis){
@@ -36,17 +37,21 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
           }
           item.approved=true;await persist();
         }
+        signal.throwIfAborted();
         if(item.needsTeasers){
           if(['gemini','muse','chatgpt-web'].includes(settings.provider)){item.state='awaiting-import';item.error='Nhập lại hook của provider đã chọn; main được giữ.';await persist();continue;}
           if(!repairTeasers)throw Error('Chưa có đường sửa teaser; mở plan trong editor.');
           item.state='analyzing';await persist();
-          item.plan=await repairTeasers(item.plan,source,signal,item.transcript??source.transcript??'',settings);
+          const repaired=await repairTeasers(item.plan,source,signal,item.transcript??source.transcript??'',settings);
+          signal.throwIfAborted();item.plan=repaired;
           item.needsTeasers=false;item.approved=true;await persist();
         }
         if(item.approved===false){item.state='review-required';await persist();continue;}
         validateRenderPlan(item.plan,source);
         item.state='render-ready';await persist();
+        signal.throwIfAborted();
         item.submissionId ||= createId();item.submissionProtocol=1;item.state='submitting';await persist();
+        signal.throwIfAborted();
         const existing=getJob(item.submissionId);
         if(existing){if(existing.state!=='done')validateRenderPlan(existing.plan,source);if(['error','cancelled'].includes(existing.state))await resumeRender(existing,signal);item.jobId=existing.id;item.state=existing.state;item.plan=structuredClone(existing.plan);await persist();continue;}
         const job=await render({sourceId:source.id,plan:structuredClone(item.plan),submissionId:item.submissionId},signal);

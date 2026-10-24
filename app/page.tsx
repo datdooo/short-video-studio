@@ -256,6 +256,9 @@ export default function Home() {
   const [provider, setProvider] = useState<AiProvider>("chatgpt");
   const [chatGPTSession, setChatGPTSession] = useState<ChatGPTSession | null>(null);
   const [isChatGPTConnecting, setIsChatGPTConnecting] = useState(false);
+  const [isChatGPTDisconnecting,setIsChatGPTDisconnecting]=useState(false);
+  const chatGPTAction=useRef<AbortController|null>(null),chatGPTSessionRevision=useRef(0);
+  useEffect(()=>()=>{chatGPTSessionRevision.current++;chatGPTAction.current?.abort();chatGPTAction.current=null;},[]);
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceTitle, setSourceTitle] = useState(DEFAULT_REQUEST.originalTitle);
   const [transcript, setTranscript] = useState("");
@@ -751,20 +754,24 @@ export default function Home() {
   }, [previewElement]);
 
   useEffect(() => {
-    let active = true;
+    let active = true,pending=false;
+    const controller=new AbortController();
     async function checkWorker() {
+      if(pending)return;pending=true;
       try {
-        const response = await fetch(`${WORKER_ORIGIN}/health`, { cache: "no-store" });
+        const response = await fetch(`${WORKER_ORIGIN}/health`, { cache: "no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(8000)]) });
         const data = (await response.json()) as WorkerHealth;
-        if (active) setWorkerHealth(response.ok ? data : null);
+        const next=response.ok?data:null;
+        if (active) setWorkerHealth(previous=>JSON.stringify(previous)===JSON.stringify(next)?previous:next);
       } catch {
         if (active) setWorkerHealth(null);
-      }
+      }finally{pending=false;}
     }
     void checkWorker();
     const timer = window.setInterval(checkWorker, 5_000);
     return () => {
       active = false;
+      controller.abort();
       window.clearInterval(timer);
     };
   }, []);
@@ -774,16 +781,16 @@ export default function Home() {
       const timer = window.setTimeout(() => setChatGPTSession(null), 0);
       return () => window.clearTimeout(timer);
     }
-    let active = true;
-    fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store" })
+    let active = true;const controller=new AbortController(),revision=chatGPTSessionRevision.current;
+    fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(25_000)]) })
       .then(async (response) => {
         const data = (await response.json()) as { session?: ChatGPTSession };
-        if (active && data.session) setChatGPTSession(data.session);
+        if (active && revision===chatGPTSessionRevision.current && response.ok && data.session) setChatGPTSession(data.session);
       })
       .catch(() => {
-        if (active) setChatGPTSession(null);
+        if (active && revision===chatGPTSessionRevision.current) setChatGPTSession(null);
       });
-    return () => { active = false; };
+    return () => { active = false;controller.abort(); };
   }, [workerHealth?.ok]);
 
   useEffect(() => {
@@ -911,11 +918,12 @@ export default function Home() {
     return () => lifecycle.abort();
   }, [replacePlan,setManualPart1Title,setManualPart2Title,setManualPart1Ranges,setManualPart2Ranges]);
 
-  async function readChatGPTSession() {
-    const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store" });
+  async function readChatGPTSession(signal:AbortSignal,revision:number) {
+    const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { cache: "no-store",signal:AbortSignal.any([signal,AbortSignal.timeout(25_000)]) });
     const data = (await response.json()) as { session?: ChatGPTSession; error?: string };
     if (!response.ok || !data.session) throw new Error(data.error || "Không đọc được ChatGPT session.");
-    setChatGPTSession(data.session);
+    signal.throwIfAborted();
+    if(revision===chatGPTSessionRevision.current)setChatGPTSession(data.session);
     return data.session;
   }
 
@@ -973,7 +981,7 @@ export default function Home() {
         setBatch(data.batch);
         setBatchError("");
         if(!restorePassive)batchDownloadQueue.current?.enqueue(collectBatchDownloads(data.batch));
-        if (!data.batch.finished) timer = setTimeout(() => void poll(), 2000);
+        if (!data.batch.finished||data.batch.items.some(item=>item.job?.stopping)) timer = setTimeout(() => void poll(), 2000);
       } catch (error) {
         if (disposed || epoch !== batchPollEpoch.current) return;
         setBatchError(error instanceof Error ? error.message : "Không đọc được hàng đợi.");
@@ -1212,30 +1220,39 @@ export default function Home() {
   }
 
   async function connectChatGPT() {
+    if(chatGPTAction.current)return;
     setError("");
     if (!workerHealth?.ok) {
       setError("Media worker đang offline. Chạy `npm run personal` trước.");
       return;
     }
-    const popup = window.open("about:blank", "shortcut-chatgpt", "popup,width=560,height=760");
+    const controller=new AbortController(),revision=++chatGPTSessionRevision.current;
+    chatGPTAction.current=controller;
+    const current=()=>chatGPTAction.current===controller&&!controller.signal.aborted;
+    let popup:Window|null=null;
     let attemptId: string | undefined;
     setIsChatGPTConnecting(true);
     try {
-      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/start`, { method: "POST" });
+      popup=window.open("about:blank", "shortcut-chatgpt", "popup,width=560,height=760");
+      if (!popup) throw new Error("Trình duyệt đang chặn popup. Cho phép popup rồi thử lại.");
+      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/start`, { method: "POST",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(25_000)]) });
       const data = (await response.json()) as { url?: string; attemptId?: string; error?: string };
       if (!response.ok || !data.url) throw new Error(data.error || "Không bắt đầu được ChatGPT sign-in.");
-      if (!popup) throw new Error("Trình duyệt đang chặn popup. Cho phép popup rồi thử lại.");
+      controller.signal.throwIfAborted();
       attemptId = data.attemptId;
       if (!attemptId) throw new Error("Worker chưa hỗ trợ trạng thái đăng nhập. Khởi động Beta bản mới.");
       popup.location.href = data.url;
 
       for (let attempt = 0; attempt < 360; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-        const auth = await fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/status?attemptId=${encodeURIComponent(attemptId)}`, { cache: "no-store" }).then(r => r.json()) as { status: string; error?: string };
+        controller.signal.throwIfAborted();
+        const statusResponse=await fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/status?attemptId=${encodeURIComponent(attemptId)}`, { cache: "no-store",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15_000)]) });
+        const auth=await statusResponse.json() as { status: string; error?: string };
+        if(!statusResponse.ok)throw Error(auth.error||`Không đọc được trạng thái đăng nhập (HTTP ${statusResponse.status}).`);
         if (["failed", "cancelled", "expired"].includes(auth.status)) throw new Error(auth.error || "Đăng nhập bị hủy/hết hạn.");
         if (auth.status !== "exchanging" && popup.closed && auth.status !== "connected") throw new Error("Bạn đã đóng cửa sổ đăng nhập. Bấm kết nối lại khi sẵn sàng.");
         if (auth.status === "connected") {
-          const session = await readChatGPTSession();
+          const session = await readChatGPTSession(controller.signal,revision);
           if (!session.sharing) setError("Đã đăng nhập nhưng ChatGPT plan usage chưa được cấp quyền. Bấm kết nối lại và cho phép plan usage.");
           return;
         }
@@ -1243,23 +1260,27 @@ export default function Home() {
       throw new Error("ChatGPT sign-in hết thời gian chờ. Hãy thử lại.");
     } catch (caughtError) {
       popup?.close();
-      setError(caughtError instanceof Error ? caughtError.message : "Không kết nối được ChatGPT.");
+      if(current())setError(caughtError instanceof Error ? caughtError.message : "Không kết nối được ChatGPT.");
     } finally {
       if (attemptId) void fetch(`${WORKER_ORIGIN}/api/chatgpt/auth/status?attemptId=${encodeURIComponent(attemptId)}`, { method: "DELETE" }).catch(() => {});
-      setIsChatGPTConnecting(false);
+      if(chatGPTAction.current===controller){chatGPTAction.current=null;setIsChatGPTConnecting(false);}
     }
   }
 
   async function disconnectChatGPT() {
+    if(chatGPTAction.current)return;
+    const controller=new AbortController();chatGPTAction.current=controller;chatGPTSessionRevision.current++;
+    const current=()=>chatGPTAction.current===controller&&!controller.signal.aborted;
+    setIsChatGPTDisconnecting(true);
     setError("");
     try {
-      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { method: "DELETE" });
+      const response = await fetch(`${WORKER_ORIGIN}/api/chatgpt/session`, { method: "DELETE",signal:AbortSignal.any([controller.signal,AbortSignal.timeout(25_000)]) });
       const data = (await response.json()) as { session?: ChatGPTSession; error?: string };
       if (!response.ok || !data.session) throw new Error(data.error || "Không disconnect được ChatGPT.");
-      setChatGPTSession(data.session);
+      if(current())setChatGPTSession(data.session);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Không disconnect được ChatGPT.");
-    }
+      if(current())setError(caughtError instanceof Error ? caughtError.message : "Không disconnect được ChatGPT.");
+    }finally{if(chatGPTAction.current===controller){chatGPTAction.current=null;setIsChatGPTDisconnecting(false);}}
   }
 
   async function analyze() {
@@ -1393,7 +1414,7 @@ export default function Home() {
     if (!source || subtitleBusy||subtitleController.current) return;
     const selectionEpoch = sourceSelectionEpoch.current;
     const requestId = ++subtitleRequestSerial.current;
-    subtitleAutoKey.current = `${source.id}:${subtitleSettings.source || 'auto'}`;
+    subtitleAutoKey.current = `${source.id}:${subtitleSettings.source || 'auto'}:${subtitleSettings.language||'auto'}`;
     const currentRequest = () => isCurrentCaptionRequest({ sourceId: source.id, serial: requestId, selectionEpoch }, { sourceId: subtitleSourceRef.current, serial: subtitleRequestSerial.current, selectionEpoch: sourceSelectionEpoch.current });
     const controller=new AbortController();subtitleController.current=controller;sourceRequests.current.add(controller);
     setSubtitleStartedAt(Date.now());setSubtitleBusy(true); setSubtitleNotice(install ? "Đang tải model Whisper small · 465 MiB…" : "Đang tạo phụ đề…");
@@ -1417,7 +1438,7 @@ export default function Home() {
   useEffect(() => {
     if(!sessionReady||restorePassive)return;
     if (!subtitleSettings.enabled) { subtitleAutoKey.current = ""; return; }
-    if (!preparedSource || subtitleBusy || sourceCaptions?.sourceId === preparedSource.id || subtitleAutoKey.current === `${preparedSource.id}:${subtitleSettings.source || 'auto'}`) return;
+    if (!preparedSource || subtitleBusy || sourceCaptions?.sourceId === preparedSource.id || subtitleAutoKey.current === `${preparedSource.id}:${subtitleSettings.source || 'auto'}:${subtitleSettings.language||'auto'}`) return;
     void loadSubtitles();
   }, [sessionReady,restorePassive,preparedSource, subtitleSettings.enabled, subtitleSettings.source, sourceCaptions?.sourceId, subtitleBusy, loadSubtitles]);
 
@@ -1433,10 +1454,22 @@ export default function Home() {
   }, [workerHealth?.ok, subtitleSettings.enabled, subtitleBusy]);
 
   function chooseSubtitleSource(source: 'youtube' | 'whisper') {
+    if(source===subtitleSettings.source)return;
     subtitleRequestSerial.current += 1;
+    subtitleController.current?.abort();subtitleController.current=null;setSubtitleBusy(false);
     subtitleAutoKey.current = '';
     setSourceCaptions(null); setSubtitleNotice('');
     setSubtitleSettings((current) => ({ ...current, source }));
+  }
+  function chooseSubtitleLanguage(value:string){
+    const language=value.toLowerCase();
+    if(language===(subtitleSettings.language||'auto'))return;
+    subtitleRequestSerial.current++;
+    subtitleController.current?.abort();subtitleController.current=null;setSubtitleBusy(false);
+    // Do not auto-run ASR for each partially typed language or erase edited cues.
+    subtitleAutoKey.current=preparedSource?`${preparedSource.id}:${subtitleSettings.source||'auto'}:${language||'auto'}`:'';
+    setSubtitleSettings(current=>({...current,language}));
+    setSubtitleNotice('Ngôn ngữ đã đổi; phụ đề hiện tại được giữ. Bấm tạo lại để áp dụng.');
   }
 
   async function installWhisperModel() {
@@ -1795,7 +1828,7 @@ export default function Home() {
             <SelectContent><SelectItem value="chatgpt">ChatGPT Auto · Sol low</SelectItem><SelectItem value="chatgpt-web" disabled>ChatGPT web · từng video</SelectItem><SelectItem value="gemini" disabled>Gemini Pro · từng video</SelectItem><SelectItem value="muse" disabled>Muse · từng video</SelectItem></SelectContent>
           </Select>
           <Badge variant="outline" className={provider === "chatgpt" && chatGPTSession?.sharing ? "text-emerald-300" : "text-zinc-400"}>{isWebAi ? `${webAiName} bán tự động` : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
-          {provider === "chatgpt" && !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
+          {provider === "chatgpt" && !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || isChatGPTDisconnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
           {isWebAi && <p className="w-full text-xs leading-5 text-amber-200/80">{webAiName} cần import từng video. <button onClick={() => changeWorkspace("editor")} className="underline">Mở Editor</button></p>}
         </div>
         <details className="studio-batch-options mt-3 rounded-xl border border-white/8 p-3">
@@ -1901,7 +1934,7 @@ export default function Home() {
               </label>
             </TabsContent>
           </Tabs>
-          <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className={`studio-primary w-full${preparedSource&&!isPreparingSource?' studio-source-ready':''}`} aria-busy={isPreparingSource}>{isPreparingSource?<><Loader2 size={14} className="animate-spin"/><span aria-live="polite">{sourcePreparationLabel(sourcePreparationProgress)}</span></>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
+          <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className={`studio-primary w-full${preparedSource&&!isPreparingSource?' studio-source-ready':''}`} aria-busy={isPreparingSource}>{isPreparingSource?<><Loader2 size={14} className="animate-spin"/><span>{sourcePreparationLabel(sourcePreparationProgress?{...sourcePreparationProgress,percent:null}:null)}</span></>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
           {isPreparingSource&&<><TaskProgress label={sourcePreparationLabel(sourcePreparationProgress?{...sourcePreparationProgress,percent:null}:null)} startedAt={sourcePreparationStartedAt} percent={sourcePreparationProgress?.percent} estimated={sourcePreparationProgress?.estimated} detail={sourcePreparationProgress?.downloadedBytes!==undefined?`${(sourcePreparationProgress.downloadedBytes/1048576).toFixed(1)}${sourcePreparationProgress.totalBytes?` / ${(sourcePreparationProgress.totalBytes/1048576).toFixed(1)}`:''} MiB${sourcePreparationProgress.bytesPerSecond?` · ${(sourcePreparationProgress.bytesPerSecond/1048576).toFixed(1)} MiB/s`:''}${sourcePreparationProgress.etaSeconds!==undefined?` · còn khoảng ${Math.ceil(sourcePreparationProgress.etaSeconds)}s của bước tải`:''}`:undefined}/><button type="button" className="studio-ghost" onClick={()=>{sourcePreparation.current?.abort(new DOMException('Đã dừng chuẩn bị nguồn','AbortError'));setError('Đã dừng chuẩn bị nguồn.');}}>Dừng chuẩn bị</button></>}
           {preparedSource?<div className="studio-source-status"><span>{formatTime(preparedSource.duration)} · {preparedSource.width}×{preparedSource.height}</span></div>:<p className="studio-muted text-xs">{isPreparingSource?'':localFileName||'Chưa có nguồn'}</p>}
           <div className="mt-1">
@@ -2001,15 +2034,15 @@ export default function Home() {
                       </p>
                     </div>
                     {chatGPTSession?.connected && (
-                      <button type="button" onClick={() => void disconnectChatGPT()} className="shrink-0 text-[10px] text-zinc-600 transition hover:text-zinc-300">
-                        Disconnect
+                      <button type="button" disabled={isChatGPTConnecting||isChatGPTDisconnecting} onClick={() => void disconnectChatGPT()} className="shrink-0 text-[10px] text-zinc-600 transition hover:text-zinc-300 disabled:opacity-50">
+                        {isChatGPTDisconnecting?'Đang ngắt…':'Disconnect'}
                       </button>
                     )}
                   </div>
                   <Button
                     variant={chatGPTSession?.sharing ? "outline" : "default"}
                     onClick={() => void connectChatGPT()}
-                    disabled={isChatGPTConnecting || !workerHealth?.chatGPTAuthAvailable}
+                    disabled={isChatGPTConnecting || isChatGPTDisconnecting || !workerHealth?.chatGPTAuthAvailable}
                     className={`mt-3 h-10 w-full rounded-xl text-xs font-bold ${chatGPTSession?.sharing ? "border-white/10 bg-white/[.03] text-zinc-200 hover:bg-white/[.07]" : "bg-white text-black hover:bg-zinc-200"}`}
                   >
                     {isChatGPTConnecting ? <><Loader2 className="animate-spin" /> Waiting for ChatGPT…</> : chatGPTSession?.sharing ? <><LogIn /> Reconnect ChatGPT</> : <><LogIn /> Continue with ChatGPT</>}
@@ -2234,7 +2267,7 @@ export default function Home() {
               setSubtitleSettings((current) => ({ ...current, enabled }));
             }} /> Ghép phụ đề vào video xuất</label>
             {subtitleSettings.enabled && <div className="mt-3 space-y-3">
-              <label className="block text-xs">Ngôn ngữ lời nói<input aria-label="Ngôn ngữ lời nói cho phụ đề" className="studio-input mt-1 w-full" value={subtitleSettings.language||'auto'} placeholder="auto / de / vi / ja" onChange={event=>setSubtitleSettings(current=>({...current,language:event.target.value.toLowerCase()}))}/></label>
+              <label className="block text-xs">Ngôn ngữ lời nói<input aria-label="Ngôn ngữ lời nói cho phụ đề" className="studio-input mt-1 w-full" value={subtitleSettings.language||'auto'} placeholder="auto / de / vi / ja" onChange={event=>chooseSubtitleLanguage(event.target.value)}/></label>
               {preparedSource?.captionWarning&&<p className="studio-muted text-xs">{preparedSource.captionWarning}</p>}
               <div className="grid grid-cols-2 gap-2">
                 <button type="button" aria-pressed={subtitleSettings.source !== 'whisper'} disabled={subtitleBusy} onClick={() => chooseSubtitleSource('youtube')} className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source !== 'whisper' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-white/10 text-zinc-400'}`}>Dùng phụ đề YouTube</button>

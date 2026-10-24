@@ -41,6 +41,7 @@ async function fill(message, sender) {
   try {
     const binding = await readBinding();
     if (!binding) return result("TAB_NOT_SELECTED", "Mở extension và chọn tab ChatGPT trước.");
+    operation.tabId = binding.tabId;
     if (!await bindingStillMatches(binding)) return result("TAB_CHANGED", "Tab ChatGPT đã đổi hoặc tải lại. Chọn lại tab trong extension.");
     if (operation.cancelled || Date.now() - operation.issuedAt > MAX_AGE_MS) return result("HANDOFF_CANCELLED", "Prompt đã thay đổi. Bấm điền lại với prompt hiện tại.");
     await chrome.scripting.executeScript({ target: { tabId: binding.tabId }, files: ["chatgpt-fill.js"] });
@@ -51,6 +52,7 @@ async function fill(message, sender) {
       channel: CHANNEL, type: "fill-composer", operationId: message.operationId,
       expectedUrl: binding.url, prompt: message.prompt, expiresAt: message.issuedAt + MAX_AGE_MS,
     }, { frameId: 0 });
+    if (operation.cancelled || !await bindingStillMatches(binding)) return result("HANDOFF_CANCELLED", "Liên kết hoặc phiên Studio đã đổi. Kiểm tra ô soạn thảo ở tab cũ trước khi gửi tiếp.");
     if (!response || typeof response.ok !== "boolean" || typeof response.code !== "string") return result("FILL_UNVERIFIED", "Chưa xác nhận được ô soạn thảo. Kiểm tra tab ChatGPT; không tự gửi lại.");
     return response;
   } catch {
@@ -88,6 +90,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!Number.isInteger(message.tabId)) return result("INVALID_TAB", "Tab không hợp lệ.");
       const tab = await chrome.tabs.get(message.tabId);
       if (tab.status !== "complete" || !isChatGptUrl(tab.url)) return result("TAB_NOT_READY", "Mở cuộc trò chuyện ChatGPT bình thường và chờ tải xong.");
+      for (const operation of active.values()) operation.cancelled = true;
+      for (const operation of [...automated.values()]) finishAuto(operation, result("TAB_REBOUND", "Đã đổi liên kết tab. Dừng nhận lượt cũ; kiểm tra ChatGPT trước khi gửi tiếp."));
       await chrome.storage.session.set({ [BINDING_KEY]: { tabId: tab.id, url: tab.url, selectedAt: Date.now() } });
       return result("TAB_SELECTED", "Đã chọn tab. Chỉ gửi khi bạn bấm lệnh gửi trong Studio.", true);
     })().then(sendResponse).catch(() => sendResponse(result("TAB_UNAVAILABLE", "Không chọn được tab ChatGPT.")));
@@ -96,12 +100,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "forget-tab") {
     for (const operation of active.values()) operation.cancelled = true;
     for (const operation of [...automated.values()]) finishAuto(operation, result("HANDOFF_CANCELLED", "Đã ngắt liên kết. Không tự gửi thêm hoặc áp dụng kết quả."));
-    void chrome.storage.session.remove(BINDING_KEY).then(() => sendResponse({ ok: true })); return true;
+    void chrome.storage.session.remove(BINDING_KEY).then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse(result("UNLINK_FAILED", "Không lưu được trạng thái ngắt liên kết. Các lượt đang chờ đã dừng; mở lại extension để thử ngắt."))); return true;
   }
   return false;
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const operation of active.values()) if (operation.senderTabId === tabId || operation.tabId === tabId) operation.cancelled = true;
   for (const operation of [...automated.values()]) if (operation.tabId === tabId || operation.senderTabId === tabId) finishAuto(operation, result("TAB_CLOSED", "Tab liên kết đã đóng. Kết quả chưa được áp dụng."));
   void readBinding().then((binding) => { if (binding?.tabId === tabId) return chrome.storage.session.remove(BINDING_KEY); });
 });
@@ -130,6 +136,7 @@ function finishAuto(operation, response) {
   sendPort(operation.studioPort, { channel: CHANNEL, type: "auto-result", operationId: operation.operationId, response });
 }
 function autoProgress(operation, phase, message) {
+  if (operation.finished) return;
   operation.phase = phase;
   if (!sendPort(operation.studioPort, { channel: CHANNEL, type: "auto-progress", operationId: operation.operationId, phase, message })) {
     finishAuto(operation, result("STUDIO_DISCONNECTED", "Studio đã mất kết nối. Không tự gửi thêm."));
@@ -156,6 +163,7 @@ async function beginAuto(message, sender, port) {
   try {
     const binding = await readBinding();
     if (!binding || !await bindingStillMatches(binding)) { finishAuto(operation, result("TAB_NOT_SELECTED", "Chọn lại tab ChatGPT đã tải xong trong extension.")); return; }
+    if (operation.finished) return;
     operation.tabId = binding.tabId; operation.expectedUrl = binding.url;
     operation.allowNewConversation = new URL(binding.url).pathname === "/";
     autoProgress(operation, "preparing", "Đang kiểm tra tab và ô soạn thảo…");

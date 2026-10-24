@@ -3,6 +3,7 @@ import {canonicalVideoInput,VIDEO_TEXT_INSTRUCTIONS,VIDEO_TEXT_VERSION} from '..
 import {createEditorSourceLeases} from './editor-source-leases.mjs';
 import {createRequestOriginPolicy} from './request-origin.mjs';
 import {createHistoryPersistence} from './history-persistence.mjs';
+import {mediaByteRange} from './media-http.mjs';
 import {providerError,readProviderOutput,safeProviderId} from './provider-response.mjs';
 import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
 import {assertTeaserContexts,selectionDigest,transcriptValue,teaserEvidenceValue} from '../lib/teaser-context.mjs';
@@ -346,12 +347,16 @@ function sendJson(request, response, statusCode, value) {
 async function readJson(request, limit = 6 * 1024 * 1024) {
   const chunks = [];
   let size = 0;
-  for await (const chunk of request) {
+  for await (const chunk of request.iterator({destroyOnReturn:false})) {
     size += chunk.length;
-    if (size > limit) throw new Error("Request JSON quá lớn.");
+    if (size > limit) {request.resume();throw Object.assign(new Error("Request JSON quá lớn."),{status:413});}
     chunks.push(chunk);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+  let value;
+  try{value=JSON.parse(Buffer.concat(chunks).toString("utf8")||"{}");}
+  catch{throw Object.assign(Error('Request JSON không hợp lệ.'),{status:400});}
+  if(!value||typeof value!=='object'||Array.isArray(value))throw Object.assign(Error('Request cần một JSON object.'),{status:400});
+  return value;
 }
 
 function sendHtml(request, response, statusCode, title, message) {
@@ -1751,7 +1756,8 @@ async function prepareBatch(batch,body,items){return processBatch(batch,body,ite
 
 function batchSnapshot(batch) {
   const items = batch.items.filter((item) => !item.deleted).map((item) => {
-    const job = item.jobId ? jobs.get(item.jobId) : null;
+    const storedJob = item.jobId ? jobs.get(item.jobId) : null;
+    const job=storedJob?renderSnapshot(storedJob):null;
     return { ...item, state: job?.state || item.state, error: job?.error || item.error, job };
   });
   return { id: batch.id, items, finished: items.every((item) => ["done", "error", "cancelled", "paused", "awaiting-import", "review-required"].includes(item.state)) };
@@ -1773,7 +1779,7 @@ async function serveAiOperation(request,response,body,kind,work){
 
 function mediaContentType(target) {
   return {
-    ".mp4": "video/mp4", ".flac":"audio/flac", ".m4a":"audio/mp4",
+    ".mp4": "video/mp4", ".flac":"audio/flac", ".m4a":"audio/mp4", ".mp3":"audio/mpeg", ".wav":"audio/wav", ".aac":"audio/aac", ".ogg":"audio/ogg", ".opus":"audio/ogg",
     ".m4v": "video/mp4",
     ".mov": "video/quicktime",
     ".webm": "video/webm",
@@ -1783,7 +1789,8 @@ function mediaContentType(target) {
 }
 
 async function serveMediaPath(request, response, target, { download = false, filename = path.basename(target) } = {}) {
-  const fileStat = statSync(target);
+  const fileStat = await stat(target);
+  if(!fileStat.isFile())throw Object.assign(Error('Không tìm thấy media.'),{status:404});
   const range = request.headers.range;
   const baseHeaders = {
     ...corsHeaders(request),
@@ -1793,19 +1800,13 @@ async function serveMediaPath(request, response, target, { download = false, fil
     ...(download ? { "Content-Disposition": `attachment; filename="video.mp4"; filename*=UTF-8''${encodeURIComponent(filename).replace(/'/g, "%27")}` } : {}),
   };
   if (range) {
-    const match = range.match(/bytes=(\d+)-(\d*)/);
-    if (!match) {
-      response.writeHead(416, baseHeaders);
-      response.end();
-      return;
-    }
-    const start = Number(match[1]);
-    const end = Math.min(match[2] ? Number(match[2]) : fileStat.size - 1, fileStat.size - 1);
-    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= fileStat.size) {
+    const selected=mediaByteRange(range,fileStat.size);
+    if (!selected) {
       response.writeHead(416, { ...baseHeaders, "Content-Range": `bytes */${fileStat.size}` });
       response.end();
       return;
     }
+    const {start,end}=selected;
     response.writeHead(206, {
       ...baseHeaders,
       "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
@@ -1815,7 +1816,7 @@ async function serveMediaPath(request, response, target, { download = false, fil
       response.end();
       return;
     }
-    createReadStream(target, { start, end }).pipe(response);
+    await pipeline(createReadStream(target, { start, end }),response);
     return;
   }
   response.writeHead(200, { ...baseHeaders, "Content-Length": fileStat.size });
@@ -1823,7 +1824,7 @@ async function serveMediaPath(request, response, target, { download = false, fil
     response.end();
     return;
   }
-  createReadStream(target).pipe(response);
+  await pipeline(createReadStream(target),response);
 }
 
 async function serveFile(request, response, pathname, { download = true } = {}) {
@@ -1844,15 +1845,15 @@ async function serveSourceMedia(request, response, sourceId) {
 await mkdir(sourcesRoot, { recursive: true });
 
 const server = createServer(async (request, response) => {
-  const requestUrl = new URL(request.url || "/", `http://${host}:${port}`);
   try {
+    const requestUrl = new URL(request.url || "/", `http://${host}:${port}`);
     requestOrigins.assert(request,requestUrl.pathname);
     if(request.method==='OPTIONS'){
       response.writeHead(204,corsHeaders(request));response.end();return;
     }
     const rawUpload=['/api/sources/upload','/api/music/import'].includes(requestUrl.pathname);
     const bodyPresent=Number(request.headers['content-length'])>0||Boolean(request.headers['transfer-encoding']);
-    if(!rawUpload&&!['GET','HEAD'].includes(request.method)&&bodyPresent&&request.headers['content-type']?.split(';')[0].trim()!=='application/json'){
+    if(!rawUpload&&!['GET','HEAD'].includes(request.method)&&bodyPresent&&request.headers['content-type']?.split(';')[0].trim().toLowerCase()!=='application/json'){
       sendJson(request,response,415,{error:'Thao tác này yêu cầu JSON từ app.'});return;
     }
     if(request.method==='POST'&&requestUrl.pathname==='/api/editor/source-lease'){
@@ -2219,7 +2220,7 @@ const server = createServer(async (request, response) => {
         sendJson(request, response, 404, { error: "Render job không tồn tại hoặc worker đã restart." });
         return;
       }
-      sendJson(request, response, 200, { job });
+      sendJson(request, response, 200, { job:renderSnapshot(job) });
       return;
     }
     const sourceMediaMatch = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/media$/i);
@@ -2233,12 +2234,16 @@ const server = createServer(async (request, response) => {
     }
     sendJson(request, response, 404, { error: "Route không tồn tại." });
   } catch (error) {
+    // Streaming may already have sent headers or the client may have gone away.
+    // Never attempt a second JSON response; pipeline has closed owned streams.
+    if(response.destroyed||response.writableEnded)return;
+    if(response.headersSent){response.destroy();return;}
     const message = error instanceof Error ? error.message : String(error);
     const status = error.status || (message.startsWith("AUTH_REQUIRED") || message.startsWith("AUTH_EXPIRED") ? 401
       : message.startsWith("PLAN_USAGE_DISABLED") ? 403
         : message.startsWith("PLAN_LIMIT_REACHED") || message.startsWith("RATE_LIMITED") ? 429
           : message.startsWith("MODEL_UNAVAILABLE") ? 503
-            : error.code === "ENOENT" ? 404 : 500);
+            : error.code === "ENOENT" ? 404 : error.code==='ERR_INVALID_URL'||error instanceof URIError?400:500);
     sendJson(request, response, status, { error: message });
   }
 });

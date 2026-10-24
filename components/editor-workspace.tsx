@@ -50,15 +50,44 @@ export function EditorWorkspace({source,preview,timeline,inspector,status,visibl
  useEffect(()=>{
   if(!visible){setDrawer(null);return;}
   if(!narrow||!drawer)return;
+  const panel=(drawer==='source'?sourcePanel:inspectorPanel).current;
+  if(!panel)return;
+  // Match the pointer-blocking backdrop for keyboard/assistive technology.
+  // Keep existing inert values, mounted drafts, and portalled Select/Popover
+  // content intact; only the surrounding page branches are disabled here.
+  const background:HTMLElement[]=[];
+  for(let branch:HTMLElement=panel;branch.parentElement&&branch!==document.body;branch=branch.parentElement){
+   for(const sibling of branch.parentElement.children){
+    if(!(sibling instanceof HTMLElement)||sibling===branch||sibling.inert||sibling.classList.contains('studio-drawer-backdrop'))continue;
+    sibling.inert=true;background.push(sibling);
+   }
+  }
   (drawer==='source'?sourceClose:inspectorClose).current?.focus();
   const escape=(event:KeyboardEvent)=>{
-   if(event.key!=='Escape'||event.defaultPrevented)return;
-   event.preventDefault();setDrawer(null);
-   (drawer==='source'?sourceToggle:inspectorToggle).current?.focus();
+   if(event.defaultPrevented)return;
+   if(event.key==='Escape'){
+    event.preventDefault();setDrawer(null);
+    (drawer==='source'?sourceToggle:inspectorToggle).current?.focus();
+    return;
+   }
+   // Nested portalled controls manage their own focus scope. Once focus is
+   // back in this drawer, Tab must not fall through to browser/background UI.
+   if(event.key!=='Tab'||event.altKey||event.ctrlKey||event.metaKey||!panel.contains(document.activeElement))return;
+   const tabbable=Array.from(panel.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]')).filter(element=>element.tabIndex>=0&&!element.matches(':disabled')&&!element.closest('[inert],[hidden]')&&element.getClientRects().length>0&&getComputedStyle(element).visibility!=='hidden');
+   const first=tabbable[0],last=tabbable[tabbable.length-1];
+   if(!first){event.preventDefault();panel.focus();}
+   else if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+   else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   };
   // Bubble: nested Select/Popover can consume Escape before closing the drawer.
   window.addEventListener('keydown',escape);
-  return()=>window.removeEventListener('keydown',escape);
+  return()=>{
+   window.removeEventListener('keydown',escape);
+   const restoreFocus=panel.contains(document.activeElement)||document.activeElement===document.body;
+   for(const element of background)element.inert=false;
+   const trigger=(drawer==='source'?sourceToggle:inspectorToggle).current;
+   if(restoreFocus&&trigger&&trigger.getClientRects().length>0&&!trigger.closest('[inert],[hidden]'))trigger.focus();
+  };
  },[narrow,drawer,visible]);
  function toggle(side:Side){
   if(narrow)setDrawer(current=>current===side?null:side);
@@ -68,13 +97,13 @@ export function EditorWorkspace({source,preview,timeline,inspector,status,visibl
  return <div className="editor-workspace">
   <div className="studio-fixed-columns" data-source-open={sourceOpen} data-inspector-open={inspectorOpen}>
    {narrow&&drawer&&visible&&<button type="button" tabIndex={-1} className="studio-drawer-backdrop" aria-label="Đóng panel" onClick={closeDrawer}/>}
-   <div id="studio-source-column" ref={sourcePanel} className="studio-side-panel studio-source-column" data-drawer-open={narrow&&drawer==='source'&&visible} inert={!sourceOpen||!visible} aria-hidden={!sourceOpen||!visible}>
-    <div className="studio-drawer-heading"><strong>Nguồn và AI</strong><button ref={sourceClose} type="button" aria-label="Đóng nguồn" onClick={closeDrawer}><X size={16}/></button></div>
+   <div id="studio-source-column" ref={sourcePanel} className="studio-side-panel studio-source-column" data-drawer-open={narrow&&drawer==='source'&&visible} inert={!sourceOpen||!visible} aria-hidden={!sourceOpen||!visible} role={narrow&&drawer==='source'&&visible?'dialog':undefined} aria-modal={narrow&&drawer==='source'&&visible?true:undefined} aria-labelledby={narrow&&drawer==='source'&&visible?'studio-source-drawer-title':undefined} tabIndex={-1}>
+    <div className="studio-drawer-heading"><strong id="studio-source-drawer-title">Nguồn và AI</strong><button ref={sourceClose} type="button" aria-label="Đóng nguồn" onClick={closeDrawer}><X size={16}/></button></div>
     <EditorSourcePanel>{source}</EditorSourcePanel>
    </div>
    <EditorPreviewPanel preview={preview} timeline={timeline}/>
-   <div id="studio-inspector-column" ref={inspectorPanel} className="studio-side-panel studio-inspector-column" data-drawer-open={narrow&&drawer==='inspector'&&visible} inert={!inspectorOpen||!visible} aria-hidden={!inspectorOpen||!visible}>
-    <div className="studio-drawer-heading"><strong>Inspector</strong><button ref={inspectorClose} type="button" aria-label="Đóng Inspector" onClick={closeDrawer}><X size={16}/></button></div>
+   <div id="studio-inspector-column" ref={inspectorPanel} className="studio-side-panel studio-inspector-column" data-drawer-open={narrow&&drawer==='inspector'&&visible} inert={!inspectorOpen||!visible} aria-hidden={!inspectorOpen||!visible} role={narrow&&drawer==='inspector'&&visible?'dialog':undefined} aria-modal={narrow&&drawer==='inspector'&&visible?true:undefined} aria-labelledby={narrow&&drawer==='inspector'&&visible?'studio-inspector-drawer-title':undefined} tabIndex={-1}>
+    <div className="studio-drawer-heading"><strong id="studio-inspector-drawer-title">Inspector</strong><button ref={inspectorClose} type="button" aria-label="Đóng Inspector" onClick={closeDrawer}><X size={16}/></button></div>
     <div className="studio-inspector-scroll">{inspector}</div>
    </div>
   </div>

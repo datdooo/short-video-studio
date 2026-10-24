@@ -1,7 +1,7 @@
 'use client';
 import {TaskProgress} from './task-progress';
 import {uploadJson,type UploadMetric} from '@/lib/upload-json';
-import {useCallback,useEffect,useLayoutEffect,useRef,useState}from'react';
+import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState}from'react';
 import {useEditorDraft,useDraftActivity} from './editor-draft-context';
 import type{RefObject}from'react';
 import type{EditPart,EditPlan}from'@/lib/edit-plan';
@@ -13,11 +13,12 @@ import {MUSIC_CATALOG}from'@/lib/music/catalog.mjs';
 type Asset={id:string;title:string;duration:number;durationLoop:number;contentHash:string;artist?:string;mood?:string;catalogId?:string;license?:string;sourceUrl?:string;attribution?:string;verificationStatus?:string;instrumentalVerified?:boolean};
 type Props={suspended?:boolean;autoPrepare?:boolean;previewReady:boolean;plan:EditPlan;worker:string;settings?:MusicSettings;activity?:SpeechActivity;source?:{id:string;duration:number}|null;part:EditPart;duration:number;time:number;playing:boolean;video:RefObject<HTMLVideoElement|null>;onChange:(v:MusicSettings)=>void;onSpeech:(v:SpeechActivity)=>void;onAudition:()=>void;onPlayback?:(handle:{play:()=>void;pause:()=>void}|null)=>void};
 export function MusicPanel(props:Props){
- const settings=normalizeMusic(props.settings),effective=effectiveMusic(props.settings,props.part.id);
+ const settings=useMemo(()=>normalizeMusic(props.settings),[props.settings]),effective=useMemo(()=>effectiveMusic(props.settings,props.part.id),[props.settings,props.part.id]);
  const [importStartedAt,setImportStartedAt]=useState(0),[mixStartedAt,setMixStartedAt]=useState(0),[detectionStartedAt,setDetectionStartedAt]=useState(0),[importProgress,setImportProgress]=useState<UploadMetric|null>(null),[importTransferred,setImportTransferred]=useState(false);
  const importing=useRef(false),importRequest=useRef<AbortController|null>(null);
  useEffect(()=>()=>importRequest.current?.abort(),[]);
- const [assets,setAssets]=useState<Asset[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(false),[detecting,setDetecting]=useState(false),[auditionId,setAuditionId]=useState(''),[previewStatus,setPreviewStatus]=useState('off'),[previewAttempt,setPreviewAttempt]=useState(0);
+ const [assets,setAssets]=useState<Asset[]>([]),[refreshing,setRefreshing]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[detecting,setDetecting]=useState(false),[auditionId,setAuditionId]=useState(''),[previewStatus,setPreviewStatus]=useState('off'),[previewAttempt,setPreviewAttempt]=useState(0);
+ const libraryRequest=useRef<AbortController|null>(null);
  const[catalogId,setCatalogId]=useEditorDraft('music-catalog','',v=>typeof v==='string'),[search,setSearch]=useEditorDraft('music-search','',v=>typeof v==='string'),[moodFilter,setMoodFilter]=useEditorDraft('music-mood','all',v=>typeof v==='string');
  useDraftActivity('import nhạc',busy);
  const audition=useRef<HTMLAudioElement|null>(null),music=useRef<HTMLAudioElement|null>(null),latest=useRef(props),session=useRef(''),musicSource=useRef(''),expectedMixKey=useRef('');
@@ -28,19 +29,29 @@ export function MusicPanel(props:Props){
  useLayoutEffect(()=>{latest.current=props;},[props]);
  useLayoutEffect(()=>{if(props.suspended){stopAudition();playback.current?.pause();}},[props.suspended,stopAudition]);
  useEffect(()=>{if(!session.current)session.current=crypto.randomUUID();},[]);
- async function refresh(){try{const r=await fetch(props.worker+'/api/music');const d=await r.json() as {error?:string;assets:Asset[];asset:Asset};if(!r.ok)throw Error(d.error||'Không tải được thư viện nhạc.');setAssets(d.assets);}catch(e){setError(String(e instanceof Error?e.message:e));}}
- useEffect(()=>{let active=true;void fetch(props.worker+'/api/music').then(r=>r.json() as Promise<{assets:Asset[]}>).then(d=>{if(active&&Array.isArray(d.assets))setAssets(d.assets);}).catch(()=>{});return()=>{active=false;};},[props.worker]);
+ const refresh=useCallback(async()=>{
+  // Initial load, manual refresh and post-import refresh share one revision.
+  // A slower pre-import response must not replace the newly imported list.
+  libraryRequest.current?.abort();const controller=new AbortController();libraryRequest.current=controller;setRefreshing(true);
+  try{const r=await fetch(props.worker+'/api/music',{signal:controller.signal});const d=await r.json() as {error?:string;assets?:Asset[]};if(!r.ok||!Array.isArray(d.assets))throw Error(d.error||'Không tải được thư viện nhạc.');if(!controller.signal.aborted&&libraryRequest.current===controller)setAssets(d.assets);}
+  catch(e){if(!controller.signal.aborted&&libraryRequest.current===controller)setError(String(e instanceof Error?e.message:e));}
+  finally{if(libraryRequest.current===controller){libraryRequest.current=null;if(!controller.signal.aborted)setRefreshing(false);}}
+ },[props.worker]);
+ useEffect(()=>{void refresh();return()=>{libraryRequest.current?.abort();};},[refresh]);
  const [duckingInfo,setDuckingInfo]=useState<{key:string;applied:boolean;windowCount:number;reason:string}|null>(null);
  const speechRef=useRef(props.onSpeech);
  useEffect(()=>{speechRef.current=props.onSpeech;},[props.onSpeech]);
  const sourceId=props.source?.id;
- useEffect(()=>{if(props.autoPrepare===false||!settings.enabled||!settings.ducking||!sourceId||props.activity?.sourceId===sourceId)return;const controller=new AbortController();let active=true;
+ // An audition belongs to the displayed source/part/asset, even when the next
+ // part inherits the same song. Never leave the old audio playing behind it.
+ useLayoutEffect(()=>{stopAudition();},[props.worker,sourceId,props.part.id,effective.assetId,settings.enabled,stopAudition]);
+ useEffect(()=>{if(props.autoPrepare===false||!settings.enabled||!settings.ducking||!sourceId||props.activity?.sourceId===sourceId){setDetecting(false);return;}const controller=new AbortController();let active=true;
  void Promise.resolve().then(()=>{if(active){setDetecting(true);setDetectionStartedAt(Date.now());}return fetch(`${props.worker}/api/sources/${sourceId}/music-speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:controller.signal});}).then(async r=>{const value=await r.json() as SpeechActivity & {error?:string};if(!r.ok)throw Error(value.error||'Không phân tích được lời nói.');if(active)speechRef.current(value);}).catch(e=>{if(active)setError('Ducking chưa khả dụng; giữ gain thủ công. '+e.message);}).finally(()=>{if(active)setDetecting(false);});
  return()=>{active=false;controller.abort();};},[settings.enabled,settings.ducking,sourceId,props.worker,props.autoPrepare,props.activity?.sourceId]);
  // Shared mix/envelope helper, with explicit Preview 1× mapping; BGM stays 1×.
  // Native playback avoids
  // the demonstrated Web Audio clock stall; video source/cuts remain untouched.
- const previewKey=JSON.stringify([PREVIEW_MIX_VERSION,PREVIEW_RATE,PREVIEW_TIMEBASE,props.autoPrepare,props.previewReady,sourceId,settings,effective.assetId,props.part.id,props.part.segments,props.part.teaser,props.part.teaserEnabled!==false,props.activity?.cacheKey]);
+ const previewKey=useMemo(()=>JSON.stringify([PREVIEW_MIX_VERSION,PREVIEW_RATE,PREVIEW_TIMEBASE,props.autoPrepare,props.previewReady,sourceId,settings,effective.assetId,props.part.id,props.part.segments,props.part.teaser,props.part.teaserEnabled!==false,props.activity?.cacheKey]),[props.autoPrepare,props.previewReady,sourceId,settings,effective.assetId,props.part.id,props.part.segments,props.part.teaser,props.part.teaserEnabled,props.activity?.cacheKey]);
  useEffect(()=>{expectedMixKey.current=previewKey;playback.current?.invalidate();musicSource.current='';const oldMix=music.current;music.current=null;if(oldMix){oldMix.pause();oldMix.onloadedmetadata=null;oldMix.onerror=null;oldMix.src='';}const video=latest.current.video.current;if(props.autoPrepare===false||!props.previewReady||!settings.enabled||!effective.enabled||!effective.assetId||!sourceId){music.current?.pause();if(video)video.muted=false;void Promise.resolve().then(()=>setPreviewStatus(props.autoPrepare===false?'restored':!props.previewReady?'waiting-plan':settings.enabled?'missing':'off'));return;}
  const controller=new AbortController();let active=true,pending:HTMLAudioElement|undefined;const timer=setTimeout(()=>{
  setPreviewStatus('preparing');setMixStartedAt(Date.now());setError('');
@@ -65,8 +76,8 @@ export function MusicPanel(props:Props){
   void a.play().then(()=>{if(!current()){a.pause();return;}auditionStarting.current=false;setAuditionId(assetId);}).catch(e=>{if(current()){auditionStarting.current=false;setError(e.message);}});
  }
  // Priority affects presentation only; IDs/settings/audio identity stay unchanged.
- const orderedAssets=[...assets].sort((a,b)=>Number(b.mood==='Nhẹ nhàng / Đa dụng')-Number(a.mood==='Nhẹ nhàng / Đa dụng'));
- const selectedAsset=assets.find(a=>a.id===effective.assetId),filtered=orderedAssets.filter(a=>(moodFilter==='all'||a.mood===moodFilter)&&(a.title+' '+a.artist).toLowerCase().includes(search.toLowerCase())||a.id===settings.assetId||a.id===effective.assetId);
+ const orderedAssets=useMemo(()=>[...assets].sort((a,b)=>Number(b.mood==='Nhẹ nhàng / Đa dụng')-Number(a.mood==='Nhẹ nhàng / Đa dụng')),[assets]);
+ const selectedAsset=assets.find(a=>a.id===effective.assetId),filtered=useMemo(()=>orderedAssets.filter(a=>(moodFilter==='all'||(a.mood||'Nhạc cục bộ')===moodFilter)&&(a.title+' '+(a.artist||'')).toLowerCase().includes(search.toLowerCase())||a.id===settings.assetId||a.id===effective.assetId),[orderedAssets,moodFilter,search,settings.assetId,effective.assetId]);
  return <><details className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4"><summary className="cursor-pointer text-sm font-semibold">Nhạc nền · {settings.enabled?'Bật':'Tắt'}{settings.enabled&&!selectedAsset?' · chưa có file được chọn':''}</summary><div className="mt-3 space-y-3 text-xs">
  <label className="flex items-center gap-2"><input type="checkbox" checked={settings.enabled} onChange={e=>props.onChange({...settings,enabled:e.target.checked})}/>Bật nhạc nền</label>
  <p role="status" className="text-zinc-400">{props.suspended?'Preview nhạc đang tạm dừng.':!settings.enabled?'Preview nhạc đang tắt.':!effective.assetId?'Chưa chọn file nhạc.':!props.previewReady?'Chưa có bản cắt để chuẩn bị nhạc preview.':!selectedAsset?'Không tìm thấy file nhạc đã chọn trong thư viện.':props.autoPrepare===false?'Bấm Play preview để chuẩn bị nhạc.':previewStatus==='preparing'?'Đang chuẩn bị audio mix cho part hiện tại…':previewStatus==='blocked'?'Audio bị chặn — bấm nút phát nhạc.':previewStatus==='error'?'Audio mix lỗi; tiếng source vẫn được giữ.':auditionId?'Đang nghe thử nhạc riêng.':previewStatus==='playing'?'Đang phát giọng nguồn và nhạc.':previewStatus==='ready'||previewStatus==='paused'?'Nhạc preview sẵn sàng.':'Chưa phát nhạc preview.'}</p>
@@ -80,7 +91,7 @@ export function MusicPanel(props:Props){
  <label className="flex items-center gap-2"><input type="checkbox" checked={settings.ducking} onChange={e=>props.onChange({...settings,ducking:e.target.checked})}/>Tự giảm nhạc khi có lời nói</label>
  <p className="text-zinc-500">{detecting?'Đang phát hiện lời nói cục bộ…':props.activity&&props.activity.sourceId===props.source?.id?props.activity.status==='available'?`${props.activity.intervals.length} khoảng lời nói`:props.activity.limitations.join(' '):'Chưa có dữ liệu lời nói để giảm nhạc tự động.'}</p>
  {settings.enabled&&settings.ducking&&duckingInfo?.key===previewKey&&<p role="status" className="text-zinc-400">{duckingInfo.reason} {duckingInfo.applied?`${duckingInfo.windowCount} vùng giảm nhạc trong Part ${props.part.id} · preview 1×.`:''}</p>}
- <label className="block">Nguồn file sẽ import<select aria-label="Nguồn nhạc import" className="studio-input mt-1 w-full" value={catalogId} onChange={e=>setCatalogId(e.target.value)}><option value="">File riêng · quyền sử dụng do bạn xác nhận</option>{MUSIC_CATALOG.map(t=><option key={t.id} value={t.id}>{t.mood} · {t.title} — {t.artist}</option>)}</select></label><div className="studio-action-row"><button type="button" disabled={!effective.assetId} onClick={listen} className="rounded border border-white/15 px-3 py-2 disabled:opacity-40">{auditionId?'Dừng nghe thử':'Nghe thử nhạc'}</button><label className="cursor-pointer rounded border border-white/15 px-3 py-2">{busy?'Đang import…':'Import nhạc cục bộ'}<input aria-label="Import nhạc cục bộ" className="sr-only" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus" disabled={busy} onChange={e=>{void importFile(e.target.files?.[0]);e.target.value='';}}/></label><button type="button" onClick={()=>void refresh()}>Làm mới</button></div>
+ <label className="block">Nguồn file sẽ import<select aria-label="Nguồn nhạc import" className="studio-input mt-1 w-full" value={catalogId} onChange={e=>setCatalogId(e.target.value)}><option value="">File riêng · quyền sử dụng do bạn xác nhận</option>{MUSIC_CATALOG.map(t=><option key={t.id} value={t.id}>{t.mood} · {t.title} — {t.artist}</option>)}</select></label><div className="studio-action-row"><button type="button" disabled={props.suspended||!effective.assetId} onClick={listen} className="rounded border border-white/15 px-3 py-2 disabled:opacity-40">{auditionId?'Dừng nghe thử':'Nghe thử nhạc'}</button><label className="cursor-pointer rounded border border-white/15 px-3 py-2">{busy?'Đang import…':'Import nhạc cục bộ'}<input aria-label="Import nhạc cục bộ" className="sr-only" type="file" accept=".mp3,.wav,.m4a,.aac,.flac,.ogg,.opus" disabled={busy} onChange={e=>{void importFile(e.target.files?.[0]);e.target.value='';}}/></label><button type="button" disabled={refreshing||busy} onClick={()=>void refresh()}>{refreshing?'Đang đọc nhạc…':'Làm mới'}</button></div>
  <details><summary className="cursor-pointer">Gợi ý Mixkit theo mục đích · link chính thức</summary><p className="mt-2 text-zinc-500">Link tham khảo · chưa xác minh không lời/quyền dùng từng bài.</p>{[...new Set(MUSIC_CATALOG.filter(t=>!("downloadUrl" in t)).map(t=>t.mood))].map(mood=><div key={mood} className="mt-3"><p>{mood}</p>{MUSIC_CATALOG.filter(t=>!("downloadUrl" in t)&&t.mood===mood).map(t=><a key={t.id} className="mt-1 block text-zinc-400 underline" href={t.sourceUrl} target="_blank" rel="noreferrer">{t.title} — {t.artist}</a>)}</div>)}<a className="mt-3 block underline" href="https://mixkit.co/license/modal/musicFree/" target="_blank" rel="noreferrer">Giấy phép Mixkit</a></details>
  {error&&<p role="alert" className="text-amber-300">{error}</p>}
  </div></details></>;
