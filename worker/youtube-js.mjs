@@ -4,16 +4,16 @@ import { Innertube, Platform, Log } from 'youtubei.js';
 import { evaluatePlayer } from './youtube-player.mjs';
 import { readFile } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
 import { cookieHeader, youtubeFailure } from './youtube-common.mjs';
-import { rankYouTubeVideos } from './youtube-quality.mjs';
+import { rankYouTubeVideos,rankYouTubeReviewVideos,youtubeReviewProfile } from './youtube-quality.mjs';
 
 Log.setLevel(Log.Level.NONE);
 Platform.shim.eval = async (data) => evaluatePlayer(data);
 
-const [operation, id, directory, cookieFile] = process.argv.slice(2);
+const [operation, id, directory, cookieFile,reviewHeight,reviewBytes] = process.argv.slice(2);
 try {
   const cookie = cookieFile ? cookieHeader(await readFile(cookieFile, 'utf8')) : undefined;
   const yt = await Innertube.create({ cookie, generate_session_locally: true,
@@ -40,18 +40,23 @@ try {
       if (!result.vtt.includes('-->')) throw new Error('Caption response unavailable');
     }
   }
-  if (operation === 'download') {
+  if (operation === 'download' || operation === 'download-review') {
+    const review=operation==='download-review'?youtubeReviewProfile({maxHeight:Number(reviewHeight),maxBytes:Number(reviewBytes)}):null;
     // Resolution first, codec only as a tie-breaker. Select explicit itags so adaptive tracks are never
     // mistaken for a complete video. The parent muxes and probes both streams.
     const formats = [...(info.streaming_data?.adaptive_formats || []), ...(info.streaming_data?.formats || [])];
-    const videos = rankYouTubeVideos(formats);
-    const audios = formats.filter((item) => item.has_audio && !item.has_video).sort((a, b) => Number(b.is_original) - Number(a.is_original) || Number(b.mime_type.includes('mp4a')) - Number(a.mime_type.includes('mp4a')) || b.bitrate - a.bitrate);
-    const combined = !audios[0] && videos.find((item) => item.has_audio);
+    const videos = review?rankYouTubeReviewVideos(formats,review):rankYouTubeVideos(formats);
+    const audios = formats.filter((item) => item.has_audio && !item.has_video && (!review||(item.is_original===true&&(!Number.isFinite(Number(item.content_length))||Number(item.content_length)<=review.maxBytes)))).sort((a, b) => Number(b.is_original) - Number(a.is_original) || Number(b.mime_type.includes('mp4a')) - Number(a.mime_type.includes('mp4a')) || b.bitrate - a.bitrate);
+    const combined = !audios[0] && videos.find((item) => item.has_audio&&(!review||item.is_original===true));
     if (!videos[0] || (!audios[0] && !combined)) throw new Error('Missing video stream or audio');
     result.combined = Boolean(combined);
+    if(review)result.reviewProfile={...review,audioLanguage:(combined||audios[0]).language||'',audioOriginal:true};
+    let downloaded=0;
     for (const [name, format] of combined ? [['combined', combined]] : [['video', videos[0]], ['audio', audios[0]]]) {
       const stream = await info.download({ itag: format.itag, type: name === 'combined' ? 'video+audio' : name, format: 'any' });
-      await pipeline(Readable.fromWeb(stream), createWriteStream(path.join(directory, `${name}.media`), { flags: 'wx', mode: 0o600 }));
+      const output=createWriteStream(path.join(directory, `${name}.media`),{flags:'wx',mode:0o600});
+      if(review)await pipeline(Readable.fromWeb(stream),new Transform({transform(chunk,_encoding,callback){downloaded+=chunk.length;if(downloaded>review.maxBytes)return callback(Error('Review download exceeds byte limit'));callback(null,chunk);}}),output);
+      else await pipeline(Readable.fromWeb(stream),output);
     }
   }
   process.stdout.write(JSON.stringify(result));

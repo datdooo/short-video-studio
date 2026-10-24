@@ -1,3 +1,35 @@
+# Beta1106 packaging checkpoint — 2026-10-25
+
+User authorized packaging the current Beta source. Build1106 includes all pending
+web-AI one-button/video-sizing changes described below plus variantKey draft
+restore and invalid-cache guards found during integration review. Exact source
+commit is embedded in config.json. See `BETA-BUILD-1106.md`; static package/native
+checks do not prove website operation or AI quality. Keep1105 rollback bundles.
+No AI, tests, download, ASR, render or browser automation. No push/merge.
+
+# Automatic web video sizing — 2026-10-25
+
+Source-only extension of the one-button workflow: source>512MiB automatically
+uses a lower-resolution YouTube rendition or a locally encoded full-duration
+review copy. Source editing/render media is unchanged. `worker/web-ai-video.mjs`
+owns shared/cancelable preparation/cache/serving protection; new downloader
+review API never upscales or changes normal source download. Variant keys bind
+context/prompt/transfer/receipt/import and prompt version is full-media-v6.
+See `CHATGPT-WEB-HANDOFF.md` for timing checks and remaining limitations.
+No download, FFmpeg, AI, tests, build or runtime verification executed. App1105
+unchanged; keep all pending source changes and do not push/merge.
+
+# Web AI one-button source update (after Beta1105)
+
+Source-only, uncommitted: ChatGPT web + Gemini + Muse (`https://muse.ai`) now
+share prepare/transfer-video/send/read-JSON/validate/apply flow behind one button.
+Prompt/JSON recovery is collapsed; attachment checkbox removed. Source/request/
+context, importer, teaser/range and main lock checks remain. No model/criteria or
+ChatGPT Auto input change. Extension0.3.0 must be reloaded with both browser pages.
+Read `CHATGPT-WEB-HANDOFF.md` for transport, website limitations and acceptance.
+No tests/build/AI/upload/render/browser execution; release/Applications1105
+unchanged. No credentials/data mutation or push/merge.
+
 # Beta build 1105 — 2026-10-24
 
 Packaging checkpoint on `beta/maintenance`, based on `0708d250a98a252996b3f2f41ba66d433301547a`.

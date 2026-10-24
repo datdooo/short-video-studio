@@ -40,7 +40,7 @@ export function buildExternalEditingContext(source,context,options,prepared,body
   mainInput:{...modelSelectionInput(prepared),sourceEvidence:undefined,evidenceReference:'videoEvidence',editorialRequestReference:'videoEvidence.userRequest'},videoEvidence:evidence,currentParts,
   captionTrack:track,
   rules:{main:MAIN_INSTRUCTIONS,teaser:HOOK_WINNER_INSTRUCTIONS,durationLimits:hookDurationLimits()},
-  attachments:{sourceVideo:{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}${path.extname(source.mediaPath||'')||'.mp4'}`,duration:source.duration,bytes:options.sourceMediaBytes??null,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],delivery:'user-must-attach-original-video',providerReceipt:'not-verified'}},
+  attachments:{sourceVideo:options.webAiVideo||{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}${path.extname(source.mediaPath||'')||'.mp4'}`,duration:source.duration,bytes:options.sourceMediaBytes??null,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],representation:'original',delivery:'website-file-input',providerReceipt:'not-verified'}},
   transmission:{textOnly:false,imagesProvided:false,videoProvided:false,
    difference:'Web thủ công dùng toàn bộ text và video nguồn đính kèm riêng. Manifest/đường dẫn tải không chứng minh website đã nhận hoặc xem video. ChatGPT Auto vẫn chỉ gửi text; không thay model hay request Auto.',
    currentPartsPolicy:'Snapshot main/padding/locks hiện tại; chỉ range manualLocked bắt buộc giữ nguyên. Khi đề xuất main mới, tính lại permitted teaser theo chính main mới, không trim tự động, không dùng candidate ID của range cũ để giả bằng chứng.',

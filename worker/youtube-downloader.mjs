@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile, rm, stat, open } from 'no
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { youtubeUrl, fallback } from './youtube-common.mjs';
-import { YOUTUBE_FORMAT, YOUTUBE_SORT, upscaleDimensions } from './youtube-quality.mjs';
+import { YOUTUBE_FORMAT, YOUTUBE_SORT, upscaleDimensions, youtubeReviewProfile,rankYouTubeReviewVideos } from './youtube-quality.mjs';
 import { createSharedOperations } from './shared-operation.mjs';
 import { normalizeSourceContext, heatmapUnavailable } from '../lib/source-context/index.mjs';
 import { buildYouTubeCommentArgs } from '../lib/source-context/comments.mjs';
@@ -13,9 +13,42 @@ import { buildYouTubeCommentArgs } from '../lib/source-context/comments.mjs';
 export const COMMENT_TIMEOUT_MS = 3 * 60_000;
 
 function attemptTimeoutMs(operation, timeouts) {
-  if (operation === 'download') return timeouts.download ?? 20 * 60_000;
+  if (operation === 'download' || operation === 'download-review') return timeouts.download ?? 20 * 60_000;
   if (operation === 'comments') return timeouts.comments ?? COMMENT_TIMEOUT_MS;
   return timeouts.metadata ?? 60_000;
+}
+
+// yt-dlp review uses explicit format IDs from this attempt's own metadata.
+// Never fall back to unconstrained bestvideo or prioritize English/dubbed audio.
+function reviewYtFormats(info,profile){
+  const usable=(info.formats||[]).filter(item=>typeof item.format_id==='string'&&/^[a-z0-9_.-]+$/i.test(item.format_id));
+  const normalized=usable.map(item=>({...item,has_video:Boolean(item.vcodec&&item.vcodec!=='none'),has_audio:Boolean(item.acodec&&item.acodec!=='none'),mime_type:item.vcodec||'',bitrate:Number(item.tbr)||0,content_length:item.filesize??item.filesize_approx}));
+  const videos=rankYouTubeReviewVideos(normalized,profile);
+  const fits=item=>!Number.isFinite(Number(item.content_length))||Number(item.content_length)<=profile.maxBytes;
+  const originalPool=items=>{
+    const clean=items.filter(item=>item.is_original!==false&&!item.is_dubbed&&!item.is_auto_dubbed&&!item.is_descriptive&&!item.is_secondary&&!/\b(?:dubbed|descriptive|secondary)\b/i.test(item.format_note||''));
+    const explicit=clean.filter(item=>item.is_original===true||/(?:^|[ (,])original(?:[ ),]|$)/i.test(item.format_note||''));
+    if(explicit.length)return {items:explicit,proof:'original-format-metadata'};
+    const language=String(info.language||'').toLowerCase().split('-')[0];
+    const sameLanguage=language?clean.filter(item=>String(item.language||'').toLowerCase().split('-')[0]===language):[];
+    if(sameLanguage.length)return {items:sameLanguage,proof:'source-language-metadata'};
+    const languages=new Set(clean.map(item=>String(item.language||'').toLowerCase().split('-')[0]).filter(Boolean));
+    // With competing languages and no original marker, use the existing local
+    // source fallback rather than silently choosing a translation/dub.
+    return languages.size<=1?{items:clean,proof:'single-available-language'}:{items:[],proof:'original-language-unresolved'};
+  };
+  const audio=originalPool(normalized.filter(item=>item.has_audio&&!item.has_video&&fits(item)));
+  audio.items.sort((a,b)=>Number(String(b.acodec).startsWith('mp4a'))-Number(String(a.acodec).startsWith('mp4a'))||b.bitrate-a.bitrate);
+  const combined=originalPool(videos.filter(item=>item.has_audio));
+  const knownBytes=item=>{const bytes=Number(item?.content_length);return Number.isFinite(bytes)&&bytes>0?bytes:0;};
+  // Consider the complete bounded list before reducing height: a smaller audio
+  // or lower-bitrate video at this height may fit when the first pair does not.
+  for(const video of videos){
+    const sound=audio.items.find(item=>knownBytes(video)+knownBytes(item)<=profile.maxBytes);
+    if(sound)return {format:`${video.format_id}+${sound.format_id}`,audioLanguage:sound.language||'',audioSelection:audio.proof};
+    if(combined.items.includes(video)&&knownBytes(video)<=profile.maxBytes)return {format:video.format_id,audioLanguage:video.language||'',audioSelection:combined.proof};
+  }
+  throw Error('Review stream/original audio unavailable within requested height and byte limit');
 }
 
 export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMedia, adapters, env = process.env, timeouts = {}, upscaleEncoder = () => 'libx264' }) {
@@ -122,12 +155,12 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
   }
 
 
-  async function attempt(operation, parsed, directory, auth, signal) {
+  async function attempt(operation, parsed, directory, auth, signal, review) {
     const timeout = AbortSignal.timeout(attemptTimeoutMs(operation, timeouts));
     const bounded = AbortSignal.any([signal, timeout]);
     // Comment retrieval is yt-dlp only; other engines have no comment support.
     if (operation === 'comments' && !ytDlp && !adapters?.yt) throw new Error('Comment retrieval unavailable');
-    if (adapters) return adapters[auth.engine](operation, parsed, directory, auth, bounded);
+    if (adapters) return adapters[auth.engine](operation, parsed, directory, auth, bounded, review);
     if (auth.engine === 'oembed') {
       const url = new URL('https://www.youtube.com/oembed'); url.searchParams.set('url', parsed.url); url.searchParams.set('format', 'json');
       const response = await fetch(url, { signal: AbortSignal.any([bounded, AbortSignal.timeout(20_000)]) });
@@ -147,16 +180,16 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     }
     if (auth.engine === 'js') {
       if (operation === 'download') emitProgress(parsed, { phase: 'download', percent: null, stream: 'media' });
-      const result = await run(process.execPath, ['--max-old-space-size=256', path.join(import.meta.dirname, 'youtube-js.mjs'), operation, parsed.id, directory, cookieFile], {
+      const result = await run(process.execPath, ['--max-old-space-size=256', path.join(import.meta.dirname, 'youtube-js.mjs'), operation, parsed.id, directory, cookieFile,...(review?[String(review.maxHeight),String(review.maxBytes)]:[])], {
         signal: bounded, maxStdout: 10 * 1024 * 1024,
         env: { ...Object.fromEntries(Object.keys(process.env).filter((name) => !['PATH', 'LANG', 'TMPDIR', 'HOME', 'SystemRoot'].includes(name)).map((name) => [name, ''])) },
       });
       const info = JSON.parse(result.stdout);
-      if (operation === 'download') {
+      if (operation === 'download' || operation === 'download-review') {
         if (!ffmpeg) throw new Error('Missing tool FFmpeg');
-        emitProgress(parsed, { phase: 'muxing', percent: null });
+        if(!review)emitProgress(parsed, { phase: 'muxing', percent: null });
         const inputs = info.combined ? ['-i', path.join(directory, 'combined.media')] : ['-i', path.join(directory, 'video.media'), '-i', path.join(directory, 'audio.media')];
-        await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...inputs, '-map', '0:v:0', '-map', info.combined ? '0:a:0' : '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', path.join(directory, 'source.mp4')], processingOptions(parsed, 'muxing', bounded));
+        await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...inputs, '-map', '0:v:0', '-map', info.combined ? '0:a:0' : '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart', path.join(directory, 'source.mp4')], review?{signal:bounded}:processingOptions(parsed, 'muxing', bounded));
       }
       return info;
     }
@@ -171,6 +204,14 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     if (cookieFile) common.push('--cookies', cookieFile);
     if (auth.browser) common.push('--cookies-from-browser', auth.browser);
     if (ffmpeg) common.push('--ffmpeg-location', path.dirname(ffmpeg));
+    if(operation==='download-review'){
+      const metadata=await run(ytDlp,[...common,'--skip-download','--dump-single-json',parsed.url],{maxStdout:10*1024*1024,signal:bounded});
+      const info=JSON.parse(metadata.stdout);
+      if(info.id&&info.id!==parsed.id)throw Error('Source metadata identity mismatch');
+      const selected=reviewYtFormats(info,review);
+      await run(ytDlp,[...common,'-f',selected.format,'--max-filesize',String(review.maxBytes),'--merge-output-format','mp4','-o',path.join(directory,'source.%(ext)s'),parsed.url],{signal:bounded});
+      return {...info,reviewProfile:{...review,audioLanguage:selected.audioLanguage,audioSelection:selected.audioSelection}};
+    }
     if (operation === 'download') {
       await run(ytDlp, [...common, '--progress', '--newline', '--progress-delta', '1',
         '--progress-template', 'download:__shortcut_progress__{"downloaded":%(progress.downloaded_bytes|null)j,"total":%(progress.total_bytes|null)j,"estimate":%(progress.total_bytes_estimate|null)j,"video":%(info.vcodec|null)j,"audio":%(info.acodec|null)j}',
@@ -204,7 +245,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     return info;
   }
 
-  async function execute(operation, parsed, signal, accept) {
+  async function execute(operation, parsed, signal, accept, review) {
     const config = await configuration();
     const attempts = [];
     const add = (engine, auth = {}) => attempts.push({ engine, ...auth, label: `${engine === 'js' ? 'YouTube.js' : 'yt-dlp'}${auth.file || auth.browser ? ' (cookie)' : ''}` });
@@ -216,12 +257,26 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     if (operation === 'comments' && attempts.length === 0) add('yt');
     if (operation === 'metadata') attempts.push({ engine: 'oembed', label: 'YouTube oEmbed' });
     await mkdir(scratchRoot, { recursive: true, mode: 0o700 });
-    return fallback(attempts, async (auth) => {
+    let reviewAcceptFailure;
+    const value=await fallback(attempts, async (auth) => {
       const directory = await mkdtemp(path.join(scratchRoot, 'attempt-'));
       try {
         if (operation === 'download') emitProgress(parsed, { phase: 'connecting', percent: null });
-        const info = await attempt(operation, parsed, directory, auth, signal);
+        const info = await attempt(operation, parsed, directory, auth, signal, review);
         signal.throwIfAborted();
+        if(operation==='download-review'){
+          const name=(await readdir(directory)).find(file=>/^source\.(mp4|mkv|webm|mov)$/.test(file));
+          if(!name)throw Error('Review media validation failed');
+          const mediaPath=path.join(directory,name),media=await probeMedia(mediaPath,signal),bytes=(await stat(mediaPath)).size;
+          const expected=Number(info.duration);
+          if(!media.width||!media.height||media.height>review.maxHeight||!media.hasAudio||!media.duration||bytes<1000||bytes>review.maxBytes
+            ||(expected>0&&Math.abs(media.duration-expected)>Math.max(1,expected*.001)))throw Error('Review media validation failed: height, byte limit, audio or complete duration');
+          signal.throwIfAborted();
+          // A local callback/publish failure must not redownload the video with
+          // every auth engine. The callback still runs before owned cleanup.
+          try{return await accept({info,media,mediaPath,parsed,signal});}
+          catch(error){reviewAcceptFailure={error};return undefined;}
+        }
         rememberContext(parsed, info, auth.engine);
         if (operation !== 'download') return info;
         const name = (await readdir(directory)).find((file) => /^source\.(mp4|mkv|webm|mov)$/.test(file));
@@ -252,6 +307,8 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
         return await accept({ info, media, mediaPath, parsed, signal });
       } finally { await rm(directory, { recursive: true, force: true }); }
     }, signal);
+    if(reviewAcceptFailure)throw reviewAcceptFailure.error;
+    return value;
   }
 
   return {
@@ -279,6 +336,7 @@ export function createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMed
     },
     transcript: (url, signal) => { const parsed = youtubeUrl(url); return shared(`transcript:${parsed.id}`, (activeSignal) => execute('transcript', parsed, activeSignal), signal); },
     comments: (url, signal) => { const parsed = youtubeUrl(url); return shared(`comments:${parsed.id}`, (activeSignal) => execute('comments', parsed, activeSignal), signal); },
+    downloadReview:(url,options,accept,signal)=>{const parsed=youtubeUrl(url),review=youtubeReviewProfile(options);if(typeof accept!=='function')throw Error('Review download requires an owned-file callback');return execute('download-review',parsed,signal||new AbortController().signal,accept,review);},
     download: (url, accept, signal) => { const parsed = youtubeUrl(url); return shared(`download:${parsed.id}`, (activeSignal) => execute('download', parsed, activeSignal, accept), signal); },
   };
 }

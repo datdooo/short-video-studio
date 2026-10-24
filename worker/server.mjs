@@ -4,6 +4,7 @@ import {createEditorSourceLeases} from './editor-source-leases.mjs';
 import {createRequestOriginPolicy} from './request-origin.mjs';
 import {createHistoryPersistence} from './history-persistence.mjs';
 import {mediaByteRange} from './media-http.mjs';
+import {createWebAiVideo} from './web-ai-video.mjs';
 import {providerError,readProviderOutput,safeProviderId} from './provider-response.mjs';
 import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
 import {assertTeaserContexts,selectionDigest,transcriptValue,teaserEvidenceValue} from '../lib/teaser-context.mjs';
@@ -217,7 +218,7 @@ const mediaLibrary = createMediaLibrary({
   ) : (
     speech.isBusy(sourceId) ||
     musicSpeech.isBusy(sourceId) || musicPreview.isBusy(sourceId) ||
-    localSignals.isBusy(sourceId) ||
+    localSignals.isBusy(sourceId) || webAiVideos.isBusy(sourceId) ||
     [...jobs.values()].some((job) => job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id))) ||
     [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing", "paused", "awaiting-import", "review-required", "render-ready", "submitting"].includes(item.state))))
   )),
@@ -760,10 +761,11 @@ function protectedAnalysisKeys() {
   return keys;
 }
 
+const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-video'),youtube,ffmpeg,run,probeMedia,fingerprint:hookSourceFingerprint,isLocked:id=>mediaLibrary.isLocked(id)});
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
 const processBatch = createBatchProcessor({acquire:async(url,signal,onProgress)=>{const stop=youtube.subscribeProgress(url,onProgress);try{return await importYouTube(url,signal);}finally{stop();}},load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
-const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers});
+const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers,prepareWebVideo:(source,signal)=>webAiVideos.ensure(source,signal)});
 const analyzeSource=(source,body,signal)=>withAiOperation('generate',()=>autoCutWorkflow(source,body,signal));
 
 async function mainAnalysisInputs(source, body, signal) {
@@ -1998,9 +2000,17 @@ const server = createServer(async (request, response) => {
     if(request.method==='GET'&&sourceMetadataMatch){sendJson(request,response,200,{source:publicSource(await loadSource(sourceMetadataMatch[1]))});return;}
     const manualMedia=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/manual-video$/i);
     if(['GET','HEAD'].includes(request.method)&&manualMedia){
-      const source=await loadSource(manualMedia[1]);
-      if(mediaLibrary.isLocked(source.id))throw Error('Source đang ở Thùng rác hoặc đang được chuyển.');
-      await serveMediaPath(request,response,source.mediaPath,{download:true,filename:`source-${source.id}${path.extname(source.mediaPath)||'.mp4'}`});return;
+      const controller=new AbortController(),abort=()=>controller.abort(new Error('Đã dừng truyền video web.'));
+      response.once('close',abort);
+      try{
+        const expectedVariant=requestUrl.searchParams.get('variant');
+        if(expectedVariant!==null&&!/^[a-f0-9]{64}$/.test(expectedVariant))throw Object.assign(Error('Định danh bản video gửi web không hợp lệ.'),{status:400});
+        const source=await loadSource(manualMedia[1],controller.signal);
+        await webAiVideos.using(source,controller.signal,async prepared=>{
+          if(expectedVariant!==null&&prepared.manifest.variantKey!==expectedVariant)throw Object.assign(Error('Bản video hoặc nguồn đã đổi; chưa truyền video của lượt cũ.'),{status:409});
+          await serveMediaPath(request,response,prepared.file,{download:true,filename:prepared.manifest.filename});
+        });
+      }finally{response.off('close',abort);}return;
     }
     const mainSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/auto-cut$/i);
     if (request.method === "POST" && mainSource) {
@@ -2008,7 +2018,7 @@ const server = createServer(async (request, response) => {
       response.once("close", abort);
       try {
         const body = await readJson(request);
-        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(600000)]);
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(['context','import'].includes(body.mode)?20*60_000:600000)]);
         await serveAiOperation(request,response,body,'generate',async()=>{
           const source=await measureAiStage('preparation',()=>loadSource(mainSource[1],signal));
           return analyzeSource(source,body,signal);

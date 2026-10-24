@@ -11,11 +11,14 @@ import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTea
 import {validatePlan} from './plan-validation.mjs';
 import {stat} from 'node:fs/promises';
 // One orchestration path for single-source Auto, external context/import and batch.
-export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers}) {
+export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers,prepareWebVideo}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
     const {context,options}=await measureAiStage('preparation',()=>prepareInputs(source,body,signal));
-    if(body.mode==='context'||body.mode==='import')options.sourceMediaBytes=(await stat(source.mediaPath)).size;
+    if(body.mode==='context'||body.mode==='import'){
+      if(prepareWebVideo)options.webAiVideo=(await measureAiStage('preparation',()=>prepareWebVideo(source,signal),{reason:'web-video'})).manifest;
+      else options.sourceMediaBytes=(await stat(source.mediaPath)).size;
+    }
     if(body.mode==='context')return{context:buildExternalEditingContext(source,context,options,await mainContent.prepare(source,context,options),body)};
     if(body.mode==='import'){
       if(!['gemini','muse','chatgpt-web'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');
@@ -23,7 +26,15 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
       const externalContext=buildExternalEditingContext(source,context,options,input,body);
       if(body.analysisKey!==externalContext.analysisKey)throw new Error('Dữ liệu nguồn, transcript, main/locks hoặc quy tắc prompt đã đổi. Tạo prompt mới trước khi nhập JSON.');
       const attachment=body.attachmentConfirmation;
-      if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Xác nhận đã đính kèm đúng video nguồn của prompt hiện tại trước khi áp dụng. Manifest không phải bằng chứng đã tải lên.');
+      if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Video đính kèm không khớp source/request/context hiện tại.');
+      if(attachment.method==='extension-composer'){
+        const media=externalContext.attachments.sourceVideo;
+        if(attachment.evidence!=='composer-upload-ready'||attachment.filename!==media.filename||attachment.variantKey!==media.variantKey||!Number.isSafeInteger(attachment.bytes)||attachment.bytes!==media.bytes)throw Error('Biên nhận đính kèm không khớp video nguồn. Plan được giữ nguyên.');
+      }else if(attachment.method!==undefined&&attachment.method!=='manual-import')throw Error('Cách nhập video không được hỗ trợ.');
+      // An extension receipt records visible composer readiness, not a provider
+      // or semantic-video guarantee. Manual Apply is an explicit import action;
+      // it no longer requires a redundant checkbox. All identity, source, range,
+      // citation and main-lock checks below remain authoritative.
       let plan=structuredClone(body.plan);
       if(plan.providerUsed!==body.provider||plan.parts?.some((p,i)=>p.id!==i+1))throw new Error('External plan provider/part identity mismatch.');
       validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);

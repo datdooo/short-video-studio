@@ -9,7 +9,7 @@ export function WebAiPromptCopy({prompt,disabled,onCopied,onError}:{prompt:strin
   const link=document.createElement('a');link.href=url;link.download='shortcut-prompt.txt';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  return <div className="studio-web-prompt-copy min-w-0 space-y-2">
-  <textarea readOnly aria-label="Toàn bộ prompt web thủ công" className="studio-textarea w-full min-w-0" rows={5} value={prompt} />
+  <details className="min-w-0"><summary className="cursor-pointer text-xs text-muted-foreground">Xem prompt</summary><textarea readOnly aria-label="Toàn bộ prompt web thủ công" className="studio-textarea mt-2 w-full min-w-0" rows={5} value={prompt}/></details>
   <div className="flex flex-wrap items-center gap-2">
    <CopyButton text={prompt} label="Sao chép toàn bộ" disabled={disabled} className="border border-white/10" onCopied={onCopied} onError={onError} errorMessage="Cho phép Clipboard rồi thử lại."/>
    <button type="button" className="studio-ghost" disabled={disabled} onClick={download}>Tải .txt</button>

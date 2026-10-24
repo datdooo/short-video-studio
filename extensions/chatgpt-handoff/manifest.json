@@ -1,16 +1,36 @@
 {
   "manifest_version": 3,
-  "name": "ShortCut Studio · ChatGPT Handoff",
-  "version": "0.2.0",
-  "description": "Ghép tab ChatGPT do bạn chọn: điền prompt hoặc gửi một lượt và nhận JSON để duyệt trong Studio.",
-  "permissions": ["tabs", "storage", "scripting"],
-  "host_permissions": ["https://chatgpt.com/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "popup.html", "default_title": "Chọn tab ChatGPT cho ShortCut Studio" },
-  "content_scripts": [{
-    "matches": ["http://127.0.0.1:5373/*", "http://localhost:5373/*"],
-    "js": ["studio-content.js"],
-    "run_at": "document_idle",
-    "all_frames": false
-  }]
+  "name": "ShortCut Studio · Web AI",
+  "version": "0.3.0",
+  "description": "Một nút gửi prompt và video nguồn tới tab ChatGPT/Gemini/Muse, nhận JSON và kiểm tra trong Studio.",
+  "permissions": [
+    "tabs",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://muse.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Tab Web AI cho ShortCut Studio"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://127.0.0.1:5373/*",
+        "http://localhost:5373/*"
+      ],
+      "js": [
+        "studio-content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
 }
