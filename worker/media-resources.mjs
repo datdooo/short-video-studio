@@ -1,4 +1,8 @@
 import {AsyncLocalStorage} from 'node:async_hooks';
+// Only the final export graph opts into this bounded pool. Decoder/encoder
+// limits and the independent, serial editor lane stay unchanged.
+export const RENDER_FILTER_COMPLEX_THREADS=2;
+export const RENDER_RESOURCE_PROFILE='balanced-m2-editor-v3';
 // One worker-owned heavy lease, including child processes and CPU VAD. Export
 // requests outrank background work and cancel only disposable audio previews.
 export function createMediaResources({maxWaiting=Infinity}={}){
@@ -40,13 +44,15 @@ export function createEditorMediaResources(){
   currentSignal:()=>owner()?.currentSignal(),
   currentKind:()=>owner()?.currentKind(),
   commandState:()=>owner()?.state()||editor.state(),
-  state(){const e=exports.state(),i=editor.state();return{...e,active:e.active||i.active,waiting:e.waiting+i.waiting,profile:'balanced-m2-editor-v2',editorActive:i.active,editorWaiting:i.waiting};},
+  state(){const e=exports.state(),i=editor.state();return{...e,active:e.active||i.active,waiting:e.waiting+i.waiting,profile:RENDER_RESOURCE_PROFILE,renderFilterComplexThreads:RENDER_FILTER_COMPLEX_THREADS,editorActive:i.active,editorWaiting:i.waiting};},
   use(kind,work,signal){if(kind==='render')return exports.use(kind,work,signal);return(owner()||editor).use(kind,work,signal);},
  };
 }
 // Explicit before EVERY input, not just the first decoder. No quality change.
-export function balancedFfmpegArgs(args){
- const result=['-nostdin','-filter_threads','1','-filter_complex_threads','1'];
+export function balancedFfmpegArgs(args,{filterComplexThreads=1}={}){
+ // Do not allow an unbounded/auto pool or change preview/ASR defaults.
+ const complexThreads=filterComplexThreads===RENDER_FILTER_COMPLEX_THREADS?RENDER_FILTER_COMPLEX_THREADS:1;
+ const result=['-nostdin','-filter_threads','1','-filter_complex_threads',String(complexThreads)];
  for(const arg of args){if(arg==='-i')result.push('-threads','2','-thread_queue_size','8');result.push(arg);}
  return result;
 }

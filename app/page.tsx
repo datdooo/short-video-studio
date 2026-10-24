@@ -21,6 +21,7 @@ import {RenderProgress} from '@/components/render-progress';
 import {BatchProgress} from '@/components/batch-progress';
 import {uploadJson} from '@/lib/upload-json';
 import {WebAiPromptCopy} from '@/components/web-ai-prompt-copy';
+import {ChatGptWebHandoff} from '@/components/chatgpt-web-handoff';
 import {SourceOptionsSection} from '@/components/source-options-section';
 import {readAiOperation,type AiDiagnostics} from '@/lib/ai-progress';
 
@@ -302,7 +303,8 @@ export default function Home() {
   function invalidateAnalysis(){if(activeAnalysis.current){setAnalysisFinishedStage('cancelled');setAnalysisFinishedAt(Date.now());}analysisRequests.current.invalidate();activeAnalysis.current=null;webAiPending.current=false;setWebAiPhase(null);setIsAnalyzing(false);setAnalysisNotice("");}
   const [webAiPrompt, setWebAiPrompt] = useState("");
   const [webAiResult, setWebAiResult] = useState("");
-  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider; requestId: string; analysisKey?:string; supplementalPrompt?:string; lockedPlan?:EditPlan; hookPlan?: EditPlan; mainSignature?: string; promptVersion?:string; captionTrack?:CaptionTrack } | null>(null);
+  const [webAiContext, setWebAiContext] = useState<{ sourceId: string; transcript: string; instruction: string; provider: AiProvider; requestId: string; analysisKey?:string; supplementalPrompt?:string; lockedPlan?:EditPlan; hookPlan?: EditPlan; mainSignature?: string; promptVersion?:string; captionTrack?:CaptionTrack; media?:{id:string;filename:string;bytes:number|null;duration:number} } | null>(null);
+  const [webAiMediaConfirmed,setWebAiMediaConfirmed]=useState<{requestId:string;analysisKey:string}|null>(null);
   const [webAiPhase,setWebAiPhase]=useState<'prompt'|'import'|null>(null);
   const webAiPending=useRef(false);
   const [webAiStartedAt,setWebAiStartedAt]=useState(0);
@@ -1182,7 +1184,7 @@ export default function Home() {
     setBatchNotice("");
     setIsStartingBatch(true);
     try {
-      if(!["chatgpt","gemini","muse"].includes(provider))throw new Error("Chọn ChatGPT Auto hoặc Gemini/Muse import thủ công.");
+      if(!["chatgpt","gemini","muse","chatgpt-web"].includes(provider))throw new Error("Chọn ChatGPT Auto hoặc web AI import thủ công.");
       const urls = [...new Set(submittedInput.split(/\s+/).filter(Boolean))];
       if (!urls.length || urls.length > 20) throw new Error("Nhập từ 1 đến 20 link, mỗi link một dòng.");
       const response = await fetch(`${WORKER_ORIGIN}/api/batches`, {
@@ -1292,14 +1294,14 @@ export default function Home() {
     setError("");
   }
 
-  const isWebAi = provider === "muse" || provider === "gemini";
-  const webAiName = provider === "gemini" ? "Gemini Pro" : "Muse";
+  const isWebAi = provider === "muse" || provider === "gemini" || provider === 'chatgpt-web';
+  const webAiName = provider === "gemini" ? "Gemini Pro" : provider==='chatgpt-web'?'ChatGPT web':"Muse";
   async function createWebAiPrompt() {
     const selectionEpoch = sourceSelectionEpoch.current;
     if (!isWebAi||webAiPending.current) return;
     if(effectiveTiming.error){setWebAiError(effectiveTiming.error);return;}
     const ticket=analysisRequests.current.begin();webAiPending.current=true;setWebAiPhase('prompt');setWebAiStartedAt(Date.now());
-    setWebAiError(""); setWebAiNotice("");
+    setWebAiError(""); setWebAiNotice("");setWebAiMediaConfirmed(null);
     setIsAnalyzing(true);
     try {
       const source = preparedSource || await prepareSource(ticket.controller.signal);
@@ -1310,13 +1312,13 @@ export default function Home() {
       const lockedPlan=hasEditPlan?structuredClone(previewPlan):undefined;
       const requestedMainSignature=latestMainSignature.current;
       const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"context",requestId,provider,transcript:content,instruction,supplementalPrompt,currentPlan:lockedPlan,...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
-      const data=await response.json() as {context?:({analysisKey:string;captionTrack?:CaptionTrack}&Record<string,unknown>);error?:string};
+      const data=await response.json() as {context?:({analysisKey:string;captionTrack?:CaptionTrack;attachments?:{sourceVideo:{id:string;filename:string;bytes:number|null;duration:number}}}&Record<string,unknown>);error?:string};
       if(!response.ok||!data.context)throw new Error(data.error||"Không chuẩn bị được context/candidates.");
       const prepared=data.context;
       if(!analysisRequests.current.isCurrent(ticket))return;
       if(latestMainSignature.current!==requestedMainSignature)throw Error('Main hoặc phụ đề đã đổi trong lúc tạo prompt. Tạo lại prompt cho bản hiện tại.');
       setWebAiPrompt(buildMusePrompt('',EDIT_PLAN_SCHEMA,source,{requestId,analysisKey:prepared.analysisKey,context:prepared}));
-      setWebAiContext({sourceId:source.id,transcript:content,instruction,supplementalPrompt,provider,requestId,analysisKey:prepared.analysisKey,lockedPlan,mainSignature:requestedMainSignature,promptVersion:WEB_AI_PROMPT_VERSION,captionTrack:prepared.captionTrack});
+      setWebAiContext({sourceId:source.id,transcript:content,instruction,supplementalPrompt,provider,requestId,analysisKey:prepared.analysisKey,lockedPlan,mainSignature:requestedMainSignature,promptVersion:WEB_AI_PROMPT_VERSION,captionTrack:prepared.captionTrack,media:prepared.attachments?.sourceVideo});
       setWebAiResult("");
       setWebAiNotice('Đã tạo prompt.');
     } catch (caughtError) {
@@ -1328,6 +1330,7 @@ export default function Home() {
   // Transcript retrieval / editing rules cannot change the identity of a video.
   // The imported JSON's sourceId is validated separately by parseMusePlan.
   const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext?.promptVersion===WEB_AI_PROMPT_VERSION && !webAiContext.hookPlan && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && webAiContext.supplementalPrompt === supplementalPrompt && webAiContext.mainSignature === mainSignature);
+  const webAiAttachmentConfirmed=Boolean(webAiPromptIsCurrent&&webAiContext?.media&&webAiMediaConfirmed?.requestId===webAiContext.requestId&&webAiMediaConfirmed?.analysisKey===webAiContext.analysisKey);
 
 
   async function checkTeasersForExport(nextPlan:EditPlan,source:WorkerSource){
@@ -1461,6 +1464,7 @@ export default function Home() {
       if (!preparedSource) throw new Error("Chuẩn bị source của video trước khi nhập JSON.");
       if (!webAiPromptIsCurrent || !webAiContext) throw new Error("Source, transcript, quy tắc hoặc provider đã đổi. Tạo prompt mới trước khi nhập JSON.");
       const context = webAiContext;
+      if(!webAiAttachmentConfirmed||!context.media)throw Error('Đính kèm đúng video nguồn trong web AI rồi xác nhận trước khi áp dụng.');
       const identity = hookIdentity;
       const imported = parseMusePlan(webAiResult, preparedSource, webAiName, { requestId: context.requestId,analysisKey:context.analysisKey,lockedPlan:context.lockedPlan });
       const normalized=normalizePlan(imported,provider);
@@ -1473,7 +1477,7 @@ export default function Home() {
       const importTrack=context.captionTrack||previewPlan.captionCues;
       let nextPlan:EditPlan = {...refined,captionCues:importTrack};
       if(context.analysisKey){
-        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,...(context.captionTrack?{captionCues:context.captionTrack}:{}),hookSelections:selections,plan:nextPlan})});
+        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,...(context.captionTrack?{captionCues:context.captionTrack}:{}),attachmentConfirmation:{attached:true,sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,mediaId:context.media.id},hookSelections:selections,plan:nextPlan})});
         const data=await response.json() as {plan?:EditPlan;error?:string};if(!response.ok||!data.plan)throw new Error(data.error||"Import context đã thay đổi.");nextPlan=data.plan;
       }
       const verified=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/teaser-hooks`,{method:'POST',signal:ticket.controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'validate-import',plan:nextPlan,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt})});
@@ -1786,9 +1790,9 @@ export default function Home() {
         <div className="studio-batch-grid">
         <div className="studio-batch-setup min-w-0">
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Select value={provider === "muse" ? "muse" : provider === "gemini" ? "gemini" : "chatgpt"} onValueChange={changeProvider}>
+          <Select value={isWebAi ? provider : "chatgpt"} onValueChange={changeProvider}>
             <SelectTrigger aria-label="AI provider hàng loạt" className="studio-input w-[220px]"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem><SelectItem value="gemini" disabled>Gemini Pro · chỉ chỉnh từng video</SelectItem><SelectItem value="muse" disabled>Muse · chỉ chỉnh từng video</SelectItem></SelectContent>
+            <SelectContent><SelectItem value="chatgpt">ChatGPT Auto · Sol low</SelectItem><SelectItem value="chatgpt-web" disabled>ChatGPT web · từng video</SelectItem><SelectItem value="gemini" disabled>Gemini Pro · từng video</SelectItem><SelectItem value="muse" disabled>Muse · từng video</SelectItem></SelectContent>
           </Select>
           <Badge variant="outline" className={provider === "chatgpt" && chatGPTSession?.sharing ? "text-emerald-300" : "text-zinc-400"}>{isWebAi ? `${webAiName} bán tự động` : chatGPTSession?.sharing ? "ChatGPT đã kết nối" : "Chưa kết nối ChatGPT"}</Badge>
           {provider === "chatgpt" && !chatGPTSession?.sharing && <Button onClick={() => void connectChatGPT()} disabled={isChatGPTConnecting || !workerHealth?.ok} className="bg-white text-black"><LogIn /> Kết nối ChatGPT</Button>}
@@ -1807,7 +1811,7 @@ export default function Home() {
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <label htmlFor="batch-urls" className="field-label">Link video (tối đa 20, mỗi dòng một link) · {isWebAi ? `${webAiName} · chuẩn bị + import từng item` : "ChatGPT Auto"}</label>
             <Textarea id="batch-urls" value={batchUrls} onChange={(event) => setBatchUrls(event.target.value)} placeholder={"https://www.youtube.com/watch?v=...\nhttps://youtu.be/..."} className="studio-textarea mt-2 min-h-[100px] text-xs leading-6" />
-            <Button size="action" onClick={() => void startBatch()} disabled={!["chatgpt","gemini","muse"].includes(provider) || isStartingBatch || isStoppingBatch || !batchUrls.trim() || !workerHealth?.ok || (provider==="chatgpt"&&!chatGPTSession?.sharing)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
+            <Button size="action" onClick={() => void startBatch()} disabled={!["chatgpt","gemini","muse","chatgpt-web"].includes(provider) || isStartingBatch || isStoppingBatch || !batchUrls.trim() || !workerHealth?.ok || (provider==="chatgpt"&&!chatGPTSession?.sharing)} className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]">
               {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />} {isStartingBatch ? "Đang thêm link…" : batch && !batch.finished ? "Thêm vào hàng đợi đang chạy" : isWebAi?"Chuẩn bị nguồn · chờ import thủ công":"Chạy hàng đợi tự động"}
             </Button>
             <Button variant="outline" onClick={() => void stopBatch()} disabled={!batch || batch.finished || isStoppingBatch || isStartingBatch} className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10">
@@ -1931,7 +1935,8 @@ export default function Home() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent position="popper" align="start">
-                    <SelectItem value="chatgpt">ChatGPT Plus / Pro</SelectItem>
+                    <SelectItem value="chatgpt">ChatGPT Auto · Sol low</SelectItem>
+                    <SelectItem value="chatgpt-web">ChatGPT · Web thủ công</SelectItem>
                     <SelectItem value="gemini">Gemini Pro · Web</SelectItem>
                     <SelectItem value="muse">Muse · Web</SelectItem>
                     {provider==="mock"&&<SelectItem value="mock">Mô phỏng cũ · không AI</SelectItem>}
@@ -1945,10 +1950,21 @@ export default function Home() {
                   <WebAiPromptCopy prompt={webAiPrompt} disabled={!webAiPrompt || !webAiPromptIsCurrent || isAnalyzing || isPreparingSource} onCopied={() => { setWebAiError(""); setWebAiNotice('Đã copy prompt.'); }} onError={() => { setWebAiNotice(""); setWebAiError('Chưa copy được. Cho phép Clipboard rồi thử lại.'); }}/>
 
                 </div>
+                {webAiContext?.media&&webAiPromptIsCurrent&&<div className="space-y-2 rounded-xl border border-white/10 p-3 text-xs">
+                  <a className="studio-ghost inline-flex" href={`${WORKER_ORIGIN}/api/sources/${webAiContext.sourceId}/manual-video`}>Tải video nguồn để đính kèm</a>
+                  <p className="studio-muted">Video đầy đủ · 1× · {webAiContext.media.bytes?`${(webAiContext.media.bytes/1024/1024).toFixed(1)} MiB`:'chưa rõ dung lượng'}. Đính kèm cùng prompt trong {webAiName}.</p>
+                  {webAiContext.media.bytes&&webAiContext.media.bytes>500*1024*1024?<p className="text-amber-200">Video lớn; kiểm tra giới hạn tải lên của web AI. App không tự cắt hoặc thay bằng bản tóm tắt.</p>:null}
+                  <label className="flex items-start gap-2"><input type="checkbox" checked={webAiAttachmentConfirmed} disabled={isAnalyzing||isPreparingSource} onChange={event=>setWebAiMediaConfirmed(event.target.checked?{requestId:webAiContext.requestId,analysisKey:webAiContext.analysisKey||''}:null)}/><span>Tôi đã đính kèm đúng video nguồn này vào lượt phân tích.</span></label>
+                </div>}
+                {provider==='chatgpt-web'&&webAiContext&&<ChatGptWebHandoff prompt={webAiPrompt} sourceId={webAiContext.sourceId} requestId={webAiContext.requestId} analysisKey={webAiContext.analysisKey||''} attachmentConfirmed={webAiAttachmentConfirmed} disabled={!webAiPromptIsCurrent||isAnalyzing||isPreparingSource} onResult={(raw,identity)=>{
+                  if(!webAiPromptIsCurrent||!webAiAttachmentConfirmed||identity.sourceId!==preparedSource?.id||identity.requestId!==webAiContext.requestId||identity.analysisKey!==webAiContext.analysisKey)return;
+                  if(webAiResult.trim()&&webAiResult!==raw){setWebAiNotice('Đã nhận JSON mới. Ô nhập đang có bản nháp; xem/copy kết quả của extension để giữ bản đang nhập.');return;}
+                  setWebAiResult(raw);setWebAiError('');setWebAiNotice('Đã nhận JSON từ ChatGPT web. Kiểm tra rồi Áp dụng 2 part.');
+                }}/>}
                 {webAiPrompt && !webAiPromptIsCurrent && <p role="status" className="text-xs text-amber-200">{webAiNotice.startsWith('Đã áp dụng')?'Prompt đã dùng. Tạo lại khi cần phân tích mới.':'Dữ liệu đã đổi. Bấm Tạo prompt để cập nhật.'}</p>}
                 <label htmlFor="web-ai-result" className="field-label block">Dán JSON từ {webAiName}</label>
                 <Textarea id="web-ai-result" value={webAiResult} onChange={(event) => setWebAiResult(event.target.value)} placeholder={`Dán JSON ${webAiName}…`} className="studio-textarea studio-web-json font-mono" />
-                <Button size="action" onClick={()=>void applyWebAiResult()} disabled={!preparedSource || !webAiPromptIsCurrent || !webAiResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check />Áp dụng 2 part</Button>
+                <Button size="action" onClick={()=>void applyWebAiResult()} disabled={!preparedSource || !webAiPromptIsCurrent || !webAiAttachmentConfirmed || !webAiResult.trim() || isAnalyzing || isPreparingSource} className="w-full rounded-xl bg-[#ff4d2e] text-xs text-white hover:bg-[#ff6247]"><Check />Áp dụng 2 part</Button>
                 {webAiError && <p role="alert" className="break-words text-xs leading-5 text-red-300">{webAiError}</p>}
                 {webAiNotice && <p role="status" className="text-xs leading-5 text-emerald-300">{webAiNotice}</p>}
               </section> : null}

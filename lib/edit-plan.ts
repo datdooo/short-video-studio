@@ -8,7 +8,7 @@ import { transcriptCues } from "./subtitles.mjs";
 export { transcriptCues };
 import { presentationDuration, validateTeaser, TEASER_POLICY } from "./teaser-hooks.mjs";
 
-export type AiProvider = "mock" | "chatgpt" | "gemini" | "muse" | "openai" | "qwen";
+export type AiProvider = "mock" | "chatgpt" | "chatgpt-web" | "gemini" | "muse" | "openai" | "qwen";
 export type PlanSource = AiProvider | "manual" | "deterministic";
 
 export type Segment = {

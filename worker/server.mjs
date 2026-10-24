@@ -6,7 +6,7 @@ import {createHistoryPersistence} from './history-persistence.mjs';
 import {providerError,readProviderOutput,safeProviderId} from './provider-response.mjs';
 import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
 import {assertTeaserContexts,selectionDigest,transcriptValue,teaserEvidenceValue} from '../lib/teaser-context.mjs';
-import {createMediaResources,createEditorMediaResources,balancedFfmpegArgs} from './media-resources.mjs';
+import {createMediaResources,createEditorMediaResources,balancedFfmpegArgs,RENDER_FILTER_COMPLEX_THREADS,RENDER_RESOURCE_PROFILE} from './media-resources.mjs';
 import {ANALYSIS_MODEL,ANALYSIS_REASONING,videoReasoning,reasoningCapabilities} from '../lib/ai-reasoning.mjs';
 import {withAiOperation,measureAiStage,aiEvent,aiMemo,beginAiRequest} from './ai-operation.mjs';
 import {compactAiInput,AI_INPUT_INSTRUCTIONS} from './ai-input.mjs';
@@ -890,7 +890,7 @@ async function run(binary,args,options={}){
     if(!mediaResources.ownsLease()&&(state.active||state.waiting))options.onQueued?.(state.renderBusy?'render':'analysis');
     return mediaResources.use('analysis',signal=>{
       options.onStart?.();
-      return runCommand(binary,binary===ffmpeg?balancedFfmpegArgs(args):args,{...options,signal,lowerPriority:true});
+      return runCommand(binary,binary===ffmpeg?balancedFfmpegArgs(args,{filterComplexThreads:options.filterComplexThreads}):args,{...options,signal,lowerPriority:true});
     },options.signal);
   }
   return runCommand(binary,args,options);
@@ -1334,7 +1334,13 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   if (!ffmpeg) throw new Error("Không tìm thấy FFmpeg. macOS: brew install ffmpeg");
   const workDirectory = path.dirname(outputPath);
   const titleOverlayPath = path.join(workDirectory, `part-${part.id}-titles.png`);
-  const titleShinePath = path.join(workDirectory, `part-${part.id}-shine.png`);
+  const visualStyle=plan.visualStyle||DEFAULT_VISUAL_STYLE;
+  const animated = normalizeTitleAnimation(visualStyle.titleAnimation) !== "none";
+  // Static non-shine titles previously decoded an entirely transparent PNG and
+  // ran crop/geq/overlay on it every frame. Keep the existing animated grouping
+  // (including its format conversions) and actual shine effects untouched.
+  const needsShineInput=animated||[visualStyle.originalTitle,visualStyle.partTitle].some(style=>style.effect==='current-title-glow-shine');
+  const titleShinePath = needsShineInput?path.join(workDirectory, `part-${part.id}-shine.png`):null;
   await renderTitleOverlay({
     outputPath: titleOverlayPath,
     shineOutputPath: titleShinePath,
@@ -1342,11 +1348,10 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     partTitle: part.title,
     partId: part.id,
     totalParts,
-    visualStyle: plan.visualStyle || DEFAULT_VISUAL_STYLE,
+    visualStyle,
   });
 
   // Scene decorations stay outside the foreground transition, under text.
-  const animated = normalizeTitleAnimation(plan.visualStyle?.titleAnimation) !== "none";
   const musicSettings=effectiveMusic(plan.music,part.id);
   const musicAsset=musicSettings.enabled?await musicLibrary.resolve(musicSettings.assetId):null;
   const segments = presentationSegments(part);
@@ -1366,15 +1371,23 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   const filterGraphPath=path.join(workDirectory,`part-${part.id}-filters.ffgraph`);
   try {
   const overlayInput=2; // sequential source video + finite, sample-trimmed PCM
+  // Allocate optional inputs in precisely the same order as buildArgs below.
+  let nextInput=overlayInput+1;
+  const shineInput=needsShineInput?nextInput++:undefined;
+  const subtitleInput=subtitlesPath?nextInput++:undefined;
+  const backgroundInput=backgroundAsset?nextInput++:undefined;
+  const animatedSceneInput=animated&&sceneAsset?nextInput++:undefined;
+  const vrInput=nextInput;
+  // Decode each static PNG once, then repeat that one decoded frame on the same
+  // 30fps output clock. Never use this for source video or caption sequences.
+  const staticInputFilter='loop=loop=-1:size=1:start=0,setpts=N/(30*TB),';
   const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t,${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
   // Keep the existing Rec.709 limited output contract after composition.
   const background = assertRenderableBackground(plan.visualStyle?.background);
   const rgbFilter = Boolean(plan.visualStyle?.filter?.presetId) || background.mode !== "source-blur";
   const overlayFormat = rgbFilter ? ":format=rgb" : "";
   const outputColor = rgbFilter ? "scale=out_color_matrix=bt709:out_range=tv," : "";
-  const animatedSceneInput = animated && sceneAsset ? overlayInput + 2 + (subtitlesPath ? 1 : 0) + (backgroundAsset ? 1 : 0) : undefined;
-  const vrInput=overlayInput+2+(subtitlesPath?1:0)+(backgroundAsset?1:0)+(animatedSceneInput!==undefined?1:0);
-  const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput: overlayInput + 1, sceneInput: animatedSceneInput, overlayFormat, clockRate:1 });
+  const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput, sceneInput: animatedSceneInput, overlayFormat, clockRate:1,staticInputFilter });
   const filters = [
     `[0:v]select=concatdec_select,settb=AVTB,setpts=PTS/${PLAYBACK_RATE},fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
     '[1:a]asetpts=N/SR/TB[cuta]',
@@ -1386,18 +1399,20 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
       `[black][bgvideo]overlay=shortest=1${overlayFormat}[bg]`,
     ] : [
       `[graded]null[mainsrc]`,
-      background.mode === "solid" ? `color=c=black:s=1080x1920:r=30,format=rgb24[bg]` : `[${overlayInput + 2 + (subtitlesPath ? 1 : 0)}:v]format=rgb24[bg]`,
+      background.mode === "solid" ? `color=c=black:s=1080x1920:r=30,format=rgb24[bg]` : `[${backgroundInput}:v]${staticInputFilter}format=rgb24[bg]`,
     ]),
     `[mainsrc]${foregroundFilter()}[mainUnlit]`,
-    ...(cutTransitionFilters(plan.visualStyle?.cutTransition,segments,transitionWindows,{spriteInput:vrInput})||["[mainUnlit]null[main]"]),
+    ...(cutTransitionFilters(plan.visualStyle?.cutTransition,segments,transitionWindows,{spriteInput:vrInput,staticInputFilter})||["[mainUnlit]null[main]"]),
     `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[layout]`,
     ...(animationFilters || [
-    `[${overlayInput}:v]format=rgba[titlecard]`,
+    `[${overlayInput}:v]${staticInputFilter}format=rgba[titlecard]`,
     `[layout][titlecard]overlay=0:0:shortest=1${overlayFormat}[baseTitles]`,
-    `[${overlayInput + 1}:v]format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
+    ...(needsShineInput?[
+    `[${shineInput}:v]${staticInputFilter}format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
     `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1${overlayFormat}[titled]`,
+    ]:[`[baseTitles]null[titled]`]),
     ]),
-    ...(subtitlesPath ? [`[${overlayInput + 2}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`] : []),
+    ...(subtitlesPath ? [`[${subtitleInput}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`] : []),
     `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,trim=end_frame=${outputFrames}[vout]`,
     `[cuta]atempo=${PLAYBACK_RATE}[${musicAsset?"originalaudio":"aout"}]`,
   ];
@@ -1410,12 +1425,12 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
     }
     args.push('-an','-sn','-dn','-f','concat','-safe','0','-segment_time_metadata','1','-i',rangeInput.list);
     args.push('-f','f32le','-ar','48000','-ac','2','-i',rangeInput.audio);
-    args.push("-loop", "1", "-framerate", "30", "-i", titleInputPath);
-    args.push("-loop", "1", "-framerate", "30", "-i", titleShinePath);
+    args.push("-framerate", "30", "-i", titleInputPath);
+    if(needsShineInput)args.push("-framerate", "30", "-i", titleShinePath);
     if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
-    if (backgroundAsset) args.push("-loop", "1", "-framerate", "30", "-i", backgroundAsset);
-    if (animatedSceneInput !== undefined) args.push("-loop", "1", "-framerate", "30", "-i", sceneAsset);
-    if(hasTransitions)args.push("-loop","1","-framerate","30","-i",path.join(projectRoot,"public",TRANSITION_SPRITE.slice(1)));
+    if (backgroundAsset) args.push("-framerate", "30", "-i", backgroundAsset);
+    if (animatedSceneInput !== undefined) args.push("-framerate", "30", "-i", sceneAsset);
+    if(hasTransitions)args.push("-framerate","30","-i",path.join(projectRoot,"public",TRANSITION_SPRITE.slice(1)));
     const renderFilters=[...filters];
     if(musicAsset){const input=args.filter(a=>a==="-i").length;args.push("-stream_loop","-1","-i",musicAsset.file);renderFilters.push(...musicMixFilters({input,settings:musicSettings,part,activity:plan.musicSpeech,duration:presentationDuration(part)/PLAYBACK_RATE}));}
     await writeFile(filterGraphPath,renderFilters.join(";"),{mode:0o600});
@@ -1475,6 +1490,7 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   let progressBuffer = "";
   const renderOptions = {
     signal,
+    filterComplexThreads:RENDER_FILTER_COMPLEX_THREADS,
     onStdout(chunk) {
       progressBuffer += chunk;
       const lines = progressBuffer.split(/\r?\n/);
@@ -1640,7 +1656,7 @@ async function prepareRenderSubmission(body, parentSignal, fingerprint) {
     sourceId: source.id,
     origin: parentSignal ? "batch" : "editor",
     metadataPolicy: EXPORT_METADATA_POLICY,
-    submissionFingerprint:fingerprint,resourceProfile:"balanced-m2-editor-v2",
+    submissionFingerprint:fingerprint,resourceProfile:RENDER_RESOURCE_PROFILE,
     plan: originalPlan,
     startTrimSeconds: 1,
     state: "queued",
@@ -1766,7 +1782,7 @@ function mediaContentType(target) {
   }[path.extname(target).toLowerCase()] || "application/octet-stream";
 }
 
-async function serveMediaPath(request, response, target, { download = false } = {}) {
+async function serveMediaPath(request, response, target, { download = false, filename = path.basename(target) } = {}) {
   const fileStat = statSync(target);
   const range = request.headers.range;
   const baseHeaders = {
@@ -1774,7 +1790,7 @@ async function serveMediaPath(request, response, target, { download = false } = 
     "Content-Type": mediaContentType(target),
     "Accept-Ranges": "bytes",
     "Cache-Control": "private, max-age=0, must-revalidate",
-    ...(download ? { "Content-Disposition": `attachment; filename="video.mp4"; filename*=UTF-8''${encodeURIComponent(path.basename(target)).replace(/'/g, "%27")}` } : {}),
+    ...(download ? { "Content-Disposition": `attachment; filename="video.mp4"; filename*=UTF-8''${encodeURIComponent(filename).replace(/'/g, "%27")}` } : {}),
   };
   if (range) {
     const match = range.match(/bytes=(\d+)-(\d*)/);
@@ -1979,6 +1995,12 @@ const server = createServer(async (request, response) => {
     }
     const sourceMetadataMatch=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})$/i);
     if(request.method==='GET'&&sourceMetadataMatch){sendJson(request,response,200,{source:publicSource(await loadSource(sourceMetadataMatch[1]))});return;}
+    const manualMedia=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/manual-video$/i);
+    if(['GET','HEAD'].includes(request.method)&&manualMedia){
+      const source=await loadSource(manualMedia[1]);
+      if(mediaLibrary.isLocked(source.id))throw Error('Source đang ở Thùng rác hoặc đang được chuyển.');
+      await serveMediaPath(request,response,source.mediaPath,{download:true,filename:`source-${source.id}${path.extname(source.mediaPath)||'.mp4'}`});return;
+    }
     const mainSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/auto-cut$/i);
     if (request.method === "POST" && mainSource) {
       const controller = new AbortController(), abort = () => controller.abort(new Error("Analysis cancelled"));
@@ -2072,8 +2094,8 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && requestUrl.pathname === "/api/batches") {
       const body = await readJson(request);
-      if (body.provider && !["chatgpt","gemini","muse"].includes(body.provider)) {
-        sendJson(request, response, 400, { error: "Hàng loạt tự động chỉ dùng ChatGPT. Gemini Pro và Muse cần copy/dán JSON từng video." });
+      if (body.provider && !["chatgpt","gemini","muse","chatgpt-web"].includes(body.provider)) {
+        sendJson(request, response, 400, { error: "Hàng loạt tự động chỉ dùng ChatGPT Auto. Các provider web thủ công cần copy/dán JSON từng video." });
         return;
       }
       if (!Array.isArray(body.urls) || body.urls.length < 1 || body.urls.length > 20) {
@@ -2125,7 +2147,7 @@ const server = createServer(async (request, response) => {
       if(body.transcript!==undefined){body.plan.teaserTranscriptKey=await selectionDigest(transcriptValue(body.transcript));await assertTeaserContexts(body.plan,source,effectiveCaptionTrack(body.plan,source)?.cues||[],body.transcript,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});}
       validateRenderPlan(body.plan,source);await verifySourceTeasers(body.plan,source);
 
-      item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
+      item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt-web','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
       item.transcript=String(body.transcript||source.transcript||'');
       item.approved=true;item.needsAnalysis=false;item.needsTeasers=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
       await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);await persistBatchHistory({strict:true});sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;

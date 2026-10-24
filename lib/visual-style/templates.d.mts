@@ -1,5 +1,5 @@
 import type { VisualStyle } from "./types";
-export type VisualTemplateId = "current" | "viral-shorts" | "clean-tutorial" | "farming-jp" | "korean-tutorial" | "news" | "cinematic-dark" | "bright-social";
+export type VisualTemplateId = "current" | "viral-shorts" | "clean-tutorial" | "farming-jp" | "korean-tutorial" | "japanese-tutorial" | "english-tutorial" | "french-tutorial" | "german-tutorial" | "news" | "cinematic-dark" | "bright-social";
 export type VisualTemplate = { id: VisualTemplateId; label: string; description: string; category: "classic" | "social" | "tutorial" | "regional" | "information" | "cinematic"; textPresetId: import("./text-presets.mjs").TextPresetId; fontId: import("./fonts.mjs").FontId; filterPresetId: import("./filters.mjs").FilterPresetId; backgroundPresetId: import("./backgrounds.mjs").BackgroundPresetId; overlayPresetId: import("./overlays.mjs").OverlayPresetId };
 export const VISUAL_TEMPLATE_IDS: readonly VisualTemplateId[];
 export function getVisualTemplate(id?: string): VisualTemplate;

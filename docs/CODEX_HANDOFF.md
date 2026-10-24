@@ -1,4 +1,31 @@
-# Latest: source checkpoint / push authorized, NO further packaging (2026-10-21)
+# Beta source in progress — 2026-10-24
+
+Checkout: `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`, branch
+`beta/maintenance`, base `4fd5e4e402e6445b837e0522a169beaf16c82ac4`.
+The notes below this section are historical DEV records, not current Beta
+instructions or authorization to push. Preserve all current uncommitted work.
+
+- Manual Gemini/Muse/ChatGPT web: one complete text prompt plus the original
+  source video attached by the user, explicit attachment confirmation, unchanged
+  importer identity/technical gates. ChatGPT Auto input/model/route stays as-is.
+- Experimental Chromium handoff: explicit one-send/readback, context-bound JSON
+  draft only, no automatic Apply; manual video attachment remains necessary.
+  Installation and limits: `CHATGPT-WEB-HANDOFF.md`.
+- Render source changes: omit transparent shine work for static non-shine titles;
+  cache one decoded frame per static PNG instead of repeated decoding; final
+  graph uses a bounded two-thread filter pool, other media tasks retain their
+  limits. Existing output/blur/encoder settings preserved. Findings and
+  acceptance limits: `beta-render-performance-2026-10-24.md`.
+- Added Japanese/English/French/German Tutorial variants and EN/FR/DE text
+  presets using bundled fonts; details: `beta-tutorial-templates-2026-10-24.md`.
+
+Target: one authorized macOS Beta build 1104 at the fixed release path, following
+a reviewed local source checkpoint required by the packager. Keep release 1103
+as rollback and leave the running installed Beta/render untouched. Actual result
+and commit are recorded in the build handoff. No tests, render, live AI or browser
+acceptance; no runtime, media-quality or speedup claim. No push/merge.
+
+# Historical: source checkpoint / push authorized, NO further packaging (2026-10-21)
 
 Repo `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
 Actual branch `recovery/visual-dev-reconstructed`, base HEAD

@@ -9,6 +9,7 @@ import { browserFilterStyle } from "@/lib/visual-style/filters.mjs";
 import { textPreviewCss } from "@/lib/visual-style/text-render.mjs";
 import { VideoFilterDefinition } from "./video-filter-panel";
 const templates = listVisualTemplates().map((recipe) => ({ ...recipe, style: applyVisualTemplate(undefined, recipe.id) }));
+const regionalSamples: Record<string, string> = { "Noto Sans JP": "学びを育てる", "Noto Sans KR": "함께 배우기", "Inter": "Learn & Explore", "Noto Sans": "Été et découvertes", "Roboto Condensed": "Größe entdecken" };
 export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle; onTemplate: (id: string) => void }) {
   const selected = matchVisualTemplate(style);
   return <details aria-labelledby="visual-template-heading" className="studio-disclosure group/template mt-5 rounded-2xl border border-white/15 bg-white/[.04] p-4">
@@ -16,7 +17,7 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
     <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
       {templates.map((template) => {
         const filterId = `studio-template-${template.id}`;
-        const sample = template.category === "regional" ? (template.fontId === "Noto Sans JP" ? "学びを育てる" : "함께 배우기") : "Create & Learn";
+        const sample = template.category === "regional" ? (regionalSamples[template.fontId] || "Create & Learn") : "Create & Learn";
         return <button key={template.id} type="button" aria-label={`Visual template: ${template.label}`} aria-pressed={selected === template.id} title={template.description} onClick={() => onTemplate(template.id)} className={`relative rounded-xl border p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected === template.id ? "border-white bg-white/10" : "border-white/10 bg-black/20 hover:border-white/40"}`}>
           <VideoFilterDefinition filter={template.style.filter} id={filterId} />
           <span aria-hidden="true" className="relative flex h-16 items-center justify-center overflow-hidden rounded-lg bg-black" style={backgroundCss(template.style.background)}>

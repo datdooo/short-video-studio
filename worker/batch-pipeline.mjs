@@ -22,7 +22,7 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
           item.state=job.state;item.error=job.error;await persist();continue;
         }
         if(!item.plan||item.needsAnalysis){
-          if(['gemini','muse'].includes(settings.provider)){item.state='awaiting-import';item.error=null;await persist();continue;}
+          if(['gemini','muse','chatgpt-web'].includes(settings.provider)){item.state='awaiting-import';item.error=null;await persist();continue;}
           item.state='analyzing';await persist();
           const result=await analyze(source,{transcript:source.transcript||'',instruction:settings.instruction||'',supplementalPrompt:settings.supplementalPrompt||'',...(item.plan?.parts?.some(p=>p.manualLocked)?{currentPlan:item.plan}:{})},signal);
           signal.throwIfAborted();
@@ -37,7 +37,7 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
           item.approved=true;await persist();
         }
         if(item.needsTeasers){
-          if(['gemini','muse'].includes(settings.provider)){item.state='awaiting-import';item.error='Nhập lại hook của provider đã chọn; main được giữ.';await persist();continue;}
+          if(['gemini','muse','chatgpt-web'].includes(settings.provider)){item.state='awaiting-import';item.error='Nhập lại hook của provider đã chọn; main được giữ.';await persist();continue;}
           if(!repairTeasers)throw Error('Chưa có đường sửa teaser; mở plan trong editor.');
           item.state='analyzing';await persist();
           item.plan=await repairTeasers(item.plan,source,signal,item.transcript??source.transcript??'',settings);

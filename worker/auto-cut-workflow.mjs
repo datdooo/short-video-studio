@@ -9,20 +9,25 @@ import {attachExternalHooks} from '../lib/teaser-import.mjs';
 import {assertMainLocks} from '../lib/auto-cut/locks.mjs';
 import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTeaser,mainRanges} from '../lib/teaser-hooks.mjs';
 import {validatePlan} from './plan-validation.mjs';
+import {stat} from 'node:fs/promises';
 // One orchestration path for single-source Auto, external context/import and batch.
 export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
     const {context,options}=await measureAiStage('preparation',()=>prepareInputs(source,body,signal));
+    if(body.mode==='context'||body.mode==='import')options.sourceMediaBytes=(await stat(source.mediaPath)).size;
     if(body.mode==='context')return{context:buildExternalEditingContext(source,context,options,await mainContent.prepare(source,context,options),body)};
     if(body.mode==='import'){
-      if(!['gemini','muse'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');
+      if(!['gemini','muse','chatgpt-web'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');
       const input=await mainContent.prepare(source,context,options);
-      if(body.analysisKey!==buildExternalEditingContext(source,context,options,input,body).analysisKey)throw new Error('Dữ liệu nguồn, transcript, main/locks hoặc quy tắc prompt đã đổi. Tạo prompt mới trước khi nhập JSON.');
+      const externalContext=buildExternalEditingContext(source,context,options,input,body);
+      if(body.analysisKey!==externalContext.analysisKey)throw new Error('Dữ liệu nguồn, transcript, main/locks hoặc quy tắc prompt đã đổi. Tạo prompt mới trước khi nhập JSON.');
+      const attachment=body.attachmentConfirmation;
+      if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Xác nhận đã đính kèm đúng video nguồn của prompt hiện tại trước khi áp dụng. Manifest không phải bằng chứng đã tải lên.');
       let plan=structuredClone(body.plan);
       if(plan.providerUsed!==body.provider||plan.parts?.some((p,i)=>p.id!==i+1))throw new Error('External plan provider/part identity mismatch.');
       validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);
-      plan=await attachExternalHooks({...plan,captionCues:options.captionTrack},body.hookSelections,{...source,sourceContext:context},String(body.transcript??source.transcript??''),body.provider,options.cues,{instruction:options.instruction,supplementalPrompt:options.supplementalPrompt});
+      plan=await attachExternalHooks({...plan,captionCues:options.captionTrack},body.hookSelections,{...source,sourceContext:context},String(body.transcript??source.transcript??''),body.provider,options.cues,{instruction:options.instruction,supplementalPrompt:options.supplementalPrompt,externalVideo:true});
       validatePlan(plan,source);
       if(plan.parts.some(p=>p.teaserEnabled!==false&&!(p.teaser?.status==='unavailable'&&isLaterHookPolicy(p.teaser.selectionPolicy))&&(p.teaser?.selection!=='external-import'||p.teaser.provider!==body.provider)))throw new Error('Part bật teaser cần kết quả import hợp lệ. Sửa teaserSelection trong JSON, không tự chuyển provider.');
       return{plan:captureAiMainRanges(externalPlanAnalysis(plan,source,context,options,input),body.currentPlan)};

@@ -3,7 +3,7 @@ import { PLAYBACK_RATE, TITLE_SHINE_WIDTH, TITLE_SHINE_SECONDS } from "../lib/re
 
 // clockRate describes the caller's video clock. All expressions are trusted
 // constants, selected only by the bounded registry ID. Each part has its own graph.
-export function titleAnimationFilters({ id, titleInput, shineInput, sceneInput, overlayFormat, clockRate = PLAYBACK_RATE }) {
+export function titleAnimationFilters({ id, titleInput, shineInput, sceneInput, overlayFormat, clockRate = PLAYBACK_RATE, staticInputFilter = "" }) {
   id = normalizeTitleAnimation(id);
   if (id === "none") return null;
   const duration = TITLE_ANIMATION_SECONDS * clockRate;
@@ -13,9 +13,9 @@ export function titleAnimationFilters({ id, titleInput, shineInput, sceneInput, 
   const motion = id === "pop-in" ? `scale=w='round(1080*(${scale})/2)*2':h='round(1920*(${scale})/2)*2':eval=frame:flags=bilinear,` : "";
   const y = id === "slide-up" ? `(H-h)/2+${TITLE_SLIDE_PIXELS}*(1-${progress})` : "(H-h)/2";
   return [
-    ...(sceneInput !== undefined ? [`[${sceneInput}:v]format=rgba[staticScene]`, `[layout][staticScene]overlay=0:0:shortest=1${overlayFormat}[animationLayout]`] : []),
-    `[${titleInput}:v]format=rgba[titlecard]`,
-    `[${shineInput}:v]format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
+    ...(sceneInput !== undefined ? [`[${sceneInput}:v]${staticInputFilter}format=rgba[staticScene]`, `[layout][staticScene]overlay=0:0:shortest=1${overlayFormat}[animationLayout]`] : []),
+    `[${titleInput}:v]${staticInputFilter}format=rgba[titlecard]`,
+    `[${shineInput}:v]${staticInputFilter}format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
     `[titlecard][shine]overlay=x='${shineX}':y=0:shortest=1:format=rgb[titleGroup]`,
     `[titleGroup]format=rgba,${motion}fade=t=in:st=0:d=${duration}:alpha=1[animatedTitles]`,
     `[${sceneInput !== undefined ? "animationLayout" : "layout"}][animatedTitles]overlay=x='(W-w)/2':y='${y}':shortest=1:eval=frame${overlayFormat}[titled]`,

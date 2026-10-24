@@ -21,7 +21,7 @@ export type EditorSession={
  plan?:EditPlan;hasEditPlan:boolean;sourceCaptions?:CaptionTrack|null;activePartIndex:number;workspace:'editor'|'batch'|'storage';previewTime:number;previewTimebase?:typeof PREVIEW_TIMEBASE;
  batchId:string;renderJobId:string;batchEditing?:{batchId:string;itemId:string;sourceId:string}|null;batchDraftItem?:{batchId:string;itemId:string;sourceId:string}|null;selectedBatchPreviewKey:string;batchUrls:string;
  manualPart1Title:string;manualPart2Title:string;manualPart1Ranges:string;manualPart2Ranges:string;
- webAiPrompt:string;webAiResult:string;webAiContext?:{sourceId:string;transcript:string;instruction:string;provider:import('./edit-plan').AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack}|null;
+ webAiPrompt:string;webAiResult:string;webAiContext?:{sourceId:string;transcript:string;instruction:string;provider:import('./edit-plan').AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack;media?:{id:string;filename:string;bytes:number|null;duration:number}}|null;
  controls:Controls;interrupted:string[];
 };
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
@@ -51,7 +51,7 @@ function readPlan(raw:unknown,sourceId?:string):EditPlan|undefined{
   parts.push(part);
  }
  let plan={originalTitle:text(raw.originalTitle),language:['en','de','fr','ja','ko'].includes(String(raw.language))?raw.language:'en',providerUsed:raw.providerUsed,parts,render:{...RENDER_PRESET},...pick(raw,['teaserPolicy','hookTransition','teaserTranscriptKey'])} as EditPlan;
- if(!['mock','chatgpt','gemini','muse','openai','qwen','manual','deterministic'].includes(plan.providerUsed))plan.providerUsed='manual';
+ if(!['mock','chatgpt','chatgpt-web','gemini','muse','openai','qwen','manual','deterministic'].includes(plan.providerUsed))plan.providerUsed='manual';
  if(!['none','vr-light-leak-v2','rainbow-light-leak','dip-black','flash-white',undefined].includes(plan.hookTransition))delete plan.hookTransition;
  try{plan=snapshotPlanVisualStyle({...plan,visualStyle:raw.visualStyle,subtitles:raw.subtitles} as EditPlan);}catch{/* Keep other valid editing data. */}
  try{plan.music=normalizeMusic(raw.music);}catch{/* Invalid optional music does not lose the plan. */}
@@ -79,7 +79,7 @@ export function readEditorSessionRaw(saved:string|null):EditorSessionRead{
   d.sourceAdvancedOpen=r.sourceAdvancedOpen===true;
   d.inspectorTab=r.inspectorTab==='text'||r.inspectorTab==='music'?r.inspectorTab:'appearance';
   d.sourceMode=r.sourceMode==='local'?'local':'youtube';d.editMode=r.editMode==='manual'?'manual':'ai';
-  if(['mock','chatgpt','gemini','muse','openai','qwen'].includes(String(r.provider)))d.provider=r.provider as EditorSession['provider'];
+  if(['mock','chatgpt','chatgpt-web','gemini','muse','openai','qwen'].includes(String(r.provider)))d.provider=r.provider as EditorSession['provider'];
   d.workspace=r.workspace==='batch'||r.workspace==='storage'?r.workspace:'editor';d.activePartIndex=r.activePartIndex===1?1:0;d.previewTime=finite(r.previewTime)?Number(r.previewTime):0;
   d.plan=readPlan(r.plan,d.sourceId||undefined);d.hasEditPlan=!!d.plan&&r.hasEditPlan===true;
   // Legacy editor drafts stored the export clock. Migrate only the UI playhead,
@@ -91,6 +91,8 @@ export function readEditorSessionRaw(saved:string|null):EditorSessionRead{
   if(d.sourceId&&object(r.batchDraftItem)&&managedId(r.batchDraftItem.batchId)&&managedId(r.batchDraftItem.itemId)&&r.batchDraftItem.sourceId===d.sourceId)d.batchDraftItem=r.batchDraftItem as EditorSession['batchDraftItem'];
   if(object(r.webAiContext)&&r.webAiContext.sourceId===d.sourceId&&managedId(r.webAiContext.requestId)){
    d.webAiContext={...pick(r.webAiContext,['sourceId','transcript','instruction','provider','requestId','analysisKey','supplementalPrompt','mainSignature','promptVersion']),captionTrack:readCaptions(r.webAiContext.captionTrack),lockedPlan:readPlan(r.webAiContext.lockedPlan),hookPlan:readPlan(r.webAiContext.hookPlan)} as EditorSession['webAiContext'];
+   const media=r.webAiContext.media;
+   if(d.webAiContext&&object(media)&&media.id===`source-video-${d.sourceId}`&&typeof media.filename==='string'&&/^source-[a-f0-9-]+\.[a-zA-Z0-9]+$/.test(media.filename)&&typeof media.duration==='number'&&Number.isFinite(media.duration)&&media.duration>0&&(media.bytes===null||typeof media.bytes==='number'&&Number.isFinite(media.bytes)&&media.bytes>=0))d.webAiContext.media={id:media.id as string,filename:media.filename,bytes:media.bytes as number|null,duration:media.duration};
   }
   const controlEntries=object(r.controls)?Object.entries(r.controls).filter(([key])=>/:(?:main-[12]|teaser-(?:times|input|candidate|review-(?:catalog|focus))-[12]|music-(?:catalog|search|mood)|manual-cut)$/.test(key)):[];
   // A growing set of source-scoped manual drafts is preserved whole. Exceeding

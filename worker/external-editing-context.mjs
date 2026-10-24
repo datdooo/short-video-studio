@@ -7,10 +7,12 @@ import {collectTeaserEvidence} from '../lib/teaser-evidence.mjs';
 import {hookInput} from '../lib/teaser-input.mjs';
 import {HOOK_WINNER_INSTRUCTIONS} from '../lib/teaser-prompt.mjs';
 import {permittedHookRanges,hookDurationLimits} from '../lib/teaser-hooks.mjs';
+import path from 'node:path';
 
 export const EXTERNAL_TEXT_VERSION=WEB_AI_PROMPT_VERSION;
 // Uses exactly the native evidence collector, main input, teaser input and rules.
-// No frame extraction, provider, download, new model or local media path here.
+// Manual providers receive the complete text plus an explicit source-video
+// handoff. This manifest never claims that the receiving website read a file.
 export function buildExternalEditingContext(source,context,options,prepared,body){
  const cues=options.cues||[],track=options.captionTrack;
  const inputSource={id:source.id,title:source.title,duration:source.duration,kind:source.kind,
@@ -38,8 +40,9 @@ export function buildExternalEditingContext(source,context,options,prepared,body
   mainInput:{...modelSelectionInput(prepared),sourceEvidence:undefined,evidenceReference:'videoEvidence',editorialRequestReference:'videoEvidence.userRequest'},videoEvidence:evidence,currentParts,
   captionTrack:track,
   rules:{main:MAIN_INSTRUCTIONS,teaser:HOOK_WINNER_INSTRUCTIONS,durationLimits:hookDurationLimits()},
-  transmission:{textOnly:true,imagesProvided:false,videoProvided:false,
-   difference:'Cả ChatGPT và Gemini/Muse chỉ nhận text/tín hiệu số trong luồng phân tích hiện tại; không provider nào được coi là đã xem ảnh/video.',
+  attachments:{sourceVideo:{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}${path.extname(source.mediaPath||'')||'.mp4'}`,duration:source.duration,bytes:options.sourceMediaBytes??null,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],delivery:'user-must-attach-original-video',providerReceipt:'not-verified'}},
+  transmission:{textOnly:false,imagesProvided:false,videoProvided:false,
+   difference:'Web thủ công dùng toàn bộ text và video nguồn đính kèm riêng. Manifest/đường dẫn tải không chứng minh website đã nhận hoặc xem video. ChatGPT Auto vẫn chỉ gửi text; không thay model hay request Auto.',
    currentPartsPolicy:'Snapshot main/padding/locks hiện tại; chỉ range manualLocked bắt buộc giữ nguyên. Khi đề xuất main mới, tính lại permitted teaser theo chính main mới, không trim tự động, không dùng candidate ID của range cũ để giả bằng chứng.',
    coverage:'Toàn bộ văn bản/tín hiệu đã thu thập; các trạng thái missing/unavailable/error là giới hạn dữ liệu, không phải điểm âm.'}};
  payload.analysisKey=createHash('sha256').update(JSON.stringify(payload)).digest('hex');
