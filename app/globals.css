@@ -626,7 +626,10 @@ button, input, textarea { font: inherit; }
 .prototype-shell :is(.studio-library-file-list,.studio-render-job-list,.studio-batch-item-list) { padding:4px; scroll-padding:8px; }
 .prototype-shell .studio-render-job-heading { flex-wrap:wrap; align-items:flex-start; }
 .prototype-shell .studio-render-job-heading > .min-w-0 { flex:1 1 180px; }
-.prototype-shell .studio-render-job-heading > .studio-action-row { max-width:100%; }
+.prototype-shell .studio-render-job-heading > .studio-action-row { flex:0 1 auto; max-width:100%; margin-left:auto; }
+.studio-render-job-heading > .studio-action-row > button { max-width:100%; white-space:normal; }
+/* Progress owns a separate row below the title/actions, including wrapped actions. */
+.studio-render-job-heading + .studio-task-progress { margin-top:12px; }
 .prototype-shell .studio-library-workspace .studio-library { padding-inline:12px; }
 .prototype-shell .studio-header-status > span { min-width:0; max-width:100%; overflow-wrap:anywhere; }
 .prototype-shell .studio-header-status > span > span { min-width:0; }

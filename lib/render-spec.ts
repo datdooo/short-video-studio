@@ -2,6 +2,7 @@ import { EditPart, RENDER_PRESET } from "@/lib/edit-plan";
 import { foregroundFilter, FOREGROUND_Y, TITLE_LAYOUT } from './render-config.mjs';
 
 import { detectScript, fontFallbackStack } from "./visual-style/fonts.mjs";
+import { partOverlayTitle } from "./visual-style/title-fit.mjs";
 export { detectScript };
 export type ScriptPreset = import("./visual-style/fonts.mjs").Script;
 export const FONT_PRESETS: Record<ScriptPreset, string[]> = {
@@ -132,8 +133,9 @@ export function fitOverlayText(value: string, role: OverlayRole, fontCap = TITLE
 }
 
 export function fitTitlePair(original: string, part: string) {
-  const size = Math.min(fitOverlayText(original, 'original').fontSize, fitOverlayText(part, 'part').fontSize);
-  return { original: fitOverlayText(original, 'original', size), part: fitOverlayText(part, 'part', size) };
+  const displayPart = partOverlayTitle(part);
+  const size = Math.min(fitOverlayText(original, 'original').fontSize, fitOverlayText(displayPart, 'part').fontSize);
+  return { original: fitOverlayText(original, 'original', size), part: fitOverlayText(displayPart, 'part', size) };
 }
 
 function escapeDrawText(value: string) {

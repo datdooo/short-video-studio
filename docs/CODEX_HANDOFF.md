@@ -1,3 +1,33 @@
+# Đóng gói Beta 1109 — 2026-10-25
+
+Đích release/beta/ShortCut Studio Beta.app, version 1.1.0-beta.1 build 1109.
+Checkpoint local chứa mọi sửa source từ a4a0bd7: manual prompt v9/gộp trùng
+lossless với tham chiếu nông/giải thích gọn/2 teaser mặc định và thứ ba có điều
+kiện; shared overlay bỏ hậu tố Phần/Part 1/2; CSS tách progress khỏi nút Xóa.
+Giữ sửa language v8 nền 1108, MAIN/teaser/manual/draft/playback và mọi sửa cũ.
+
+Build/package bắt buộc: frontend compile, copy worker/import closure, native
+audit và codesign verify. Đối chiếu module/frontend/CSS sau build. Release1108
+được giữ trong .build-*/previous-build.app. Nếu cập nhật /Applications phải đợi
+người dùng lưu/Quit, kiểm tra tiến trình lại, stage/verify/swap và giữ app cũ.
+Không kill/launch app, đổi profile/ports/data root/credentials, AI/test/render.
+Chưa nghiệm thu runtime, chất lượng, token/quota hoặc tốc độ Thinking.
+
+# Source mới: manual web v9 + overlay/progress — 2026-10-25
+
+Chưa build, app release và Applications vẫn 1108/a4a0bd7. Source chưa commit.
+Manual web mặc định 2 teaser/part, thứ ba chỉ khi khác biệt hữu ích; giải thích
+ngắn, đủ evidence/quote/continuity. Loại EXPLANATION prose trùng và opt-in exact
+value canonical refs (flat values, max depth 3, smaller-size/full decode guards).
+Auto không bật opt-in, không đổi model/reasoning/request/ảnh/text/cut criteria.
+Giữ toàn input khác biệt; không cắt transcript/comment/replay để làm nhỏ.
+
+Overlay video bỏ hậu tố Phần/Part 1/2 bằng helper dùng chung preview/render;
+không đổi stored/publishing title hoặc counter. Render list cách heading/action
+và progress row 12px, wrap nút ở màn hẹp; %/job logic không đổi.
+Báo cáo: MANUAL-WEB-COMPACT-UX-2026-10-25.md (file, nguồn nghiên cứu, nghiệm thu).
+Không AI/tests/lint/typecheck/build/render/ASR/download/browser automation.
+
 # Đóng gói Beta 1108 — 2026-10-25
 
 Đích release/beta/ShortCut Studio Beta.app, version 1.1.0-beta.1 build 1108.

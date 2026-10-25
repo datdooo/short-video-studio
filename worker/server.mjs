@@ -84,7 +84,7 @@ import { TEASER_POLICY, presentationSegments, presentationDuration, partTransiti
 import { detectScript, fontFamilyForStyle, listFonts } from "../lib/visual-style/fonts.mjs";
 import { DEFAULT_VISUAL_STYLE } from "../lib/visual-style/defaults.mjs";
 import { styledTextSvg } from "../lib/visual-style/text-render.mjs";
-import { constrainTitlePair, needsMeasuredTitleFit } from "../lib/visual-style/title-fit.mjs";
+import { constrainTitlePair, needsMeasuredTitleFit, partOverlayTitle } from "../lib/visual-style/title-fit.mjs";
 import { assertRenderableBackground, gradientRowRgb } from "../lib/visual-style/backgrounds.mjs";
 import { currentFilterEnvironment, ffmpegFilterExpression } from "../lib/visual-style/filters.mjs";
 import { snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
@@ -1252,6 +1252,7 @@ async function loadSource(sourceId, signal) {
 }
 
 async function renderTitleOverlay({ outputPath, shineOutputPath, originalTitle, partTitle, partId, totalParts, visualStyle = DEFAULT_VISUAL_STYLE }) {
+  partTitle = partOverlayTitle(partTitle);
   await registerOverlayFonts();
   const size = Math.min(fitOverlayText(originalTitle, 'original').fontSize, fitOverlayText(partTitle, 'part').fontSize);
   let pair = { original: fitOverlayText(originalTitle, "original", size), part: fitOverlayText(partTitle, "part", size) };

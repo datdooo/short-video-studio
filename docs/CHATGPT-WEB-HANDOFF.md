@@ -22,15 +22,15 @@ app không đoán tiến trình AI chạy trong website.
 
 ## Teaser và dữ liệu
 
-Manual web dùng prompt/schema v8: mỗi part bật teaser yêu cầu 2–3 lựa chọn
-xếp hạng, gồm lựa chọn chính và tối đa hai alternatives. Mỗi lựa chọn có range,
+Manual web dùng prompt/schema v9: mỗi part bật teaser yêu cầu mặc định 2 lựa chọn
+xếp hạng, gồm winner và 1 alternative; chỉ có phương án thứ ba nếu khác biệt
+đáng giá, vẫn tối đa hai alternatives. Mỗi lựa chọn có range,
 citation/evidence, kết thúc trọn ý và giải thích tiếng Việt. Không bịa ứng viên
 cho đủ số; importer kiểm tra từng lựa chọn, loại range trùng và báo nếu thiếu.
 Các lựa chọn hợp lệ được giữ trong danh sách ứng viên hiện có.
 Title/hook/hashtag giữ ngôn ngữ nguồn (ví dụ vi); giải thích vẫn tiếng Việt.
 Không còn enum năm ngôn ngữ. Import chặn mã ngôn ngữ khác nguồn đã biết,
-không tự dịch hoặc ghi đè title đang lưu. Prompt v7 phải tải lại TXT khi dùng
-source mới đã cập nhật; bản 1108 đóng gói sửa v8 này; app 1107 cũ chưa chứa sửa.
+không tự dịch hoặc ghi đè title đang lưu. Prompt v8 phải tải lại TXT sau khi cập nhật source v9 này. Source v9 được chốt đóng gói ở build 1109; app 1108 cũ chưa chứa sửa. Xem MANUAL-WEB-COMPACT-UX-2026-10-25.md.
 ChatGPT Auto vẫn một lựa chọn, Sol low/text-only theo cấu hình hiện tại.
 
 Giữ source/request/analysisKey, toàn bộ text và tiêu chí hiện hành, schema import,

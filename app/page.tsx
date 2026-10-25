@@ -67,7 +67,7 @@ import { titleAnimationPreviewCss } from "@/lib/visual-style/animations.mjs";
 import { normalizeVisualStyle } from "@/lib/visual-style/normalize.mjs";
 import { applyTextPreset, applyFontOverride } from "@/lib/visual-style/text-presets.mjs";
 import { textPreviewCss, subtitlePreviewCss } from "@/lib/visual-style/text-render.mjs";
-import { constrainTitlePair, needsMeasuredTitleFit } from "@/lib/visual-style/title-fit.mjs";
+import { constrainTitlePair, needsMeasuredTitleFit, partOverlayTitle } from "@/lib/visual-style/title-fit.mjs";
 import { listFonts, fontFamilyForStyle } from "@/lib/visual-style/fonts.mjs";
 import { DEFAULT_VISUAL_STYLE } from "@/lib/visual-style/defaults.mjs";
 import { resolvePlanVisualStyle, snapshotPlanVisualStyle } from "@/lib/visual-style/normalize.mjs";
@@ -640,6 +640,7 @@ export default function Home() {
     for(const[id,request]of activeTeaserRequests.current)if(request.identity!==latestPartHookIdentities.current[id])request.controller.abort(new Error('Nguồn, main hoặc yêu cầu đã đổi; đã dừng lượt teaser cũ.'));
   },[hookIdentity,partHookIdentityKey]);
   const timelineDuration = hasEditPlan ? partDuration : previewDuration;
+  const overlayPartTitle = partOverlayTitle(activePart.title);
   const fontStack = useMemo(
     () => fontFamilyForStyle(previewVisualStyle.originalTitle.font, `${plan.originalTitle} ${activePart.title}`, { browser: true }).split(", "),
     [activePart.title, plan.originalTitle, previewVisualStyle.originalTitle.font],
@@ -647,7 +648,7 @@ export default function Home() {
   const legacyTitlePair = useMemo(
     () => fitTitlePair(plan.originalTitle, activePart.title), [plan.originalTitle, activePart.title],
   );
-  const titleFitInput = useMemo(() => ({ original: plan.originalTitle, part: activePart.title, originalStyle: previewVisualStyle.originalTitle, partStyle: previewVisualStyle.partTitle, scale: previewWidth / 1080 }), [plan.originalTitle, activePart.title, previewVisualStyle.originalTitle, previewVisualStyle.partTitle, previewWidth]);
+  const titleFitInput = useMemo(() => ({ original: plan.originalTitle, part: overlayPartTitle, originalStyle: previewVisualStyle.originalTitle, partStyle: previewVisualStyle.partTitle, scale: previewWidth / 1080 }), [plan.originalTitle, overlayPartTitle, previewVisualStyle.originalTitle, previewVisualStyle.partTitle, previewWidth]);
   const [measuredTitlePair, setMeasuredTitlePair] = useState<{ input: typeof titleFitInput; pair: typeof legacyTitlePair } | null>(null);
   useEffect(() => {
     const style = { originalTitle: titleFitInput.originalStyle, partTitle: titleFitInput.partStyle };
@@ -2188,7 +2189,7 @@ export default function Home() {
               <p
                 className="social-copy overlay-copy-block relative"
                 style={{
-                  ...textPreviewCss(previewVisualStyle.partTitle, activePart.title, previewScale),
+                  ...textPreviewCss(previewVisualStyle.partTitle, overlayPartTitle, previewScale),
                   fontSize: `${(partTitleFit.fontSize * previewScale).toFixed(2)}px`,
                   lineHeight: (partTitleFit.fontSize + partTitleFit.lineSpacing) / partTitleFit.fontSize,
                 }}
