@@ -1,3 +1,30 @@
+# Đóng gói Beta 1108 — 2026-10-25
+
+Đích release/beta/ShortCut Studio Beta.app, version 1.1.0-beta.1 build 1108.
+Checkpoint local chứa content-language dùng chung, prompt web v8, schema/import
+kiểm tra ngôn ngữ nguồn, cache identity và restore giữ vi thay vì ép en.
+Giữ các sửa build 1107 và 2–3 teaser/part thủ công, Sol low, text-only Auto.
+Module content-language.mjs được thêm vào manifest dùng chung hai packager.
+
+Quy trình: build frontend, copy worker/import closure, native audit, codesign.
+Sau package đối chiếu metadata/module/frontend, giữ app release 1107 để rollback.
+Beta /Applications đang chạy ở lúc bắt đầu; không thay/đóng app đang sử dụng.
+Dữ liệu/credentials/plan/draft không sửa. Windows chưa rebuild.
+Chưa nghiệm thu runtime/AI/ngôn ngữ đầu ra thật; không tests/render/ASR/download.
+
+# Source tiếp theo: sửa ngôn ngữ title/hashtag — 2026-10-25
+
+Build/app hiện tại vẫn 1107; source CHƯA BUILD. Metadata video lỗi xác nhận
+language vi / captionLanguage vi / không dịch. Schema/import cũ chỉ de/en/fr/
+ja/ko, khiến vi không thể trả đúng contract nhưng ja vẫn được nhận.
+
+Module dùng chung content-language bỏ whitelist, prompt/schema v8 giữ mã nguồn
+đã biết, server+frontend chặn mismatch trước Apply. Auto/Batch cùng policy,
+cache phân biệt mới; restore giữ vi, manual không ép en. Không dịch/sửa plan
+hiện tại hoặc chạy lại AI. Manifest worker đã thêm module mới.
+Xem CONTENT-LANGUAGE-FIX-2026-10-25.md: nguyên nhân, file và giới hạn kiểm chứng.
+Không tests/typecheck/build/AI/render/ASR/download/browser; chưa commit/push.
+
 # Đóng gói Beta 1107 — source checkpoint 2026-10-25
 
 Đích: release/beta/ShortCut Studio Beta.app, version 1.1.0-beta.1 build 1107.

@@ -1,3 +1,4 @@
+import {normalizeLanguageCode} from './content-language.mjs';
 import {PREVIEW_TIMEBASE} from './preview-config.mjs';
 import {PLAYBACK_RATE} from './render-config.mjs';
 // Browser-only draft data. No worker payload, credential, File, blob URL or media.
@@ -50,7 +51,7 @@ function readPlan(raw:unknown,sourceId?:string):EditPlan|undefined{
   try{validateMainRangeMetadata(part,Infinity);}catch{delete part.aiMainRanges;}
   parts.push(part);
  }
- let plan={originalTitle:text(raw.originalTitle),language:['en','de','fr','ja','ko'].includes(String(raw.language))?raw.language:'en',providerUsed:raw.providerUsed,parts,render:{...RENDER_PRESET},...pick(raw,['teaserPolicy','hookTransition','teaserTranscriptKey'])} as EditPlan;
+ let plan={originalTitle:text(raw.originalTitle),language:normalizeLanguageCode(raw.language)||'und',providerUsed:raw.providerUsed,parts,render:{...RENDER_PRESET},...pick(raw,['teaserPolicy','hookTransition','teaserTranscriptKey'])} as EditPlan;
  if(!['mock','chatgpt','chatgpt-web','gemini','muse','openai','qwen','manual','deterministic'].includes(plan.providerUsed))plan.providerUsed='manual';
  if(!['none','vr-light-leak-v2','rainbow-light-leak','dip-black','flash-white',undefined].includes(plan.hookTransition))delete plan.hookTransition;
  try{plan=snapshotPlanVisualStyle({...plan,visualStyle:raw.visualStyle,subtitles:raw.subtitles} as EditPlan);}catch{/* Keep other valid editing data. */}

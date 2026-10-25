@@ -1,3 +1,4 @@
+import {assertContentLanguage,sourceContentLanguage} from '../lib/content-language.mjs';
 import {buildExternalEditingContext} from './external-editing-context.mjs';
 import {measureAiStage} from './ai-operation.mjs';
 import {hookFailure,hookFailureNotice} from './teaser-selection.mjs';
@@ -31,6 +32,7 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
       // Manual Apply is the explicit import action, not proof that a website
       // read an attachment. Source/request/context/range/citation checks remain.
       let plan=structuredClone(body.plan);
+      assertContentLanguage(plan.language,sourceContentLanguage(source));
       if(plan.providerUsed!==body.provider||plan.parts?.some((p,i)=>p.id!==i+1))throw new Error('External plan provider/part identity mismatch.');
       validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);
       plan=await attachExternalHooks({...plan,captionCues:options.captionTrack},body.hookSelections,{...source,sourceContext:context},String(body.transcript??source.transcript??''),body.provider,options.cues,{instruction:options.instruction,supplementalPrompt:options.supplementalPrompt,externalVideo:true});

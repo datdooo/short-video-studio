@@ -1,3 +1,4 @@
+import {CONTENT_LANGUAGE_SCHEMA,CONTENT_LANGUAGE_INSTRUCTIONS,assertContentLanguage,normalizeLanguageCode} from './content-language.mjs';
 import {MAIN_EDITING_CRITERIA,MAIN_RANGE_REASON_DESCRIPTION,mainInstruction} from './main-instructions.mjs';
 import {EXPLANATION_INSTRUCTIONS} from './explanation-language.mjs';
 import { PLAYBACK_RATE, FOREGROUND_SCALE, timelineDuration, isStillSegment } from "./render-config.mjs";
@@ -51,7 +52,7 @@ export type EditPlan = {
   captionCues?: CaptionTrack;
   teaserTranscriptKey?: string;
   originalTitle: string;
-  language: "de" | "en" | "fr" | "ja" | "ko";
+  language: string; // Original content language, independent of Vietnamese explanations.
   providerUsed: PlanSource;
   parts: EditPart[];
   render: {
@@ -67,6 +68,7 @@ export type EditPlan = {
 
 export type AnalyzeRequest = {
   originalTitle: string;
+  sourceLanguage?: string;
   transcript: string;
   instruction?: string;
   supplementalPrompt?: string;
@@ -145,7 +147,7 @@ export function normalizePlan(plan: Omit<EditPlan, "providerUsed" | "render">, p
     ...(plan.teaserPolicy ? { teaserPolicy: plan.teaserPolicy } : {}),
     visualStyle: resolvePlanVisualStyle(plan),
     originalTitle: plan.originalTitle,
-    language: plan.language,
+    language: assertContentLanguage(plan.language),
     providerUsed,
     parts,
     render: RENDER_PRESET,
@@ -193,6 +195,7 @@ export function parseManualRanges(value: string) {
 }
 
 export function manualPlan(input: {
+  language?: string;
   originalTitle: string;
   part1Title: string;
   part1Ranges: string;
@@ -202,7 +205,7 @@ export function manualPlan(input: {
   return normalizePlan(
     {
       originalTitle: input.originalTitle || "Untitled source video",
-      language: "en",
+      language: normalizeLanguageCode(input.language)||"und",
       parts: [
         {
           id: 1,
@@ -277,7 +280,7 @@ export const EDIT_PLAN_SCHEMA = {
   additionalProperties: false,
   properties: {
     originalTitle: { type: "string" },
-    language: { type: "string", enum: ["de", "en", "fr", "ja", "ko"] },
+    language: CONTENT_LANGUAGE_SCHEMA,
     parts: {
       type: "array",
       minItems: 2,
@@ -316,6 +319,8 @@ export const EDIT_PLAN_SCHEMA = {
 
 export function buildPrompt(request: AnalyzeRequest) {
   return `${MAIN_EDITING_CRITERIA}
+${CONTENT_LANGUAGE_INSTRUCTIONS}
+Source language: ${normalizeLanguageCode(request.sourceLanguage)||'und'}
 
 Output schema is supplied by the caller. Return the retained segments directly; no automatic start trim or duration padding.
 Source title: ${request.originalTitle}

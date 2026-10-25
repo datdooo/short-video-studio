@@ -152,6 +152,7 @@ type WorkerSource = {
   hasAudio: boolean;
   transcript: string;
   subtitleFound: boolean;
+  language?: string;captionTrackId?:string;
   captions?: CaptionTrack["cues"];captionWarning?:string;captionLanguage?:string;
 };
 
@@ -1568,6 +1569,7 @@ export default function Home() {
     setError("");
     try {
       const nextPlan = manualPlan({
+        language:preparedSource?.language,
         originalTitle: sourceTitle,
         part1Title: manualPart1Title,
         part1Ranges: manualPart1Ranges,

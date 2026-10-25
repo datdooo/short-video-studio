@@ -1,3 +1,4 @@
+import {CONTENT_LANGUAGE_VERSION,sourceContentLanguage,contentLanguageSchema,assertContentLanguage} from '../lib/content-language.mjs';
 import {collectTeaserEvidence} from '../lib/teaser-evidence.mjs';
 import {mainInstruction,MAIN_EDITING_VERSION} from '../lib/main-instructions.mjs';
 import {measureAiStage,aiEvent} from './ai-operation.mjs';
@@ -16,7 +17,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
     const digest = await fingerprint(source, options.signal);
     const input = generateMainCandidates(source, context, { ...options, localSourceKey:digest, ...(options.local ? { local:normalizeLocalSignals(options.local,{duration:source.duration,sourceKey:digest}) } : {}) });
     const rawInstruction=String(options.instruction||'');input.rawInstruction=rawInstruction;input.instruction=mainInstruction(rawInstruction).text;input.supplementalPrompt=String(options.supplementalPrompt||'');
-    input.duration=source.duration;input.sourceTitle=source.title;input.sourceLanguage=source.captionWarning&&!source.captionTrackId?'unknown':source.language||'unknown';
+    input.duration=source.duration;input.sourceTitle=source.title;input.sourceLanguage=sourceContentLanguage(source)||'und';input.languagePolicy=CONTENT_LANGUAGE_VERSION;
     const track=options.captionTrack,captionProvenance={origin:track?.origin||'unknown',timing:track?.timing||'cue',language:track?.language||'unknown',trackId:track?.trackId||null,warning:track?.warning||null};
     input.sourceEvidence=collectTeaserEvidence({id:0,title:source.title,hook:'Toàn video để biên tập main',segments:[{start:0,end:source.duration}]},{...source,sourceContext:context,captionProvenance,transcript:String(options.transcript??source.transcript??'')},options.cues||[],{instruction:input.instruction,supplementalPrompt:input.supplementalPrompt,fullOnly:true}).full;
     const { sourceId, ...stable } = input;
@@ -33,11 +34,12 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
       let provider, failure;
       try { provider = await resolveProvider(options.signal); } catch (e) { options.signal?.throwIfAborted(); failure = hookFailure(e); }
       const { sourceId, analysisKey, ...stableInput } = prepared;
-      const key = hash({ explanationLanguage:'vi-v1',analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none', reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured', retryVersion:'explicit-only-v1',logicVersion:MAIN_EDITING_VERSION,prompt:MAIN_INSTRUCTIONS,schema:MAIN_SCHEMA });
+      const schema={...MAIN_SCHEMA,properties:{...MAIN_SCHEMA.properties,language:contentLanguageSchema(prepared.sourceLanguage)}};
+      const key = hash({ explanationLanguage:'vi-v1',analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none', reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured', retryVersion:'explicit-only-v1',logicVersion:MAIN_EDITING_VERSION,prompt:MAIN_INSTRUCTIONS,schema });
       const result = await shared(key, signal => cache.using(key, async () => {
         const cached = await cache.get(key);
         if (cached) {
-          try { const plan = { ...cached, originalTitle:source.title, analysis:{ ...cached.analysis, sourceId, cacheKey:key } }; validatePlan(plan,source,{teasers:false}); assertMainLocks(plan,options.currentPlan); aiEvent('cache',{hit:true}); return plan; } catch { /* Invalid/old cache is not a valid analysis. */ }
+          try { const plan = { ...cached, originalTitle:source.title, analysis:{ ...cached.analysis, sourceId, cacheKey:key } }; assertContentLanguage(plan.language,prepared.sourceLanguage); validatePlan(plan,source,{teasers:false}); assertMainLocks(plan,options.currentPlan); aiEvent('cache',{hit:true}); return plan; } catch { /* Invalid/old cache is not a valid analysis. */ }
         }
         aiEvent('cache',{hit:false});
         let plan, textOnly = false;
@@ -46,7 +48,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
           let localValidation=false;
           try {
             const input={...modelSelectionInput(stableInput),phase:'select-main'};
-            const response=await provider.analyze({input,images,schema:MAIN_SCHEMA,instructions:MAIN_INSTRUCTIONS,signal:AbortSignal.any([signal,AbortSignal.timeout(90000)]),maxTokens:3600});
+            const response=await provider.analyze({input,images,schema,instructions:MAIN_INSTRUCTIONS,signal:AbortSignal.any([signal,AbortSignal.timeout(90000)]),maxTokens:3600});
             localValidation=true;
             plan=await measureAiStage('validation',()=>{
               const next=selectionToPlan(prepared,response.value,{currentPlan:options.currentPlan,provider:provider.id,model:provider.model});
