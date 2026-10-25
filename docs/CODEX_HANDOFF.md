@@ -1,3 +1,34 @@
+# Đóng gói Beta 1110 — 2026-10-25
+
+Đích release/beta/ShortCut Studio Beta.app và Applications sau khi người dùng
+Quit. Version1.1.0-beta.1 build1110, checkpoint local chứa sửa source reuse:
+invalidate khi xóa original, refresh khi explicit Restore, cache missing-media,
+bỏ metadata-only khi reindex, tìm bản local khác cùng YouTube ID trước network.
+Giữ mọi sửa1109/v9/ngôn ngữ/overlay/progress và model/reasoning/dữ liệu Beta.
+
+Build/package/native audit/codesign được cho phép, không tests/AI/download video/
+ASR/render/browser. Kiểm tra artifact/import closure và rollback1109. Người dùng
+đã báo Quit; vẫn kiểm tra tiến trình ngay trước swap Applications. Dữ liệu/
+credentials/Trash không sửa hoặc tự khôi phục. Chưa nghiệm thu reuse runtime.
+Chi tiết SOURCE-REUSE-MISSING-MEDIA-2026-10-25.md.
+
+# Clarified cause: user deleted original in Kho — 2026-10-25
+
+onMoved/onRestored ignored original media, leaving reuse index stale. Added
+exact-source forget on move, optional cache refresh on explicit Restore, without
+network/automatic restoration/newer-source overwrite. Old missing-cache guards
+remain. Details SOURCE-REUSE-MISSING-MEDIA-2026-10-25.md. Source only, unbuilt;
+app1109/data remain unchanged. No tests/download/AI/render/commit.
+
+# Source pending: cached source missing media — 2026-10-25
+
+App remains1109; unbuilt/uncommitted fix. Link00ZFME7VEr8 indexed an existing
+source.json-only folder. findSourceMedia's untyped error bypassed stale-cache
+handling. Added SOURCE_MEDIA_MISSING/404; source-reuse evicts/persists only that
+missing entry and allows the user's prepare action to follow normal download.
+No automatic request now, no data mutation, no tests/build/render/AI/download.
+Why media disappeared unknown; report SOURCE-REUSE-MISSING-MEDIA-2026-10-25.md.
+
 # Đóng gói Beta 1109 — 2026-10-25
 
 Đích release/beta/ShortCut Studio Beta.app, version 1.1.0-beta.1 build 1109.

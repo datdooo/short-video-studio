@@ -223,6 +223,7 @@ const mediaLibrary = createMediaLibrary({
     [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing", "paused", "awaiting-import", "review-required", "render-ready", "submitting"].includes(item.state))))
   )),
   onMoved: async (item) => {
+    if(item.storageId==="current"&&item.kind==="original"){await sourceReuse.forget(item.sourceId);return;}
     if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
     const job = jobs.get(item.jobId);
     if (job) {
@@ -232,6 +233,7 @@ const mediaLibrary = createMediaLibrary({
     await persistBatchHistory({strict:true});
   },
   onRestored: async (item) => {
+    if(item.storageId==="current"&&item.kind==="original"){await sourceReuse.restored(item.sourceId);return;}
     if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
     const outputs = [];
     for (const part of [1, 2]) {
@@ -1040,7 +1042,7 @@ async function findSourceMedia(directory) {
   const entries = await readdir(directory);
   const extensions = new Set([".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"]);
   const candidates = entries.filter((name) => name.startsWith("source.") && extensions.has(path.extname(name).toLowerCase()));
-  if (!candidates.length) throw new Error("Không tìm thấy media file sau khi chuẩn bị source.");
+  if (!candidates.length) throw Object.assign(new Error("Nguồn đã lưu không còn tệp video. Chọn lại nguồn hoặc khôi phục từ Thùng rác nếu đã chuyển."), { code: "SOURCE_MEDIA_MISSING", status: 404 });
   candidates.sort((a, b) => (path.extname(a).toLowerCase() === ".mp4" ? -1 : 1) - (path.extname(b).toLowerCase() === ".mp4" ? -1 : 1));
   return path.join(directory, candidates[0]);
 }
