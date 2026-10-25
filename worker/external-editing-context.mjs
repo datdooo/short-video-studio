@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {modelSelectionInput,MAIN_INSTRUCTIONS} from '../lib/auto-cut/main-content.mjs';
 import {collectTeaserEvidence} from '../lib/teaser-evidence.mjs';
 import {hookInput} from '../lib/teaser-input.mjs';
-import {HOOK_WINNER_INSTRUCTIONS} from '../lib/teaser-prompt.mjs';
+import {externalHookInstructions} from '../lib/teaser-import.mjs';
 import {permittedHookRanges,hookDurationLimits} from '../lib/teaser-hooks.mjs';
 import path from 'node:path';
 
@@ -39,7 +39,7 @@ export function buildExternalEditingContext(source,context,options,prepared,body
   timeUnit:'source-seconds',sourceLanguage:prepared.sourceLanguage||'unknown',duration:source.duration,
   mainInput:{...modelSelectionInput(prepared),sourceEvidence:undefined,evidenceReference:'videoEvidence',editorialRequestReference:'videoEvidence.userRequest'},videoEvidence:evidence,currentParts,
   captionTrack:track,
-  rules:{main:MAIN_INSTRUCTIONS,teaser:HOOK_WINNER_INSTRUCTIONS,durationLimits:hookDurationLimits()},
+  rules:{main:MAIN_INSTRUCTIONS,teaser:externalHookInstructions,durationLimits:hookDurationLimits()},
   attachments:{sourceVideo:options.webAiVideo||{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}${path.extname(source.mediaPath||'')||'.mp4'}`,duration:source.duration,bytes:options.sourceMediaBytes??null,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],representation:'original',delivery:'website-file-input',providerReceipt:'not-verified'}},
   transmission:{textOnly:false,imagesProvided:false,videoProvided:false,
    difference:'Web thủ công dùng toàn bộ text và video nguồn đính kèm riêng. Manifest/đường dẫn tải không chứng minh website đã nhận hoặc xem video. ChatGPT Auto vẫn chỉ gửi text; không thay model hay request Auto.',

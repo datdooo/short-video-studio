@@ -1,3 +1,138 @@
+# Đóng gói Beta 1107 — source checkpoint 2026-10-25
+
+Đích: release/beta/ShortCut Studio Beta.app, version 1.1.0-beta.1 build 1107.
+Checkpoint local chứa giao diện tải TXT/video trực tiếp, nhập JSON thủ công,
+bỏ extension/auto gửi–nhận và prompt/schema 2–3 teaser cho mỗi part thủ công.
+Giữ ChatGPT Auto, source/context validation, draft và dữ liệu Beta.
+
+Quy trình package bắt buộc: compile frontend, copy worker/import closure,
+đóng runtime native, audit dependencies và codesign verify. Kiểm tra artifact
+sau build để xác nhận metadata/module/frontend và không còn extension.
+App trước được package giữ tại .build-*/previous-build.app để rollback.
+Không nghiệm thu runtime/download/import/AI hoặc chất lượng teaser trong lượt
+build. Windows installer chưa rebuild; /Applications chưa cập nhật ở lượt này.
+
+# Quyết định hiện hành: web thủ công, bỏ extension — 2026-10-25
+
+Thay thế mọi hướng dẫn extension/auto gửi–nhận phía dưới. Beta source nay có
+hai nút trực tiếp Tải TXT / Tải video, ô dán JSON và Apply luôn hiện ngoài
+accordion. TXT tự chuẩn bị trong một lần bấm, giữ full prompt/identity/schema,
+không hiển thị prompt dài. Không có DOM bridge hoặc tự Send/nhận JSON nữa.
+Đã bỏ component bridge, extension source và bước copy extension trong package.
+Không động extension trong Chrome hoặc bundle/app đã cài.
+
+Manual ChatGPT/Gemini/Muse giữ v7: 2–3 teaser hợp lệ mỗi part (winner+1–2
+alternatives), kiểm tra từng ứng viên, báo thiếu nếu nguồn không đủ; không bịa.
+Auto ChatGPT/model/reasoning và mọi nghiệp vụ main/manual teaser không đổi.
+Giữ draft JSON/plan khi tải TXT hoặc import lỗi; giữ source/request/context,
+citation/range/duration/lock validation. Worker chỉ nhận manual-import, không
+gán upload receipt cho thao tác tay.
+
+Chưa tests/lint/typecheck/build/browser/AI/download/ASR/render. App 1106 chưa
+cập nhật; chưa nghiệm thu download/import runtime. Không commit/push/merge.
+Chi tiết hiện hành: CHATGPT-WEB-HANDOFF.md. Phần dưới là lịch sử đã bị thay thế.
+
+# Extension 0.4.2 / manual web2–3 teasers — 2026-10-25 (source only)
+
+0.4.1 user run specifically blocks at missing MP4 card despite visible files.
+Fix proven scope inconsistency: upload may use native form while readiness sees
+an inner root; use that same ChatGPT native form only with one visible editor
+and no conversation. Keep exact file identity/busy/Send/source/one-click guards.
+Do not assert this is the exact live failure: browser discovery remains disabled
+even after Full CDP enabled. No live DOM/Send/AI.
+
+Collapsed extension popup Chi tiết lượt web reads safe stage/name/card/Send/scope
+counts, live or last per provider, memory only. Open-only polling, no private
+content or actions. Request this evidence if the next run still blocks; do not
+keep guessing selectors. Source revision0.4.2 agrees in target/background/manifest.
+
+Manual web prompt/schema now winner+1–2 alternatives per part. Existing importer
+and review catalog keep validated choices; dedupe exact ranges, disclose rejected
+or missing extras, reject malformed/>2 alternatives. Shared editorial constraints
+unchanged; Auto remains one winner. Manual context rules and promptVersion/type
+use external-editing-full-media-multi-teaser-v7; saved plan bindings stay valid.
+No extra requests or reanalysis of saved plans. See CHATGPT-WEB-HANDOFF.md top.
+
+All previous changes remain dirty on beta/maintenance, HEAD58f58e8. No tests,
+lint/typecheck/build/render/download/ASR or AI executed. App1106 unchanged; v7
+needs requested packaging. Keep source/data/DEV/production untouched.
+
+# Previous extension 0.4.1 pre-Send card recognition — 2026-10-25 (source only)
+
+Latest screenshots show two mounted file cards and blue Send while Studio stays
+in upload wait. Source gap confirmed: attachmentCard rejected ChatGPT's named
+role=group/composer-attachment-surface button shapes, documented in upstream
+browser-worker.attachFiles. Add those exact accessible-name cases, labelled-by
+metadata and exact leaf-div filename support within verified wrappers; dedupe
+nested wrappers, preserve ambiguity/source/both-file/busy/stability/one-Send.
+
+Existing status now identifies the specific wait stage. Count-only diagnostics
+are retained by the background for its earlier timeout. No prompt/DOM/filename/
+credential logs, blind Send, Enter fallback, retry or business-rule change.
+Manifest and target/background adapter revision0.4.1 agree; old0.4.0 listeners
+require a page reload. Read CHATGPT-WEB-HANDOFF.md top for evidence/limits.
+No live DOM (tool still disabled), AI, upload/Send, tests, build or render. Current
+account's exact failed gate and end-to-end send/import remain unverified. App1106
+unchanged, all source changes preserved and uncommitted.
+
+# Previous extension 0.4.0 MP4 + TXT, auto-send/import — 2026-10-25 (source only)
+
+User explicitly requested automatic send and automatic result application. The
+primary button now uses a short composer command plus two native attachments:
+real source MP4 and exact full UTF-8 prompt TXT. Source/request/context, full
+instructions/schema and import validation remain. SHA256/byte/filename descriptor
+for TXT is checked with the existing video receipt before Send/result acceptance.
+One native multiple FileList/change; require compatible owned input and both
+actual filename cards ready. No MIME/accept/multiple spoof, manual Copy/Apply,
+extra request, auto retry, or silent text-only fallback in the automatic path.
+
+Files: background.js, chatgpt-fill.js, studio-content.js, manifest.json,
+components/chatgpt-web-handoff.tsx and worker/web-ai-video.mjs. Non-MP4 web delivery
+reuses the existing bounded full-duration MP4 review path; original source and
+export are preserved. New cache version full-source-mp4-review-v2. See top of
+CHATGPT-WEB-HANDOFF.md for exact behavior, primary research and limitations.
+
+Branch beta/maintenance, base HEAD58f58e8702d99fec6ba2b9461b7d9bc8294ee4a7;
+all changes remain uncommitted with earlier fixes preserved. Source/diff checks
+only, no AI/tests/build/render/download/ASR. Live browser tool still disabled.
+Release and installed app1106 remain unchanged (packaged extension0.3.0). No
+runtime/upload/auto-import success claimed; update requires requested build.
+
+# Previous extension 0.3.3 uploader ownership — 2026-10-25 (source only)
+
+Researched actual GitHub issue866 (hidden home + visible thread composers) and
+general/photos/camera input roles. Remove the unowned page-wide upload fallback;
+require this composer's containment/form/label/attachment-control association,
+distinguish input roles, scope existing attachments, and re-resolve ownership at
+video-complete. Preserve all source/variant/draft/ready/one-Send/import guards.
+Review also corrected same-native-form inputs outside inner wrappers and kept
+explicit label/control linkage independently. Safe count diagnostics only.
+
+Browser read-only permission is authorized, but discovery still reports Local
+browser use disabled after user says enabled and tool reset. No actual DOM read,
+upload, Send, AI, tests or build. Source extension0.3.3; installed/release app1106
+still contains0.3.0. See `CHATGPT-WEB-HANDOFF.md` for evidence and limits. Do not
+claim exact current-page cause or upload success without runtime evidence.
+
+# Extension0.3.2 empty-editor fix — 2026-10-25 (source only)
+
+Compared actual GitHub sender/adapter and Lexical empty-state implementation.
+Replace raw length>0 with composition-aware empty-editor checks, preserve real
+text/decorators, select only verified empty contents before insertion, keep exact
+prompt matching. Split initial-draft vs changed-prompt errors and carry safe
+phase/length diagnostics. Known scoped native submit supported; voice untouched.
+See top of `CHATGPT-WEB-HANDOFF.md` for sources, choices not copied and limits.
+No tests/browser/AI/build. App1106 unchanged; reload source extension0.3.2/pages.
+
+# Extension0.3.1 composer fix — 2026-10-25 (source only)
+
+Reported COMPOSER_UNSUPPORTED on ChatGPT. Extended ID-only lookup to bounded
+Lexical/ProseMirror/data-testid editors, deduplicated matches and safe count
+errors; retain all draft/source/attachment/Send guards. Background refuses stale
+injected listener version rather than add a second listener. Read
+`CHATGPT-WEB-HANDOFF.md` top section. No actual page DOM retained; current site
+markup and upload remain unverified. No tests/browser/AI/build; app1106 remains.
+
 # Beta1106 packaging checkpoint — 2026-10-25
 
 User authorized packaging the current Beta source. Build1106 includes all pending

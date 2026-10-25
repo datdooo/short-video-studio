@@ -27,14 +27,9 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
       if(body.analysisKey!==externalContext.analysisKey)throw new Error('Dữ liệu nguồn, transcript, main/locks hoặc quy tắc prompt đã đổi. Tạo prompt mới trước khi nhập JSON.');
       const attachment=body.attachmentConfirmation;
       if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Video đính kèm không khớp source/request/context hiện tại.');
-      if(attachment.method==='extension-composer'){
-        const media=externalContext.attachments.sourceVideo;
-        if(attachment.evidence!=='composer-upload-ready'||attachment.filename!==media.filename||attachment.variantKey!==media.variantKey||!Number.isSafeInteger(attachment.bytes)||attachment.bytes!==media.bytes)throw Error('Biên nhận đính kèm không khớp video nguồn. Plan được giữ nguyên.');
-      }else if(attachment.method!==undefined&&attachment.method!=='manual-import')throw Error('Cách nhập video không được hỗ trợ.');
-      // An extension receipt records visible composer readiness, not a provider
-      // or semantic-video guarantee. Manual Apply is an explicit import action;
-      // it no longer requires a redundant checkbox. All identity, source, range,
-      // citation and main-lock checks below remain authoritative.
+      if(attachment.method!==undefined&&attachment.method!=='manual-import')throw Error('Chỉ hỗ trợ nhập kết quả web thủ công.');
+      // Manual Apply is the explicit import action, not proof that a website
+      // read an attachment. Source/request/context/range/citation checks remain.
       let plan=structuredClone(body.plan);
       if(plan.providerUsed!==body.provider||plan.parts?.some((p,i)=>p.id!==i+1))throw new Error('External plan provider/part identity mismatch.');
       validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);

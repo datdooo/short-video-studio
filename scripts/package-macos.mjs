@@ -59,9 +59,7 @@ await cp(path.join(projectRoot, "worker"), path.join(appRoot, "worker"), { recur
 await mkdir(path.join(appRoot, "lib"), { recursive: true });
 await copyWorkerLibraries(projectRoot, appRoot);
 await cp(path.join(projectRoot, "desktop"), path.join(resources, "desktop"), { recursive: true });
-// Ship the manually installed Chromium bridge with the same source checkpoint.
-// Packaging does not install it in a browser or send anything to ChatGPT.
-await cp(path.join(projectRoot,"extensions","chatgpt-handoff"),path.join(resources,"extensions","chatgpt-handoff"),{recursive:true});
+// Web providers use manual TXT/video downloads; no browser extension is shipped.
 await mkdir(path.join(resources,"docs"),{recursive:true});
 await copyFile(path.join(projectRoot,"docs","CHATGPT-WEB-HANDOFF.md"),path.join(resources,"docs","CHATGPT-WEB-HANDOFF.md"));
 await writeFile(path.join(resources, "config.json"), JSON.stringify(target.config, null, 2));

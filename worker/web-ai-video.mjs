@@ -7,7 +7,7 @@ import {requireDiskSpace} from './analysis-cache.mjs';
 
 export const WEB_AI_VIDEO_LIMIT=512*1024*1024;
 const TARGET_BYTES=480*1024*1024;
-export const WEB_AI_VIDEO_VERSION='full-source-review-v1';
+export const WEB_AI_VIDEO_VERSION='full-source-mp4-review-v2';
 const error=(code,message)=>Object.assign(Error(message),{code});
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 
@@ -29,13 +29,14 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
   const info=await stat(source.mediaPath);signal?.throwIfAborted();
   if(!info.isFile())throw error('WEB_VIDEO_SOURCE','Không đọc được video nguồn.');
   const statKey=JSON.stringify([source.id,info.size,info.mtimeMs,info.dev,info.ino]);
-  const sourceHash=info.size>WEB_AI_VIDEO_LIMIT&&fingerprint?await identities(statKey,async active=>{const releaseHash=retain(source.id);try{return await fingerprint(source,active);}finally{releaseHash();}},signal):undefined;signal?.throwIfAborted();
+  const needsDerivative=info.size>WEB_AI_VIDEO_LIMIT||path.extname(source.mediaPath).toLowerCase()!=='.mp4';
+  const sourceHash=needsDerivative&&fingerprint?await identities(statKey,async active=>{const releaseHash=retain(source.id);try{return await fingerprint(source,active);}finally{releaseHash();}},signal):undefined;signal?.throwIfAborted();
   const signature={sourceHash,version:WEB_AI_VIDEO_VERSION,sourceId:source.id,kind:source.kind,sourceUrl:source.sourceUrl,bytes:info.size,mtimeMs:info.mtimeMs,dev:info.dev,ino:info.ino,duration:source.duration,sourceStart:source.sourceStart,videoStart:source.videoStart,videoDuration:source.videoDuration,audioStart:source.audioStart,audioEnd:source.audioEnd,hasAudio:source.hasAudio,width:source.width,height:source.height,maxBytes:WEB_AI_VIDEO_LIMIT};
   const key=createHash('sha256').update(JSON.stringify(signature)).digest('hex');
   return{info,key,signature};
  }
  function descriptor(source,file,bytes,{method='original',width=source.width,height=source.height,key,deliveryHash,originalBytes=bytes}={}){
-  return{file,manifest:{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}${method==='original'?path.extname(file):'.mp4'}`,bytes,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],width,height,representation:method==='original'?'original':'lower-resolution',preparation:method,originalBytes,variantKey:deliveryHash?createHash('sha256').update(JSON.stringify([key,deliveryHash])).digest('hex'):key,delivery:'website-file-input',providerReceipt:'not-verified',...(method==='youtube-lower-resolution'?{limitation:'Cùng YouTube ID và kiểm tra timeline/âm thanh; không chứng minh độc lập mọi cảnh không thay đổi trên máy chủ YouTube.'}:{})}};
+  return{file,manifest:{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}.mp4`,bytes,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],width,height,representation:method==='original'?'original':'lower-resolution',preparation:method,originalBytes,variantKey:deliveryHash?createHash('sha256').update(JSON.stringify([key,deliveryHash])).digest('hex'):key,delivery:'website-file-input',providerReceipt:'not-verified',...(method==='youtube-lower-resolution'?{limitation:'Cùng YouTube ID và kiểm tra timeline/âm thanh; không chứng minh độc lập mọi cảnh không thay đổi trên máy chủ YouTube.'}:{})}};
  }
  async function cached(source,key,originalBytes){
   try{
@@ -57,7 +58,7 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
    await writeFile(path.join(directory,'owner.json'),JSON.stringify({version:WEB_AI_VIDEO_VERSION,operationId,key,sourceId:source.id}),{flag:'wx',mode:0o600});
    // One lower-rendition acquisition, never a second full-size source import.
    // Its selector may choose 720/480/360 according to the byte budget.
-   if(source.kind==='youtube'&&source.sourceUrl&&youtube?.downloadReview){
+   if(info.size>WEB_AI_VIDEO_LIMIT&&source.kind==='youtube'&&source.sourceUrl&&youtube?.downloadReview){
     try{
      await youtube.downloadReview(source.sourceUrl,{maxHeight:source.height>720?720:source.height>480?480:360,maxBytes:TARGET_BYTES},async value=>{
       signal.throwIfAborted();spanCheck(source,value.media);
@@ -108,7 +109,10 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
   const release=retain(source.id);
   try{
    const {info,key}=await originalIdentity(source,signal);
-   if(info.size<=WEB_AI_VIDEO_LIMIT)return descriptor(source,source.mediaPath,info.size,{key});
+   // The web workflow attaches a real MP4, not another container renamed to
+   // .mp4. Reuse the bounded, full-duration local review path for other formats;
+   // the managed source and final export remain untouched.
+   if(info.size<=WEB_AI_VIDEO_LIMIT&&path.extname(source.mediaPath).toLowerCase()==='.mp4')return descriptor(source,source.mediaPath,info.size,{key});
    return await shared(key,async active=>{
     const releaseWork=retain(source.id);
     try{
