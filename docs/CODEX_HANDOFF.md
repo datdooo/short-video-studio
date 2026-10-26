@@ -1,3 +1,16 @@
+# Beta 1111 — chuẩn bị TXT độc lập video — 2026-10-26
+
+Log hiện có: 324821ms tổng, input16321ms, web-video308243ms, 0 request AI.
+TXT/import trước đây chờ ensure video dưới512MiB; nay chỉ describe/stat nguồn,
+để chuẩn bị video cho nút Tải video. Giữ full text, main/teaser/model/validators.
+Manifest v10 ghi pending đúng thực tế, sourceKey download/import/restore, progress
+NDJSON tên bước thật + elapsed. Không giảm timeout hoặc bỏ bằng chứng.
+Báo cáo WEB-PROMPT-PREPARATION-2026-10-26.md. User cho phép build/cập nhật và đã
+báo Quit; kiểm tra process lại trước thay Applications. Checkpoint local + một
+lượt package vào app Beta cố định, giữ1110 rollback, profile/ports/data nguyên.
+Native audit/codesign và import closure bắt buộc. Chưa runtime/đo thời gian mới;
+không tests/AI/ASR/download/render/browser, Windows chưa cập nhật.
+
 # Đóng gói Beta 1110 — 2026-10-25
 
 Đích release/beta/ShortCut Studio Beta.app và Applications sau khi người dùng

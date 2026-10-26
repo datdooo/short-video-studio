@@ -12,15 +12,18 @@ import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTea
 import {validatePlan} from './plan-validation.mjs';
 import {stat} from 'node:fs/promises';
 // One orchestration path for single-source Auto, external context/import and batch.
-export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers,prepareWebVideo}) {
+export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers,describeWebVideo}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
     const {context,options}=await measureAiStage('preparation',()=>prepareInputs(source,body,signal));
     if(body.mode==='context'||body.mode==='import'){
-      if(prepareWebVideo)options.webAiVideo=(await measureAiStage('preparation',()=>prepareWebVideo(source,signal),{reason:'web-video'})).manifest;
+      if(describeWebVideo)options.webAiVideo=await measureAiStage('preparation',()=>describeWebVideo(source,signal),{reason:'web-video-manifest'});
       else options.sourceMediaBytes=(await stat(source.mediaPath)).size;
     }
-    if(body.mode==='context')return{context:buildExternalEditingContext(source,context,options,await mainContent.prepare(source,context,options),body)};
+    if(body.mode==='context'){
+      const input=await measureAiStage('preparation',()=>mainContent.prepare(source,context,options),{reason:'main-candidates'});
+      return{context:await measureAiStage('preparation',()=>buildExternalEditingContext(source,context,options,input,body),{reason:'prompt-context'})};
+    }
     if(body.mode==='import'){
       if(!['gemini','muse','chatgpt-web'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');
       const input=await mainContent.prepare(source,context,options);
@@ -28,6 +31,7 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
       if(body.analysisKey!==externalContext.analysisKey)throw new Error('Dữ liệu nguồn, transcript, main/locks hoặc quy tắc prompt đã đổi. Tạo prompt mới trước khi nhập JSON.');
       const attachment=body.attachmentConfirmation;
       if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Video đính kèm không khớp source/request/context hiện tại.');
+      if(externalContext.attachments.sourceVideo.sourceKey&&attachment.sourceKey!==externalContext.attachments.sourceVideo.sourceKey)throw Error('Video nguồn đã đổi từ lúc tạo TXT; tải TXT/video mới trước khi nhập JSON.');
       if(attachment.method!==undefined&&attachment.method!=='manual-import')throw Error('Chỉ hỗ trợ nhập kết quả web thủ công.');
       // Manual Apply is the explicit import action, not proof that a website
       // read an attachment. Source/request/context/range/citation checks remain.

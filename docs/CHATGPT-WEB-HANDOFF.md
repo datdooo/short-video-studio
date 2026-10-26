@@ -15,6 +15,13 @@ Không cần extension, không đọc DOM, không tự gửi hoặc tự lấy c
 4. Người dùng tự đính kèm hai tệp và gửi trên website đã chọn.
 5. Dán JSON vào ô luôn hiện bên dưới, bấm **Áp dụng 2 part**.
 
+Beta1111 / prompt v10: Tải TXT chỉ chuẩn bị text và định danh nguồn; không chờ
+chuyển mã hoặc tải rendition của video. Tải video làm việc đó riêng khi cần.
+TXT ghi rõ bản delivery đang chờ chuẩn bị; không giả kích thước/độ phân giải
+cuối hoặc bằng chứng upload. Hai thao tác dùng source binding ổn định; nhập JSON
+vẫn kiểm tra source/request/context và citation/range. Xem
+WEB-PROMPT-PREPARATION-2026-10-26.md. Prompt v9 cũ phải tải lại TXT.
+
 Hai nút tải, ô JSON và Apply nằm ngoài mọi danh sách thu gọn. Không có checkbox
 xác nhận video, không hiển thị toàn bộ prompt hoặc trạng thái tự đọc câu trả lời.
 Bộ đếm thời gian chỉ áp dụng khi app thật sự chuẩn bị context/kiểm tra import;

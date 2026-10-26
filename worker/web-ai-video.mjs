@@ -38,6 +38,19 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
  function descriptor(source,file,bytes,{method='original',width=source.width,height=source.height,key,deliveryHash,originalBytes=bytes}={}){
   return{file,manifest:{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}.mp4`,bytes,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],width,height,representation:method==='original'?'original':'lower-resolution',preparation:method,originalBytes,variantKey:deliveryHash?createHash('sha256').update(JSON.stringify([key,deliveryHash])).digest('hex'):key,delivery:'website-file-input',providerReceipt:'not-verified',...(method==='youtube-lower-resolution'?{limitation:'Cùng YouTube ID và kiểm tra timeline/âm thanh; không chứng minh độc lập mọi cảnh không thay đổi trên máy chủ YouTube.'}:{})}};
  }
+ // TXT and JSON import need a stable source binding, not a completed delivery
+ // encode. Do not hash/download/transcode here or inspect derivative cache: the
+ // same prompt must remain valid before and after the separate video download.
+ async function describe(source,signal){
+  const release=retain(source.id);
+  try{
+   signal?.throwIfAborted();const info=await stat(source.mediaPath);signal?.throwIfAborted();
+   if(!info.isFile())throw error('WEB_VIDEO_SOURCE','Không đọc được video nguồn.');
+   const sourceKey=createHash('sha256').update(JSON.stringify({version:'web-video-source-binding-v1',sourceId:source.id,bytes:info.size,mtimeMs:info.mtimeMs,dev:info.dev,ino:info.ino,duration:source.duration,sourceStart:source.sourceStart,videoStart:source.videoStart,videoDuration:source.videoDuration,audioStart:source.audioStart,audioEnd:source.audioEnd,hasAudio:source.hasAudio,width:source.width,height:source.height})).digest('hex');
+   const derivative=info.size>WEB_AI_VIDEO_LIMIT||path.extname(source.mediaPath).toLowerCase()!=='.mp4';
+   return{id:`source-video-${source.id}`,sourceId:source.id,sourceKey,filename:`source-${source.id}.mp4`,bytes:derivative?null:info.size,originalBytes:info.size,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],representation:derivative?'delivery-copy-pending':'original',preparation:derivative?'on-video-download':'original',maxBytes:WEB_AI_VIDEO_LIMIT,delivery:'manual-download',providerReceipt:'not-verified',...(derivative?{limitation:'Bản MP4 nhẹ chỉ được chuẩn bị khi bấm Tải video; kích thước/độ phân giải cuối chưa xác định ở bước TXT. Kiểm tra tệp thực đính kèm, không coi manifest là bằng chứng đã nhận/xem video.'}:{width:source.width,height:source.height})};
+  }finally{release();}
+ }
  async function cached(source,key,originalBytes){
   try{
    const metaPath=path.join(root,key+'.json'),metaInfo=await lstat(metaPath);
@@ -122,5 +135,5 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
    },signal);
   }finally{release();}
  }
- return{ensure,isBusy:sourceId=>(busy.get(sourceId)||0)>0,async using(source,signal,work){const release=retain(source.id);try{return await work(await ensure(source,signal));}finally{release();}}};
+ return{describe,ensure,isBusy:sourceId=>(busy.get(sourceId)||0)>0,async using(source,signal,work){const release=retain(source.id);try{return await work(await ensure(source,signal));}finally{release();}}};
 }

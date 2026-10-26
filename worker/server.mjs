@@ -767,7 +767,7 @@ const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-vide
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
 const processBatch = createBatchProcessor({acquire:async(url,signal,onProgress)=>{const stop=youtube.subscribeProgress(url,onProgress);try{return await importYouTube(url,signal);}finally{stop();}},load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
-const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers,prepareWebVideo:(source,signal)=>webAiVideos.ensure(source,signal)});
+const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers,describeWebVideo:(source,signal)=>webAiVideos.describe(source,signal)});
 const analyzeSource=(source,body,signal)=>withAiOperation('generate',()=>autoCutWorkflow(source,body,signal));
 
 async function mainAnalysisInputs(source, body, signal) {
@@ -780,7 +780,7 @@ async function mainAnalysisInputs(source, body, signal) {
   // overlap. This does not parallelize AI calls or open another heavy lease.
   const preparation=new AbortController(),preparing=AbortSignal.any([...(signal?[signal]:[]),preparation.signal]);
   let context,local;
-  try{[context,local]=await Promise.all([sourceContexts.ensure(source,{signal:preparing,comments:true}),localSignals.forSource(source,preparing)]);}
+  try{[context,local]=await Promise.all([measureAiStage('preparation',()=>sourceContexts.ensure(source,{signal:preparing,comments:true}),{reason:'source-context'}),measureAiStage('preparation',()=>localSignals.forSource(source,preparing),{reason:'local-signals'})]);}
   finally{preparation.abort();}
   context.visualSignals = { ...local.visual,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
   context.audioSignals = { ...local.audio,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
@@ -792,7 +792,7 @@ async function mainAnalysisInputs(source, body, signal) {
   if (!cues.length && !body.transcript?.trim() && source.hasAudio && source.duration <= 1800) {
     try {
       const status = await speech.status();
-      if(status.binaryReady&&status.modelReady){await requireDiskSpace(dataRoot,256*1024*1024+Math.ceil(source.duration*32000));cues=(await speech.captions(source,AbortSignal.any([signal,AbortSignal.timeout(60000)]))).cues;}
+      if(status.binaryReady&&status.modelReady){await requireDiskSpace(dataRoot,256*1024*1024+Math.ceil(source.duration*32000));cues=(await measureAiStage('preparation',()=>speech.captions(source,AbortSignal.any([signal,AbortSignal.timeout(60000)])),{reason:'source-captions'})).cues;}
     } catch { signal?.throwIfAborted(); /* Use available local/metadata evidence; no model is downloaded. */ }
   }
   const track=selectionCaptionTrack({captionCues:body.captionCues||body.currentPlan?.captionCues},source,body.transcript||source.transcript,
@@ -2008,9 +2008,14 @@ const server = createServer(async (request, response) => {
       try{
         const expectedVariant=requestUrl.searchParams.get('variant');
         if(expectedVariant!==null&&!/^[a-f0-9]{64}$/.test(expectedVariant))throw Object.assign(Error('Định danh bản video gửi web không hợp lệ.'),{status:400});
+        const expectedSource=requestUrl.searchParams.get('source');
+        if(expectedSource!==null&&!/^[a-f0-9]{64}$/.test(expectedSource))throw Object.assign(Error('Định danh nguồn video gửi web không hợp lệ.'),{status:400});
         const source=await loadSource(manualMedia[1],controller.signal);
+        const assertDownloadSource=async()=>{if(expectedSource!==null&&(await webAiVideos.describe(source,controller.signal)).sourceKey!==expectedSource)throw Object.assign(Error('Nguồn đã đổi từ lúc tạo TXT; chưa tải video của lượt cũ.'),{status:409});};
+        await assertDownloadSource();
         await webAiVideos.using(source,controller.signal,async prepared=>{
           if(expectedVariant!==null&&prepared.manifest.variantKey!==expectedVariant)throw Object.assign(Error('Bản video hoặc nguồn đã đổi; chưa truyền video của lượt cũ.'),{status:409});
+          await assertDownloadSource();
           await serveMediaPath(request,response,prepared.file,{download:true,filename:prepared.manifest.filename});
         });
       }finally{response.off('close',abort);}return;

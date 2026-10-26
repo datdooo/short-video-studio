@@ -118,7 +118,7 @@ import {lockedParts} from "@/lib/auto-cut/locks.mjs";
 import { buildMusePrompt, parseMusePlan, WEB_AI_PROMPT_VERSION } from "@/lib/muse-plan.mjs";
 import { locateTimelineTime, timelineTimeForSegment } from "@/lib/preview-timeline.mjs";
 
-type WebAiContext = { sourceId:string;transcript:string;instruction:string;provider:AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack;media?:{id:string;filename:string;bytes:number|null;duration:number;variantKey:string} };
+type WebAiContext = { sourceId:string;transcript:string;instruction:string;provider:AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack;media?:{id:string;filename:string;bytes:number|null;duration:number;sourceKey?:string;variantKey?:string} };
 
 const WORKER_ORIGIN = resolveWorkerOrigin(process.env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN);
 
@@ -311,6 +311,7 @@ export default function Home() {
   const [webAiPhase,setWebAiPhase]=useState<'prompt'|'import'|null>(null);
   const webAiPending=useRef(false);
   const [webAiStartedAt,setWebAiStartedAt]=useState(0);
+  const [webAiPreparationLabel,setWebAiPreparationLabel]=useState('Chuẩn bị dữ liệu prompt');
   const [webAiNotice, setWebAiNotice] = useState("");
   const [webAiError, setWebAiError] = useState("");
   const [error, setError] = useState("");
@@ -488,9 +489,9 @@ export default function Home() {
     setWebAiPrompt(d.webAiPrompt||'');setWebAiResult(d.webAiResult||'');
     const restoredWeb=d.webAiContext;
     // Legacy prompts/JSON remain available as drafts, but an old attachment
-    // without a variant identity cannot be rebound to a new video silently.
+    // without a source/variant identity cannot bind to a new video silently.
     const restoredMedia=restoredWeb?.media;
-    setWebAiContext(restoredWeb?{...restoredWeb,media:restoredMedia&&typeof restoredMedia.variantKey==='string'?{...restoredMedia,variantKey:restoredMedia.variantKey}:undefined}:null);
+    setWebAiContext(restoredWeb?{...restoredWeb,media:restoredMedia&&(typeof restoredMedia.sourceKey==='string'||typeof restoredMedia.variantKey==='string')?restoredMedia:undefined}:null);
     pendingPreviewRestore.current=d.previewTime||0;setPreviewCurrentTime(d.previewTime||0);
     restoringSource.current=!!d.sourceId;setRetainedSourceId(d.sourceId||'');setInterruptedTasks(d.interrupted||[]);
     if(d.interrupted?.length)setAnalysisNotice('Tác vụ đã gián đoạn: '+d.interrupted.join(', ')+'. Không tự gửi lại.');
@@ -1330,7 +1331,7 @@ export default function Home() {
     const selectionEpoch = sourceSelectionEpoch.current;
     if (!isWebAi||webAiPending.current) {if(throwOnError)throw Error("Đang có tác vụ chuẩn bị khác.");return;}
     if(effectiveTiming.error){if(throwOnError)throw Error(effectiveTiming.error);setWebAiError(effectiveTiming.error);return;}
-    const ticket=analysisRequests.current.begin();webAiPending.current=true;setWebAiPhase('prompt');setWebAiStartedAt(Date.now());
+    const ticket=analysisRequests.current.begin();webAiPending.current=true;setWebAiPhase('prompt');setWebAiStartedAt(Date.now());setWebAiPreparationLabel('Chuẩn bị dữ liệu prompt');
     const signal=ticket.controller.signal;
     setWebAiError(""); setWebAiNotice("");
     setIsAnalyzing(true);
@@ -1342,13 +1343,20 @@ export default function Home() {
       const requestId = crypto.randomUUID();
       const lockedPlan=hasEditPlan?structuredClone(previewPlan):undefined;
       const requestedMainSignature=latestMainSignature.current;
-      const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"context",requestId,provider,transcript:content,instruction,supplementalPrompt,currentPlan:lockedPlan,...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
-      const data=await response.json() as {context?:({analysisKey:string;captionTrack?:CaptionTrack;attachments?:{sourceVideo:{id:string;filename:string;bytes:number|null;duration:number;variantKey:string}}}&Record<string,unknown>);error?:string};
+      const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"context",progress:true,requestId,provider,transcript:content,instruction,supplementalPrompt,currentPlan:lockedPlan,...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
+      const data=await readAiOperation<{context?:({analysisKey:string;captionTrack?:CaptionTrack;attachments?:{sourceVideo:NonNullable<WebAiContext['media']>}}&Record<string,unknown>)}>(response,diagnostics=>{
+        if(!analysisRequests.current.isCurrent(ticket)||currentWebRevision.current!==requestedRevision)return;
+        const labels:Record<string,string>={'source-context':'Thu thập metadata, replay và bình luận','local-signals':'Chuẩn bị tín hiệu nguồn','source-captions':'Chuẩn bị phụ đề nguồn','web-video-manifest':'Kiểm tra định danh video','main-candidates':'Sắp xếp dữ liệu nội dung','prompt-context':'Đóng gói dữ liệu prompt'};
+        const pending=new Set<string>();let latest:string|undefined;
+        for(const event of diagnostics.events)if(event.reason&&labels[event.reason]){latest=event.reason;if(event.durationMs===undefined)pending.add(event.reason);else pending.delete(event.reason);}
+        setWebAiPreparationLabel(pending.size>1?'Thu thập dữ liệu và tín hiệu nguồn':labels[[...pending][0]||latest||'']||'Chuẩn bị dữ liệu prompt');
+      });
       if(!response.ok||!data.context)throw new Error(data.error||"Không chuẩn bị được context/candidates.");
       const prepared=data.context;
       signal.throwIfAborted();
       if(!analysisRequests.current.isCurrent(ticket)||currentWebRevision.current!==requestedRevision)throw Error("Dữ liệu đã đổi; đã dừng chuẩn bị lượt cũ.");
       if(latestMainSignature.current!==requestedMainSignature)throw Error('Main hoặc phụ đề đã đổi trong lúc tạo prompt. Tạo lại prompt cho bản hiện tại.');
+      setWebAiPreparationLabel('Tạo tệp TXT');
       const prompt=buildMusePrompt('',EDIT_PLAN_SCHEMA,source,{requestId,analysisKey:prepared.analysisKey,context:prepared});
       const context:WebAiContext={sourceId:source.id,transcript:content,instruction,supplementalPrompt,provider,requestId,analysisKey:prepared.analysisKey,lockedPlan,mainSignature:requestedMainSignature,promptVersion:WEB_AI_PROMPT_VERSION,captionTrack:prepared.captionTrack,media:prepared.attachments?.sourceVideo};
       setWebAiPrompt(prompt);setWebAiContext(context);
@@ -1526,7 +1534,7 @@ export default function Home() {
       const importTrack=context.captionTrack||previewPlan.captionCues;
       let nextPlan:EditPlan = {...refined,captionCues:importTrack};
       if(context.analysisKey){
-        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,...(context.captionTrack?{captionCues:context.captionTrack}:{}),attachmentConfirmation:{attached:true,sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,mediaId:context.media.id,method:'manual-import'},hookSelections:selections,plan:nextPlan})});
+        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,...(context.captionTrack?{captionCues:context.captionTrack}:{}),attachmentConfirmation:{attached:true,sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,mediaId:context.media.id,sourceKey:context.media.sourceKey,method:'manual-import'},hookSelections:selections,plan:nextPlan})});
         const data=await response.json() as {plan?:EditPlan;error?:string};if(!response.ok||!data.plan)throw new Error(data.error||"Import context đã thay đổi.");nextPlan=data.plan;
       }
       const verified=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/teaser-hooks`,{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'validate-import',plan:nextPlan,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt})});
@@ -2019,7 +2027,7 @@ export default function Home() {
                     {webAiPhase==='prompt'?<Loader2 className="animate-spin"/>:<Download/>}Tải TXT
                   </Button>
                   {preparedSource&&workerHealth?.ok&&!isPreparingSource?<Button asChild variant="outline" size="action">
-                    <a href={`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/manual-video${webAiPromptIsCurrent&&webAiContext?.media?`?variant=${encodeURIComponent(webAiContext.media.variantKey)}`:''}`}><Download/>Tải video</a>
+                    <a href={`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/manual-video${webAiPromptIsCurrent&&webAiContext?.media?.sourceKey?`?source=${encodeURIComponent(webAiContext.media.sourceKey)}`:webAiPromptIsCurrent&&webAiContext?.media?.variantKey?`?variant=${encodeURIComponent(webAiContext.media.variantKey)}`:''}`}><Download/>Tải video</a>
                   </Button>:<Button type="button" variant="outline" size="action" disabled><Download/>Tải video</Button>}
                 </div>
                 <p className="studio-muted text-xs">Gửi TXT + video trong {webAiName}, rồi dán JSON bên dưới.</p>
@@ -2035,7 +2043,7 @@ export default function Home() {
           {isAnalyzing&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice('Đã dừng phân tích; giữ plan hiện tại.');}}>Dừng phân tích</Button>}
           {error && <p role="alert" className="studio-inline-error">{error}</p>}
           {analysisNotice&&<p role="status" className="studio-inline-notice">{analysisNotice}</p>}
-          {isWebAi?(webAiPhase?<TaskProgress label={webAiPhase==='prompt'?'Chuẩn bị prompt':'Kiểm tra và lưu JSON'} startedAt={webAiStartedAt}/>:null):<AiOperationStatus diagnostics={analysisDiagnostics} startedAt={analysisStartedAt} running={isAnalyzing&&Boolean(activeAnalysis.current)} finishedAt={analysisFinishedAt} finishedStage={analysisFinishedStage}/>}
+          {isWebAi?(webAiPhase?<TaskProgress label={webAiPhase==='prompt'?webAiPreparationLabel:'Kiểm tra và lưu JSON'} startedAt={webAiStartedAt}/>:null):<AiOperationStatus diagnostics={analysisDiagnostics} startedAt={analysisStartedAt} running={isAnalyzing&&Boolean(activeAnalysis.current)} finishedAt={analysisFinishedAt} finishedStage={analysisFinishedStage}/>}
           <SourceOptionsSection id="source-advanced" label="Nâng cao" open={sourceAdvancedOpen} onOpenChange={setSourceAdvancedOpen} className="studio-advanced">
           <SourceOptionsSection id="source-ai-instructions" label="Yêu cầu AI" className="studio-ai-instructions mt-2">
           {mainInstruction(instruction).compatibility==='legacy-factory-default-replaced'&&<p className="studio-muted text-xs">Quy tắc mặc định cũ dùng tiêu chí MAIN mới khi phân tích. <button type="button" className="studio-ghost" onClick={()=>{invalidateAnalysis();setInstruction(MAIN_EDITING_CRITERIA);}}>Cập nhật ô yêu cầu</button></p>}
