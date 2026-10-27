@@ -6,8 +6,9 @@ import {createSharedOperations} from './shared-operation.mjs';
 import {requireDiskSpace} from './analysis-cache.mjs';
 
 export const WEB_AI_VIDEO_LIMIT=512*1024*1024;
+export const WEB_AI_VIDEO_HEIGHT=480;
 const TARGET_BYTES=480*1024*1024;
-export const WEB_AI_VIDEO_VERSION='full-source-mp4-review-v2';
+export const WEB_AI_VIDEO_VERSION='full-source-mp4-review-480p-v3';
 const error=(code,message)=>Object.assign(Error(message),{code});
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 
@@ -15,6 +16,7 @@ const finite=value=>typeof value==='number'&&Number.isFinite(value);
 // reuse this lower-quality input in the editor, ASR, preview or final export.
 export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint,isLocked=()=>false}){
  const shared=createSharedOperations(),identities=createSharedOperations(),busy=new Map();
+ const needsDerivative=(source,info)=>info.size>WEB_AI_VIDEO_LIMIT||source.height>WEB_AI_VIDEO_HEIGHT||path.extname(source.mediaPath).toLowerCase()!=='.mp4';
  function retain(sourceId){if(isLocked(sourceId))throw error('SOURCE_BUSY','Nguồn đang ở Thùng rác hoặc đang di chuyển.');busy.set(sourceId,(busy.get(sourceId)||0)+1);return()=>{const n=busy.get(sourceId)||0;if(n<=1)busy.delete(sourceId);else busy.set(sourceId,n-1);};}
  function spanCheck(original,review){
   // Two encodes can add AAC priming/container rounding. These small tolerances
@@ -24,14 +26,14 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
   for(const key of ['videoStart','audioStart','audioEnd'])if(finite(original[key])&&(!finite(review[key])||Math.abs(review[key]-original[key])>epsilon))throw error('WEB_VIDEO_TIMELINE','Mốc âm thanh/hình ảnh của bản nhẹ lệch nguồn; chưa gửi.');
   if(finite(original.videoDuration)&&(!finite(review.videoDuration)||Math.abs(review.videoDuration-original.videoDuration)>epsilon))throw error('WEB_VIDEO_TIMELINE','Video nhẹ chưa chứng minh đủ khoảng hình ảnh nguồn.');
   if(!review.width||!review.height||Math.abs(review.width-original.width*review.height/original.height)>2.1)throw error('WEB_VIDEO_GEOMETRY','Tỉ lệ khung hình bản nhẹ không khớp nguồn.');
+  if(review.height>WEB_AI_VIDEO_HEIGHT||review.height>original.height||review.width>original.width)throw error('WEB_VIDEO_GEOMETRY','Bản gửi web phải tối đa 480p và không phóng lớn nguồn.');
  }
  async function originalIdentity(source,signal){
   const info=await stat(source.mediaPath);signal?.throwIfAborted();
   if(!info.isFile())throw error('WEB_VIDEO_SOURCE','Không đọc được video nguồn.');
   const statKey=JSON.stringify([source.id,info.size,info.mtimeMs,info.dev,info.ino]);
-  const needsDerivative=info.size>WEB_AI_VIDEO_LIMIT||path.extname(source.mediaPath).toLowerCase()!=='.mp4';
-  const sourceHash=needsDerivative&&fingerprint?await identities(statKey,async active=>{const releaseHash=retain(source.id);try{return await fingerprint(source,active);}finally{releaseHash();}},signal):undefined;signal?.throwIfAborted();
-  const signature={sourceHash,version:WEB_AI_VIDEO_VERSION,sourceId:source.id,kind:source.kind,sourceUrl:source.sourceUrl,bytes:info.size,mtimeMs:info.mtimeMs,dev:info.dev,ino:info.ino,duration:source.duration,sourceStart:source.sourceStart,videoStart:source.videoStart,videoDuration:source.videoDuration,audioStart:source.audioStart,audioEnd:source.audioEnd,hasAudio:source.hasAudio,width:source.width,height:source.height,maxBytes:WEB_AI_VIDEO_LIMIT};
+  const sourceHash=needsDerivative(source,info)&&fingerprint?await identities(statKey,async active=>{const releaseHash=retain(source.id);try{return await fingerprint(source,active);}finally{releaseHash();}},signal):undefined;signal?.throwIfAborted();
+  const signature={sourceHash,version:WEB_AI_VIDEO_VERSION,sourceId:source.id,kind:source.kind,sourceUrl:source.sourceUrl,bytes:info.size,mtimeMs:info.mtimeMs,dev:info.dev,ino:info.ino,duration:source.duration,sourceStart:source.sourceStart,videoStart:source.videoStart,videoDuration:source.videoDuration,audioStart:source.audioStart,audioEnd:source.audioEnd,hasAudio:source.hasAudio,width:source.width,height:source.height,maxBytes:WEB_AI_VIDEO_LIMIT,maxHeight:WEB_AI_VIDEO_HEIGHT};
   const key=createHash('sha256').update(JSON.stringify(signature)).digest('hex');
   return{info,key,signature};
  }
@@ -47,8 +49,8 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
    signal?.throwIfAborted();const info=await stat(source.mediaPath);signal?.throwIfAborted();
    if(!info.isFile())throw error('WEB_VIDEO_SOURCE','Không đọc được video nguồn.');
    const sourceKey=createHash('sha256').update(JSON.stringify({version:'web-video-source-binding-v1',sourceId:source.id,bytes:info.size,mtimeMs:info.mtimeMs,dev:info.dev,ino:info.ino,duration:source.duration,sourceStart:source.sourceStart,videoStart:source.videoStart,videoDuration:source.videoDuration,audioStart:source.audioStart,audioEnd:source.audioEnd,hasAudio:source.hasAudio,width:source.width,height:source.height})).digest('hex');
-   const derivative=info.size>WEB_AI_VIDEO_LIMIT||path.extname(source.mediaPath).toLowerCase()!=='.mp4';
-   return{id:`source-video-${source.id}`,sourceId:source.id,sourceKey,filename:`source-${source.id}.mp4`,bytes:derivative?null:info.size,originalBytes:info.size,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],representation:derivative?'delivery-copy-pending':'original',preparation:derivative?'on-video-download':'original',maxBytes:WEB_AI_VIDEO_LIMIT,delivery:'manual-download',providerReceipt:'not-verified',...(derivative?{limitation:'Bản MP4 nhẹ chỉ được chuẩn bị khi bấm Tải video; kích thước/độ phân giải cuối chưa xác định ở bước TXT. Kiểm tra tệp thực đính kèm, không coi manifest là bằng chứng đã nhận/xem video.'}:{width:source.width,height:source.height})};
+   const derivative=needsDerivative(source,info);
+   return{id:`source-video-${source.id}`,sourceId:source.id,sourceKey,filename:`source-${source.id}.mp4`,bytes:derivative?null:info.size,originalBytes:info.size,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],representation:derivative?'delivery-copy-pending':'original',preparation:derivative?'on-video-download':'original',maxBytes:WEB_AI_VIDEO_LIMIT,maxHeight:WEB_AI_VIDEO_HEIGHT,delivery:'manual-download',providerReceipt:'not-verified',...(derivative?{limitation:'Bản MP4 tối đa 480p chỉ được chuẩn bị khi bấm Tải video; nguồn hoặc rendition thấp hơn không bị phóng lớn. Kích thước cuối chưa xác định ở bước TXT. Kiểm tra tệp thực đính kèm, không coi manifest là bằng chứng đã nhận/xem video.'}:{width:source.width,height:source.height})};
   }finally{release();}
  }
  async function cached(source,key,originalBytes){
@@ -70,13 +72,14 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
   try{
    await writeFile(path.join(directory,'owner.json'),JSON.stringify({version:WEB_AI_VIDEO_VERSION,operationId,key,sourceId:source.id}),{flag:'wx',mode:0o600});
    // One lower-rendition acquisition, never a second full-size source import.
-   // Its selector may choose 720/480/360 according to the byte budget.
-   if(info.size>WEB_AI_VIDEO_LIMIT&&source.kind==='youtube'&&source.sourceUrl&&youtube?.downloadReview){
+   // Prefer YouTube's highest rendition at or below480p. Do not upscale a
+   // lower rendition, or replace the managed editing source with this copy.
+   if(source.kind==='youtube'&&source.sourceUrl&&youtube?.downloadReview){
     try{
-     await youtube.downloadReview(source.sourceUrl,{maxHeight:source.height>720?720:source.height>480?480:360,maxBytes:TARGET_BYTES},async value=>{
+     await youtube.downloadReview(source.sourceUrl,{maxHeight:WEB_AI_VIDEO_HEIGHT,maxBytes:TARGET_BYTES},async value=>{
       signal.throwIfAborted();spanCheck(source,value.media);
       const downloaded=await stat(value.mediaPath);
-      if(downloaded.size>TARGET_BYTES||value.media.height>=source.height&&value.media.width>=source.width)throw error('WEB_VIDEO_RENDITION','Không có bản tải nhỏ hơn phù hợp.');
+      if(downloaded.size>TARGET_BYTES)throw error('WEB_VIDEO_RENDITION','Không có bản tải 480p phù hợp giới hạn dung lượng.');
       // Keep the managed original audio and its relative timing. Remote video
       // identity is structural (same ID/timeline), not a claim of frame equality.
       const args=['-hide_banner','-loglevel','error','-y','-copyts','-start_at_zero','-i',value.mediaPath,'-i',source.mediaPath,'-map','0:v:0',...(source.hasAudio?['-map','1:a:0']:['-an']),'-c:v','copy',...(source.hasAudio?['-c:a','aac','-b:a','96k']:[]),'-map_metadata','-1','-map_chapters','-1','-movflags','+faststart',output];
@@ -91,8 +94,11 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
     const budget=Math.floor(TARGET_BYTES*8/(source.duration+.5));
     const audioRate=source.hasAudio?96000:0;
     if(!finite(source.duration)||source.duration<=0||budget-audioRate<150000)throw error('WEB_VIDEO_TOO_LONG','Video quá dài để tạo bản đủ nội dung trong 512 MiB; chưa gửi hoặc cắt bớt.');
-    for(const [maxEdge,ceiling]of [[1280,2500000],[854,1400000],[640,900000]]){
-     signal.throwIfAborted();const factor=Math.min(.75,maxEdge/Math.max(source.width,source.height));
+    if(!finite(source.width)||!finite(source.height)||source.width<2||source.height<2)throw error('WEB_VIDEO_GEOMETRY','Không xác định được kích thước nguồn để tạo bản 480p.');
+    // Keep480p geometry on a byte-budget retry; only bitrate changes. Never
+    // fall back to720p or shrink a valid low-resolution source by a fixed25%.
+    for(const ceiling of [1400000,900000]){
+     signal.throwIfAborted();const factor=Math.min(1,WEB_AI_VIDEO_HEIGHT/source.height);
      const width=Math.max(2,Math.floor(source.width*factor/2)*2),height=Math.max(2,Math.floor(source.height*factor/2)*2),rate=Math.min(ceiling,budget-audioRate);
      await run(ffmpeg,['-hide_banner','-loglevel','error','-y','-copyts','-start_at_zero','-i',source.mediaPath,'-map','0:v:0',...(source.hasAudio?['-map','0:a:0']:['-an']),'-vf',`scale=${width}:${height}:flags=bicubic,setsar=1`,'-c:v','libx264','-threads','2','-preset','veryfast','-b:v',String(rate),'-maxrate',String(rate),'-bufsize',String(rate*2),'-pix_fmt','yuv420p','-fps_mode:v','passthrough','-enc_time_base:v','filter',...(source.hasAudio?['-c:a','aac','-b:a','96k']:[]),'-map_metadata','-1','-map_chapters','-1','-movflags','+faststart',output],{signal});
      probe=await probeMedia(output,signal);spanCheck(source,probe);
@@ -125,7 +131,7 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
    // The web workflow attaches a real MP4, not another container renamed to
    // .mp4. Reuse the bounded, full-duration local review path for other formats;
    // the managed source and final export remain untouched.
-   if(info.size<=WEB_AI_VIDEO_LIMIT&&path.extname(source.mediaPath).toLowerCase()==='.mp4')return descriptor(source,source.mediaPath,info.size,{key});
+   if(!needsDerivative(source,info))return descriptor(source,source.mediaPath,info.size,{key});
    return await shared(key,async active=>{
     const releaseWork=retain(source.id);
     try{

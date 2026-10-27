@@ -1,3 +1,23 @@
+# Cập nhật Beta1112 / promptv11 — 2026-10-27
+
+- Tải video480p: YouTube ưu tiên rendition cao nhất<=480p, thiếu bản phù hợp
+  mới encode từ nguồn local; không upscale nguồn/rendition thấp hơn. Cache mới
+  không dùng bản720p cũ. Giữ full duration/audio/source clock; nguồn edit/render
+  nguyên vẹn. TXT không chờ chuẩn bị video.
+- Sau Apply thành công, có thể yêu cầu AI chỉnh cách cắt trong cùng cuộc chat,
+  dán lại FULL JSON cả hai part với cùng requestId/sourceId/analysisKey/schema.
+  Studio ghi nhận chữ ký Editor vừa nhập; không tự đổi lockedPlan/TXT gốc.
+  Sửa tay main/teaser, phụ đề, transcript, nguồn hoặc yêu cầu thì tải TXT mới.
+  Style/nhạc không làm mất lượt import. JSON lỗi giữ nguyên plan/draft.
+- Mặc định loại hình ảnh trẻ em CHỈ nếu video cho bằng chứng trực tiếp rõ ràng
+  và xác định được khoảng nguồn. Không đoán từ giọng/lời thoại/comments/vóc dáng.
+  Chưa chắc thì giữ đoạn và báo mốc review. Auto chỉ text không kiểm chứng ảnh;
+  không thêm detector/AIrequest, không tự sửa manual. Đây là prompt preference,
+  không có local computer-vision enforcement, chưa nghiệm thu model làm đúng.
+
+Promptv10 cũ phải tải TXT mới một lần; JSON draft/plan cũ không bị xóa.
+Báo cáo BETA-480P-REIMPORT-VISUAL-POLICY-2026-10-27.md. Phần dưới là lịch sử.
+
 # Web thủ công — ChatGPT / Gemini / Muse (2026-10-25)
 
 Quyết định mới nhất thay thế luồng extension/auto gửi–nhận trước đây.

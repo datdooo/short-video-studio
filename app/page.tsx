@@ -118,7 +118,15 @@ import {lockedParts} from "@/lib/auto-cut/locks.mjs";
 import { buildMusePrompt, parseMusePlan, WEB_AI_PROMPT_VERSION } from "@/lib/muse-plan.mjs";
 import { locateTimelineTime, timelineTimeForSegment } from "@/lib/preview-timeline.mjs";
 
-type WebAiContext = { sourceId:string;transcript:string;instruction:string;provider:AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack;media?:{id:string;filename:string;bytes:number|null;duration:number;sourceKey?:string;variantKey?:string} };
+type WebAiContext = { sourceId:string;transcript:string;instruction:string;provider:AiProvider;requestId:string;analysisKey?:string;supplementalPrompt?:string;lockedPlan?:EditPlan;hookPlan?:EditPlan;mainSignature?:string;lastImportMainSignature?:string;promptVersion?:string;captionTrack?:CaptionTrack;media?:{id:string;filename:string;bytes:number|null;duration:number;sourceKey?:string;variantKey?:string} };
+
+// One projection for the live Editor and the acknowledged import. Stable key
+// order survives session restore; appearance/music never enter this identity.
+function webAiEditorSignature(plan:Pick<EditPlan,'originalTitle'|'parts'>,cues:CaptionTrack['cues']) {
+  return JSON.stringify({title:plan.originalTitle,parts:plan.parts.map(part=>({...part,teaser:undefined,customTeaser:undefined})),cues,
+    manualTeasers:plan.parts.map(part=>part.teaser?.selection==='manual'||part.customTeaser?.mode==='timestamp'?{id:part.id,teaser:part.teaser,customTeaser:part.customTeaser}:null)},
+    (_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);
+}
 
 const WORKER_ORIGIN = resolveWorkerOrigin(process.env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN);
 
@@ -608,7 +616,7 @@ export default function Home() {
   const previewCaption = previewCaptions.find((cue) => previewCurrentTime * PREVIEW_RATE >= cue.start && previewCurrentTime * PREVIEW_RATE < cue.end);
   const partDuration = presentationDuration(activePart)/PREVIEW_RATE;
   const previewEffectTime=previewToExportTime(previewCurrentTime);
-  const mainSignature = JSON.stringify({ title: plan.originalTitle, parts: previewPlan.parts.map((part) => ({ ...part, teaser: undefined, customTeaser: undefined })), cues: subtitleCues });
+  const mainSignature = webAiEditorSignature(previewPlan,subtitleCues);
   const basicTeaserIssues=useMemo(()=>teaserReadiness(previewPlan,preparedSource?.duration||previewDuration||Infinity,previewPlan.captionCues?.cues||subtitleCues,preparedSource?.id),[previewPlan.parts,preparedSource?.duration,preparedSource?.id,previewDuration,previewPlan.captionCues?.cues,subtitleCues]);
   const [freshnessState,setFreshnessState]=useState<{key:string;issues:{partId:number;reason:string}[]}>({key:'',issues:[]});
   const freshnessKey=JSON.stringify({source:preparedSource?{id:preparedSource.id,duration:preparedSource.duration,title:preparedSource.title}:null,parts:previewPlan.parts,cues:subtitleCues,transcript:transcript||preparedSource?.transcript||'',instruction,supplementalPrompt});
@@ -1372,7 +1380,14 @@ export default function Home() {
 
   // Transcript retrieval / editing rules cannot change the identity of a video.
   // The imported JSON's sourceId is validated separately by parseMusePlan.
-  const webAiPromptIsCurrent = Boolean(isWebAi && webAiContext?.promptVersion===WEB_AI_PROMPT_VERSION && !webAiContext.hookPlan && preparedSource && webAiContext.sourceId === preparedSource.id && webAiContext.provider === provider && webAiContext.transcript === transcript && webAiContext.instruction === instruction && webAiContext.supplementalPrompt === supplementalPrompt && webAiContext.mainSignature === mainSignature);
+  const webAiContextIssue = !webAiContext?'Tải TXT trước khi nhập JSON.'
+    :webAiContext.promptVersion!==WEB_AI_PROMPT_VERSION||webAiContext.hookPlan?'TXT thuộc phiên bản cũ. Tải TXT mới.'
+    :!preparedSource||webAiContext.sourceId!==preparedSource.id?'JSON/TXT thuộc nguồn khác. Tải TXT cho nguồn hiện tại.'
+    :!isWebAi||webAiContext.provider!==provider?'Đã đổi AI. Tải TXT cho AI đang chọn.'
+    :webAiContext.transcript!==transcript?'Transcript đã đổi. Tải TXT mới.'
+    :webAiContext.instruction!==instruction||webAiContext.supplementalPrompt!==supplementalPrompt?'Yêu cầu đã đổi. Tải TXT mới.'
+    :webAiContext.mainSignature!==mainSignature&&webAiContext.lastImportMainSignature!==mainSignature?'Main, phụ đề hoặc teaser thủ công đã đổi. Tải TXT mới để giữ chỉnh sửa hiện tại.':'';
+  const webAiPromptIsCurrent = !webAiContextIssue;
 
 
   async function checkTeasersForExport(nextPlan:EditPlan,source:WorkerSource){
@@ -1519,7 +1534,7 @@ export default function Home() {
       if (!preparedSource) throw new Error("Chuẩn bị source của video trước khi nhập JSON.");
       const context=webAiContext;
       const raw=webAiResult;
-      if (!context || !webAiPromptIsCurrent || context.sourceId!==preparedSource.id || context.provider!==provider) throw new Error("Source, transcript, quy tắc hoặc provider đã đổi. Phân tích lại cho bản hiện tại.");
+      if (!context || !webAiPromptIsCurrent || context.sourceId!==preparedSource.id || context.provider!==provider) throw new Error(webAiContextIssue||'Source/provider không khớp lượt TXT hiện tại.');
       if(!context.media)throw Error('Thiếu định danh video nguồn của lượt phân tích.');
       const identity = hookIdentity;
       const revision=currentWebRevision.current;
@@ -1543,7 +1558,15 @@ export default function Home() {
       if (currentWebRevision.current!==revision || latestHookIdentity.current !== identity) throw new Error("Nội dung/provider đã đổi trong lúc kiểm tra. Tạo prompt mới; kết quả cũ không được áp dụng.");
       if (!analysisRequests.current.isCurrent(ticket) || selectionEpoch !== sourceSelectionEpoch.current) {return;}
 
-      replacePlan(nextPlan);
+      // Preserve the original TXT snapshot/lockedPlan and its analysisKey.
+      // Only a fully validated import may acknowledge the new Editor state;
+      // another JSON from the same conversation can then revise that result.
+      const installed=captureAiMainRanges(nextPlan);
+      const effective=captureAiMainRanges({...installed,...effectiveCutPlan(installed)});
+      const captions=effectiveCaptionTrack(effective,preparedSource,sourceCaptions?.sourceId===preparedSource.id?sourceCaptions:undefined);
+      const acceptedSignature=webAiEditorSignature(effective,captions?.cues||[]);
+      replacePlan(installed);
+      setWebAiContext({...context,lastImportMainSignature:acceptedSignature});
       setHasEditPlan(true);
       setActivePartIndex(0);
       setRenderJob(null);
@@ -2027,12 +2050,12 @@ export default function Home() {
                     {webAiPhase==='prompt'?<Loader2 className="animate-spin"/>:<Download/>}Tải TXT
                   </Button>
                   {preparedSource&&workerHealth?.ok&&!isPreparingSource?<Button asChild variant="outline" size="action">
-                    <a href={`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/manual-video${webAiPromptIsCurrent&&webAiContext?.media?.sourceKey?`?source=${encodeURIComponent(webAiContext.media.sourceKey)}`:webAiPromptIsCurrent&&webAiContext?.media?.variantKey?`?variant=${encodeURIComponent(webAiContext.media.variantKey)}`:''}`}><Download/>Tải video</a>
-                  </Button>:<Button type="button" variant="outline" size="action" disabled><Download/>Tải video</Button>}
+                    <a title="Video đầy đủ thời lượng, tối đa 480p; giữ nguyên nguồn edit/render" href={`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/manual-video${webAiPromptIsCurrent&&webAiContext?.media?.sourceKey?`?source=${encodeURIComponent(webAiContext.media.sourceKey)}`:webAiPromptIsCurrent&&webAiContext?.media?.variantKey?`?variant=${encodeURIComponent(webAiContext.media.variantKey)}`:''}`}><Download/>Tải video 480p</a>
+                  </Button>:<Button type="button" variant="outline" size="action" disabled><Download/>Tải video 480p</Button>}
                 </div>
                 <p className="studio-muted text-xs">Gửi TXT + video trong {webAiName}, rồi dán JSON bên dưới.</p>
                 {webAiPrompt&&webAiPromptIsCurrent&&<p className="studio-muted text-xs">TXT · {(new TextEncoder().encode(webAiPrompt).byteLength/1024).toFixed(1)} KiB{webAiPrompt.length>100000?' · Tệp lớn; nơi nhận có thể giới hạn dung lượng.':''}</p>}
-                {webAiPrompt&&!webAiPromptIsCurrent&&<p role="status" className="text-xs text-amber-200">Dữ liệu đã đổi. Tải TXT mới trước khi nhập kết quả.</p>}
+                {webAiPrompt&&!webAiPromptIsCurrent&&<p role="status" className="text-xs text-amber-200">{webAiContextIssue}</p>}
                 <label htmlFor="web-ai-result" className="field-label block">JSON từ {webAiName}</label>
                 <Textarea id="web-ai-result" value={webAiResult} onChange={event=>setWebAiResult(event.target.value)} placeholder={`Dán JSON ${webAiName}…`} className="studio-textarea studio-web-json font-mono"/>
                 <Button type="button" size="action" onClick={()=>void applyWebAiResult()} disabled={!preparedSource||!webAiPromptIsCurrent||!webAiResult.trim()||isAnalyzing||isPreparingSource} className="w-full"><Check/>Áp dụng 2 part</Button>

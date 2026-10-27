@@ -1,3 +1,21 @@
+# Beta1112 — 480p / nhập lại JSON / hình ảnh trẻ em — 2026-10-27
+
+Source hiện bổ sung: video web480p (không đổi nguồn edit/render); re-import đầy
+đủ JSON cùng TXT sau Apply; policy cắt trẻ em CHỈ khi hình ảnh xác định rõ,
+chưa chắc giữ và ghi mốc review, Auto text-only không nhận là đã kiểm tra ảnh.
+Prompt webv11, shared MAINv5; không tăng request/model/reasoning, không đổi schema
+hay timestamp/validation. Bảo toàn lockedPlan ban đầu, draft và sửa tay.
+Chi tiết BETA-480P-REIMPORT-VISUAL-POLICY-2026-10-27.md.
+
+User yêu cầu một lượt package1112 vào release/beta/ShortCut Studio Beta.app và
+/Applications/ShortCut Studio Beta.app, rồi xóa các bundle/package macOS Beta cũ
+đúng ownership sau khi verify. Không giữ app rollback cũ theo yêu cầu mới nhất;
+giữ Git/source/recovery backups, dữ liệu/media/export/credentials, Windows và
+TOÀN BỘ DEV branch/checkout/app riêng. Không kill app. Native audit/codesign và
+static module closure đầy đủ. Không tests/AI/ASR/download/render/browser.
+Kết quả artifact/cleanup thực tế ghi release/beta/cleanup-receipt-1112.json;
+đây không phải bằng chứng runtime/chất lượng hoặc APFS thực thu hồi.
+
 # Beta 1111 — chuẩn bị TXT độc lập video — 2026-10-26
 
 Log hiện có: 324821ms tổng, input16321ms, web-video308243ms, 0 request AI.
