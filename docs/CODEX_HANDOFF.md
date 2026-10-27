@@ -1,3 +1,28 @@
+# Beta1113 — thanh tải / bản nén local1080 / tài nguyên idle — 2026-10-27
+
+Yêu cầu mới thay thế480p: dùng nguồn local hiện có tạo MP4 quality copy cùng
+kích thước/fps/full timeline/audio; không downloadReview/YouTube rendition, không
+ép100MB hoặc tự hạ chất lượng khi lỗi. H264 CRF23/veryfast/2threads, AAC96k,
+cache policyv4; nguồn đã nhỏ hơn thì dùng nguồn và cache marker, không copy dư.
+Nguồn edit/render1080 mặc định giữ nguyên. Promptwebv12 ghi đúng giới hạn.
+
+TXT có bar indeterminate/tên bước/elapsed,100 chỉ khi tạo/giaoTXT cho browser.
+Video dùng native download (khôngBlob512MiB): ephemeral status theoUUID+source,
+progress FFmpeg và byteHTTP theo từng bước, Dừng thật, không polltạojob khác.
+Component video giữ state cục bộ để không rerender toàn Editor mỗi lần poll.
+
+RAM/lag: release audio audition/mix đã bỏ; nền canvas và mix ngừng callback
+liên tục lúc pause/ẩn, wake lại bằngplay/seek/deck/source. Giữ các giới hạn media
+lane/thread/Sharp sẵn có. Chưa đo peakRAM hoặc tốc độ/độ chính xácChatGPT.
+Báo cáo BETA-DOWNLOAD-PROGRESS-RESOURCES-2026-10-27.md.
+
+User đã báoQuit. Build/package một lượt1113 vào release/Beta và Applications,
+giữ guard/native audit/codesign/import closure. Không AI/tests/lint/typecheck
+riêng/browser/ASR/download/render. DEV riêng không thay đổi. Sau verify hai app,
+dọn các bundleBeta1112 bị thay theo yêu cầu giữ đúnghai app; không đụng dữ liệu/
+credentials/Windows/source/Git/recovery backup hoặc cachemedia. Gitcheckpoint
+local cósource/config/docs, khôngpush/merge. Runtime chưa nghiệm thu.
+
 # Beta1112 — 480p / nhập lại JSON / hình ảnh trẻ em — 2026-10-27
 
 Source hiện bổ sung: video web480p (không đổi nguồn edit/render); re-import đầy

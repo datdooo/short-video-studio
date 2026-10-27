@@ -51,6 +51,7 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { homedir,setPriority,userInfo } from "node:os";
 import { pipeline } from "node:stream/promises";
+import { Transform } from "node:stream";
 import sharp from "sharp";
 import { cutTransitionFilters } from './cut-transition.mjs';
 import { titleAnimationFilters } from "./title-animation.mjs";
@@ -113,6 +114,33 @@ const requestOrigins=createRequestOriginPolicy({webPort,workerPort:port});
 const editorSourceLeases=createEditorSourceLeases();
 const host = "127.0.0.1";
 const jobs = new Map();
+// Ephemeral telemetry for one native browser download, never a persisted job.
+// GET/poll reads only this map; it cannot prepare/restart media work.
+const manualVideoDownloads = new Map();
+const MANUAL_DOWNLOAD_TTL = 5 * 60_000, MANUAL_DOWNLOAD_LIMIT = 32;
+const manualDownloadKey=(sourceId,downloadId)=>`${sourceId.toLowerCase()}:${downloadId.toLowerCase()}`;
+function pruneManualDownloads(){
+  const now=Date.now();
+  for(const[key,item]of manualVideoDownloads)if(item.progress.state!=='running'&&now-item.updatedAt>MANUAL_DOWNLOAD_TTL)manualVideoDownloads.delete(key);
+}
+function createManualDownload(sourceId,downloadId,progress){
+  pruneManualDownloads();
+  if(manualVideoDownloads.size>=MANUAL_DOWNLOAD_LIMIT)throw Object.assign(Error('Có quá nhiều lượt tải đang được theo dõi. Chờ một lát rồi tải lại.'),{status:429});
+  const item={sourceId:sourceId.toLowerCase(),downloadId:downloadId.toLowerCase(),updatedAt:Date.now(),progress:{...progress,updatedAt:Date.now()},cancel:null};
+  manualVideoDownloads.set(manualDownloadKey(sourceId,downloadId),item);return item;
+}
+function manualDownloadProgress(item,progress){
+  if(!item||item.progress.state!=='running')return;
+  item.updatedAt=Date.now();item.progress={...progress,updatedAt:item.updatedAt};
+}
+function manualDownloadError(error){
+  if(error?.code==='SOURCE_BUSY')return'Nguồn đang được di chuyển. Chờ xong rồi tải lại.';
+  if(['WEB_VIDEO_SOURCE_CHANGED','WEB_VIDEO_VARIANT_CHANGED'].includes(error?.code))return'Nguồn hoặc bản video đã đổi. Tải TXT mới rồi tải video lại.';
+  if(error?.code==='SOURCE_MEDIA_MISSING'||error?.code==='ENOENT')return'Không còn video nguồn. Chuẩn bị hoặc khôi phục nguồn rồi tải lại.';
+  if(error?.code==='ENOSPC')return'Không đủ dung lượng để chuẩn bị video nén.';
+  if(error?.code==='WEB_VIDEO_TOO_LONG'||error?.code==='WEB_VIDEO_TOO_LARGE')return'Chưa tạo được video đầy đủ trong giới hạn 512 MiB; nguồn và plan vẫn được giữ.';
+  return'Không chuẩn bị hoặc truyền được video nén. Bấm Tải video để thử lại.';
+}
 const exportNameAllocator = createExportNameAllocator();
 const batches = new Map();
 const batchControllers = new Map();
@@ -763,7 +791,7 @@ function protectedAnalysisKeys() {
   return keys;
 }
 
-const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-video'),youtube,ffmpeg,run,probeMedia,fingerprint:hookSourceFingerprint,isLocked:id=>mediaLibrary.isLocked(id)});
+const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-video'),ffmpeg,run,probeMedia,fingerprint:hookSourceFingerprint,isLocked:id=>mediaLibrary.isLocked(id)});
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
 const processBatch = createBatchProcessor({acquire:async(url,signal,onProgress)=>{const stop=youtube.subscribeProgress(url,onProgress);try{return await importYouTube(url,signal);}finally{stop();}},load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
@@ -1793,9 +1821,21 @@ function mediaContentType(target) {
   }[path.extname(target).toLowerCase()] || "application/octet-stream";
 }
 
-async function serveMediaPath(request, response, target, { download = false, filename = path.basename(target) } = {}) {
+async function serveMediaPath(request, response, target, { download = false, filename = path.basename(target), signal, onProgress } = {}) {
+  signal?.throwIfAborted();
   const fileStat = await stat(target);
   if(!fileStat.isFile())throw Object.assign(Error('Không tìm thấy media.'),{status:404});
+  const transmit=async(start,end,total)=>{
+    signal?.throwIfAborted();
+    const input=createReadStream(target,{start,end});
+    if(!onProgress){await pipeline(input,response,{signal});return;}
+    // This counts actual bytes passed through the HTTP pipeline with normal
+    // backpressure; it is not a claim that the browser saved a file to disk.
+    let completed=0;
+    const report=()=>{try{onProgress(completed,total);}catch{/* Telemetry cannot own transfer. */}};
+    const meter=new Transform({transform(chunk,encoding,callback){completed+=chunk.length;report();callback(null,chunk);}});
+    report();await pipeline(input,meter,response,{signal});
+  };
   const range = request.headers.range;
   const baseHeaders = {
     ...corsHeaders(request),
@@ -1807,6 +1847,7 @@ async function serveMediaPath(request, response, target, { download = false, fil
   if (range) {
     const selected=mediaByteRange(range,fileStat.size);
     if (!selected) {
+      if(onProgress)throw Object.assign(Error('Khoảng byte tải video không hợp lệ.'),{status:416});
       response.writeHead(416, { ...baseHeaders, "Content-Range": `bytes */${fileStat.size}` });
       response.end();
       return;
@@ -1821,7 +1862,7 @@ async function serveMediaPath(request, response, target, { download = false, fil
       response.end();
       return;
     }
-    await pipeline(createReadStream(target, { start, end }),response);
+    await transmit(start,end,end-start+1);
     return;
   }
   response.writeHead(200, { ...baseHeaders, "Content-Length": fileStat.size });
@@ -1829,7 +1870,7 @@ async function serveMediaPath(request, response, target, { download = false, fil
     response.end();
     return;
   }
-  await pipeline(createReadStream(target),response);
+  await transmit(undefined,undefined,fileStat.size);
 }
 
 async function serveFile(request, response, pathname, { download = true } = {}) {
@@ -2001,9 +2042,44 @@ const server = createServer(async (request, response) => {
     }
     const sourceMetadataMatch=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})$/i);
     if(request.method==='GET'&&sourceMetadataMatch){sendJson(request,response,200,{source:publicSource(await loadSource(sourceMetadataMatch[1]))});return;}
+    const manualStatus=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/manual-video-status\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i);
+    if(['GET','DELETE'].includes(request.method)&&manualStatus){
+      const [,sourceId,downloadId]=manualStatus,key=manualDownloadKey(sourceId,downloadId);
+      pruneManualDownloads();let item=manualVideoDownloads.get(key);
+      if(request.method==='DELETE'){
+        // A fast Cancel can arrive before the iframe's GET. A bounded terminal
+        // tombstone prevents that later request from starting preparation.
+        if(!item)item=createManualDownload(sourceId,downloadId,{phase:'cancelled',state:'cancelled',percent:null});
+        else if(item.progress.state==='running')item.cancel?.();
+        else if(item.progress.interrupted){item.updatedAt=Date.now();item.progress={phase:'cancelled',state:'cancelled',percent:null,updatedAt:item.updatedAt};}
+        sendJson(request,response,200,{progress:item.progress});return;
+      }
+      if(!item){sendJson(request,response,404,{error:'Lượt tải chưa bắt đầu hoặc worker đã khởi động lại.'});return;}
+      sendJson(request,response,200,{progress:item.progress});return;
+    }
     const manualMedia=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/manual-video$/i);
     if(['GET','HEAD'].includes(request.method)&&manualMedia){
-      const controller=new AbortController(),abort=()=>controller.abort(new Error('Đã dừng truyền video web.'));
+      const downloadId=requestUrl.searchParams.get('downloadId');
+      if(downloadId!==null&&(request.method!=='GET'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(downloadId)))throw Object.assign(Error('Định danh lượt tải video không hợp lệ.'),{status:400});
+      let tracked;
+      if(downloadId!==null){
+        const key=manualDownloadKey(manualMedia[1],downloadId);pruneManualDownloads();
+        if(manualVideoDownloads.has(key))throw Object.assign(Error('Lượt tải này đã được tạo hoặc dừng; bấm Tải video để bắt đầu lượt mới.'),{status:409});
+        tracked=createManualDownload(manualMedia[1],downloadId,{phase:'identity',state:'running',percent:null});
+      }
+      const controller=new AbortController();let transferring=false,unsubscribe;
+      const cancel=()=>{
+        manualDownloadProgress(tracked,{phase:'cancelled',state:'cancelled',percent:null});
+        controller.abort(new DOMException('Đã dừng truyền video web.','AbortError'));
+        if(!response.destroyed&&!response.writableFinished)response.destroy();
+      };
+      if(tracked)tracked.cancel=cancel;
+      const abort=()=>{if(!response.writableFinished){
+        // A browser/network disconnect is observable; its user's intent is not.
+        // Explicit DELETE already records cancelled and cannot be overwritten.
+        manualDownloadProgress(tracked,{phase:'error',state:'error',percent:null,interrupted:true,error:'Kết nối tải video đã ngắt. Bấm Tải video để thử lại.'});
+        controller.abort(new DOMException('Kết nối tải video đã ngắt.','AbortError'));
+      }};
       response.once('close',abort);
       try{
         const expectedVariant=requestUrl.searchParams.get('variant');
@@ -2011,14 +2087,35 @@ const server = createServer(async (request, response) => {
         const expectedSource=requestUrl.searchParams.get('source');
         if(expectedSource!==null&&!/^[a-f0-9]{64}$/.test(expectedSource))throw Object.assign(Error('Định danh nguồn video gửi web không hợp lệ.'),{status:400});
         const source=await loadSource(manualMedia[1],controller.signal);
-        const assertDownloadSource=async()=>{if(expectedSource!==null&&(await webAiVideos.describe(source,controller.signal)).sourceKey!==expectedSource)throw Object.assign(Error('Nguồn đã đổi từ lúc tạo TXT; chưa tải video của lượt cũ.'),{status:409});};
+        if(tracked)unsubscribe=webAiVideos.subscribeProgress(source.id,event=>{
+          if(transferring||tracked.progress.state!=='running'||['error','cancelled'].includes(event.phase))return;
+          const progress={phase:event.phase==='ready'?'validating':event.phase,state:'running',percent:event.phase==='ready'?null:event.percent};
+          for(const key of ['completedSeconds','totalSeconds','attempt','maxAttempts'])if(Number.isFinite(event[key])&&event[key]>=0)progress[key]=event[key];
+          if(typeof event.cacheHit==='boolean')progress.cacheHit=event.cacheHit;
+          manualDownloadProgress(tracked,progress);
+        });
+        const assertDownloadSource=async()=>{if(expectedSource!==null&&(await webAiVideos.describe(source,controller.signal)).sourceKey!==expectedSource)throw Object.assign(Error('Nguồn đã đổi từ lúc tạo TXT; chưa tải video của lượt cũ.'),{status:409,code:'WEB_VIDEO_SOURCE_CHANGED'});};
         await assertDownloadSource();
         await webAiVideos.using(source,controller.signal,async prepared=>{
-          if(expectedVariant!==null&&prepared.manifest.variantKey!==expectedVariant)throw Object.assign(Error('Bản video hoặc nguồn đã đổi; chưa truyền video của lượt cũ.'),{status:409});
+          if(expectedVariant!==null&&prepared.manifest.variantKey!==expectedVariant)throw Object.assign(Error('Bản video hoặc nguồn đã đổi; chưa truyền video của lượt cũ.'),{status:409,code:'WEB_VIDEO_VARIANT_CHANGED'});
           await assertDownloadSource();
-          await serveMediaPath(request,response,prepared.file,{download:true,filename:prepared.manifest.filename});
+          transferring=true;unsubscribe?.();unsubscribe=undefined;
+          let lastUpdate=0,latestBytes=0,latestTotal=0;const transferStart=performance.now();
+          manualDownloadProgress(tracked,{phase:'transferring',state:'running',percent:0,completedBytes:0,totalBytes:prepared.manifest.bytes});
+          await serveMediaPath(request,response,prepared.file,{download:true,filename:prepared.manifest.filename,signal:controller.signal,...(tracked?{onProgress:(completedBytes,totalBytes)=>{
+            latestBytes=completedBytes;latestTotal=totalBytes;const now=performance.now();
+            if(now-lastUpdate<150&&completedBytes<totalBytes)return;lastUpdate=now;
+            const elapsed=(now-transferStart)/1000,bytesPerSecond=elapsed>=.5?completedBytes/elapsed:undefined;
+            manualDownloadProgress(tracked,{phase:'transferring',state:'running',percent:totalBytes>0?Math.min(99,completedBytes/totalBytes*100):null,completedBytes,totalBytes,
+              ...(bytesPerSecond>0?{bytesPerSecond,etaSeconds:Math.max(0,(totalBytes-completedBytes)/bytesPerSecond)}:{})});
+          }}:{})});
+          if(tracked){controller.signal.throwIfAborted();manualDownloadProgress(tracked,{phase:'completed',state:'done',percent:100,completedBytes:latestBytes,totalBytes:latestTotal});}
         });
-      }finally{response.off('close',abort);}return;
+      }catch(error){
+        const errorCode=typeof error.code==='string'&&/^[A-Z0-9_]{1,80}$/.test(error.code)?error.code:Number.isInteger(error.status)?`HTTP_${error.status}`:'WEB_VIDEO_PREPARATION_FAILED';
+        manualDownloadProgress(tracked,{phase:controller.signal.aborted?'cancelled':'error',state:controller.signal.aborted?'cancelled':'error',percent:null,...(!controller.signal.aborted?{error:manualDownloadError(error),errorCode}:{})});
+        throw error;
+      }finally{unsubscribe?.();response.off('close',abort);if(tracked)tracked.cancel=null;}return;
     }
     const mainSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/auto-cut$/i);
     if (request.method === "POST" && mainSource) {

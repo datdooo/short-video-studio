@@ -1,3 +1,19 @@
+# Beta1113 / promptv12 — quyết định mới nhất — 2026-10-27
+
+Nút Tải video nén THAY THẾ Tải video480p. Dùng nguồn1080 hiện có (hoặc kích
+thước thực của source), không tải một bảnYouTube khác, không tự giảm độ phân
+giải/fps. Nén H264 CRF23 +AAC96k đầy đủ timeline; không ép100MB. Nếu bản gốcMP4
+đã nhỏ hơn bản nén thì dùng gốc. Cache bảnnén/marker cho lượt sau. TXT chỉ chứa
+manifestpending và không chờ encode. Chưa chứng minhGPTđọc chínhxác hoặc nhanhhơn.
+
+TXT/video có progress ngay dưới nút. Chuẩn bị chưa có mẫu số: barindeterminate
++ tên bước + elapsed. Nén dùng thời gianFFmpeg/tổngsource, bước truyền dùngbyte
+HTTP/tổngfile; đây không phải%toàn pipeline.100 chỉ khi bước đã xong. Video tải
+native, khôngbuffer cảfile trong JS; browserquảnlý lưuđĩa. Dừng/hủy/sourcechange
+thật, mộtUUIDmỗi click, pollchỉ đọcstatus, khôngjob mới. Completed/cancelled tự
+ẩn5s; error cóChi tiết. JSONimport/theo dõi hai part vàchildpolicy không đổi.
+Promptv11 cũ cần tảiTXT mới; plan/JSONdraft không xóa. Phần dưới là lịch sử.
+
 # Cập nhật Beta1112 / promptv11 — 2026-10-27
 
 - Tải video480p: YouTube ưu tiên rendition cao nhất<=480p, thiếu bản phù hợp

@@ -883,6 +883,10 @@ button, input, textarea { font: inherit; }
 .studio-task-progress progress::-webkit-progress-bar { background:#302b25; border-radius:99px; }
 .studio-task-progress progress::-webkit-progress-value { background:#ff5733; border-radius:99px; }
 .studio-task-progress progress::-moz-progress-bar { background:#ff5733; border-radius:99px; }
+.studio-task-progress progress:not([value]) { background:repeating-linear-gradient(105deg,#302b25 0 14px,#a83f27 14px 28px); }
+.studio-task-progress progress:not([value])::-webkit-progress-bar { background:repeating-linear-gradient(105deg,#302b25 0 14px,#a83f27 14px 28px); }
+.studio-web-download-control { display:grid; align-content:start; gap:7px; min-width:0; }
+.prototype-shell .studio-web-download-control > button:not(:first-child) { width:auto; height:auto; min-height:26px; padding:3px 6px; justify-self:start; }
 .studio-task-progress p { margin:0; overflow-wrap:anywhere; font-size:11px; }
 .studio-task-progress-compact { width:100%; max-width:420px; font-size:11px; }
 .studio-render-error-details { flex:1 1 100%; min-width:0; }

@@ -17,6 +17,7 @@ import {SESSION_KEY,readEditorSession,writeEditorSession,managedId,editorSession
 import {MusicPanel} from '@/components/music-panel';
 import {AiOperationStatus} from '@/components/ai-operation-status';
 import {TaskProgress} from '@/components/task-progress';
+import {ManualVideoDownload} from '@/components/manual-video-download';
 import {RenderProgress} from '@/components/render-progress';
 import {BatchProgress} from '@/components/batch-progress';
 import {uploadJson} from '@/lib/upload-json';
@@ -312,7 +313,7 @@ export default function Home() {
   const [teaserOperations,setTeaserOperations]=useState<Record<number,{diagnostics:AiDiagnostics|null;startedAt:number;running:boolean;finishedAt?:number;finishedStage?:'complete'|'error'|'cancelled'}>>({});
   const [analysisNotice,setAnalysisNotice] = useState("");
   useEffect(()=>{const guard=analysisRequests.current;return()=>guard.invalidate();},[]);
-  function invalidateAnalysis(){if(activeAnalysis.current){setAnalysisFinishedStage('cancelled');setAnalysisFinishedAt(Date.now());}analysisRequests.current.invalidate();activeAnalysis.current=null;webAiPending.current=false;setWebAiPhase(null);setIsAnalyzing(false);setAnalysisNotice("");}
+  function invalidateAnalysis(){if(activeAnalysis.current){setAnalysisFinishedStage('cancelled');setAnalysisFinishedAt(Date.now());}analysisRequests.current.invalidate();activeAnalysis.current=null;webAiPending.current=false;setWebAiPhase(null);setTxtDownloadTask(current=>current?.state==='running'?{...current,state:'cancelled'}:current);setIsAnalyzing(false);setAnalysisNotice("");}
   const [webAiPrompt, setWebAiPrompt] = useState("");
   const [webAiResult, setWebAiResult] = useState("");
   const [webAiContext, setWebAiContext] = useState<WebAiContext|null>(null);
@@ -320,6 +321,10 @@ export default function Home() {
   const webAiPending=useRef(false);
   const [webAiStartedAt,setWebAiStartedAt]=useState(0);
   const [webAiPreparationLabel,setWebAiPreparationLabel]=useState('Chuẩn bị dữ liệu prompt');
+  const [txtDownloadTask,setTxtDownloadTask]=useState<{revision:string;startedAt:number;state:'running'|'done'|'error'|'cancelled'}|null>(null);
+  const txtDownloadPending=useRef(false);
+  const lastTxtDownloadClick=useRef(0);
+  useEffect(()=>{if(!txtDownloadTask||txtDownloadTask.state==='running'||txtDownloadTask.state==='error')return;const timer=setTimeout(()=>setTxtDownloadTask(null),5000);return()=>clearTimeout(timer);},[txtDownloadTask]);
   const [webAiNotice, setWebAiNotice] = useState("");
   const [webAiError, setWebAiError] = useState("");
   const [error, setError] = useState("");
@@ -1579,8 +1584,10 @@ export default function Home() {
   }
 
   async function downloadWebAiPrompt() {
-    if(webAiPending.current||isAnalyzing||isPreparingSource)return;
-    const revision=currentWebRevision.current;
+    const startedAt=Date.now();
+    if(webAiPending.current||isAnalyzing||isPreparingSource||txtDownloadPending.current||startedAt-lastTxtDownloadClick.current<800)return;
+    const revision=currentWebRevision.current;txtDownloadPending.current=true;lastTxtDownloadClick.current=startedAt;
+    setTxtDownloadTask({revision,startedAt,state:'running'});setWebAiPreparationLabel('Tạo tệp TXT');
     setWebAiError("");setWebAiNotice("");
     try {
       const prepared=webAiPromptIsCurrent&&webAiContext?{prompt:webAiPrompt,context:webAiContext}:await createWebAiPrompt(true);
@@ -1590,9 +1597,14 @@ export default function Home() {
       link.href=url;link.download=`analysis-${prepared.context.requestId}.txt`;
       document.body.appendChild(link);
       try{link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+      setTxtDownloadTask({revision,startedAt,state:'done'});
     } catch(caught) {
-      if(currentWebRevision.current!==revision||(caught instanceof DOMException&&caught.name==='AbortError'))return;
+      if(currentWebRevision.current!==revision||(caught instanceof DOMException&&caught.name==='AbortError')){setTxtDownloadTask(current=>current?.startedAt===startedAt?{...current,state:'cancelled'}:current);return;}
+      setTxtDownloadTask({revision,startedAt,state:'error'});
       setWebAiError(caught instanceof Error?caught.message:'Không tạo được tệp TXT.');
+    } finally {
+      txtDownloadPending.current=false;
+      setTxtDownloadTask(current=>current?.startedAt===startedAt&&current.state==='running'?{...current,state:'cancelled'}:current);
     }
   }
 
@@ -2046,12 +2058,14 @@ export default function Home() {
           </>}
               {editMode==='ai' && isWebAi ? <section aria-label={`Phân tích thủ công bằng ${webAiName}`} className="studio-web-ai-panel">
                 <div className="studio-web-ai-actions">
+                 <div className="studio-web-download-control">
                   <Button type="button" size="action" onClick={()=>void downloadWebAiPrompt()} disabled={isAnalyzing||Object.values(teaserOperations).some(operation=>operation.running)||isPreparingSource||!workerHealth?.ok||!preparedSource||Boolean(effectiveTiming.error)} aria-busy={webAiPhase==='prompt'}>
                     {webAiPhase==='prompt'?<Loader2 className="animate-spin"/>:<Download/>}Tải TXT
                   </Button>
-                  {preparedSource&&workerHealth?.ok&&!isPreparingSource?<Button asChild variant="outline" size="action">
-                    <a title="Video đầy đủ thời lượng, tối đa 480p; giữ nguyên nguồn edit/render" href={`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/manual-video${webAiPromptIsCurrent&&webAiContext?.media?.sourceKey?`?source=${encodeURIComponent(webAiContext.media.sourceKey)}`:webAiPromptIsCurrent&&webAiContext?.media?.variantKey?`?variant=${encodeURIComponent(webAiContext.media.variantKey)}`:''}`}><Download/>Tải video 480p</a>
-                  </Button>:<Button type="button" variant="outline" size="action" disabled><Download/>Tải video 480p</Button>}
+                  {txtDownloadTask?.revision===webFlowRevision&&<TaskProgress compact indeterminate state={txtDownloadTask.state} label={txtDownloadTask.state==='running'?webAiPreparationLabel:txtDownloadTask.state==='done'?'Đã tạo TXT cho trình duyệt':txtDownloadTask.state==='cancelled'?'Đã dừng tạo TXT':'Chưa tạo được TXT'} startedAt={txtDownloadTask.startedAt} detail={txtDownloadTask.state==='done'?'Trình duyệt quản lý bước lưu tệp.':undefined}/>}
+                  {webAiPhase==='prompt'&&<Button type="button" variant="ghost" size="sm" onClick={()=>invalidateAnalysis()}><Square/>Dừng tạo TXT</Button>}
+                 </div>
+                 <ManualVideoDownload key={preparedSource?.id||'no-source'} worker={WORKER_ORIGIN} sourceId={preparedSource?.id||''} sourceKey={webAiPromptIsCurrent?webAiContext?.media?.sourceKey:undefined} variantKey={webAiPromptIsCurrent?webAiContext?.media?.variantKey:undefined} disabled={!preparedSource||!workerHealth?.ok||isPreparingSource}/>
                 </div>
                 <p className="studio-muted text-xs">Gửi TXT + video trong {webAiName}, rồi dán JSON bên dưới.</p>
                 {webAiPrompt&&webAiPromptIsCurrent&&<p className="studio-muted text-xs">TXT · {(new TextEncoder().encode(webAiPrompt).byteLength/1024).toFixed(1)} KiB{webAiPrompt.length>100000?' · Tệp lớn; nơi nhận có thể giới hạn dung lượng.':''}</p>}
@@ -2063,10 +2077,10 @@ export default function Home() {
                 {webAiNotice&&<p role="status" className="text-xs text-emerald-300">{webAiNotice}</p>}
               </section>:null}
           {!(editMode==='ai'&&isWebAi)&&<button type="button" className="studio-primary w-full" disabled={isAnalyzing||Object.values(teaserOperations).some(operation=>operation.running)||isPreparingSource||!workerHealth?.ok||!preparedSource||(editMode==='manual'&&hasEditPlan)} onClick={()=>{if(editMode==='manual')applyManualPlan();else if(isWebAi)void downloadWebAiPrompt();else void analyze();}}>{isAnalyzing?<Loader2 size={14} className="animate-spin"/>:<WandSparkles size={14}/>} {isAnalyzing?'Đang phân tích…':editMode==='manual'?'Áp dụng main thủ công':isWebAi?`Tạo prompt ${webAiName}`:'Phân tích'}</button>}
-          {isAnalyzing&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice('Đã dừng phân tích; giữ plan hiện tại.');}}>Dừng phân tích</Button>}
+          {isAnalyzing&&webAiPhase!=='prompt'&&<Button variant="outline" onClick={()=>{invalidateAnalysis();setAnalysisNotice('Đã dừng phân tích; giữ plan hiện tại.');}}>Dừng phân tích</Button>}
           {error && <p role="alert" className="studio-inline-error">{error}</p>}
           {analysisNotice&&<p role="status" className="studio-inline-notice">{analysisNotice}</p>}
-          {isWebAi?(webAiPhase?<TaskProgress label={webAiPhase==='prompt'?webAiPreparationLabel:'Kiểm tra và lưu JSON'} startedAt={webAiStartedAt}/>:null):<AiOperationStatus diagnostics={analysisDiagnostics} startedAt={analysisStartedAt} running={isAnalyzing&&Boolean(activeAnalysis.current)} finishedAt={analysisFinishedAt} finishedStage={analysisFinishedStage}/>}
+          {isWebAi?(webAiPhase==='import'?<TaskProgress indeterminate label="Kiểm tra và lưu JSON" startedAt={webAiStartedAt}/>:null):<AiOperationStatus diagnostics={analysisDiagnostics} startedAt={analysisStartedAt} running={isAnalyzing&&Boolean(activeAnalysis.current)} finishedAt={analysisFinishedAt} finishedStage={analysisFinishedStage}/>}
           <SourceOptionsSection id="source-advanced" label="Nâng cao" open={sourceAdvancedOpen} onOpenChange={setSourceAdvancedOpen} className="studio-advanced">
           <SourceOptionsSection id="source-ai-instructions" label="Yêu cầu AI" className="studio-ai-instructions mt-2">
           {mainInstruction(instruction).compatibility==='legacy-factory-default-replaced'&&<p className="studio-muted text-xs">Quy tắc mặc định cũ dùng tiêu chí MAIN mới khi phân tích. <button type="button" className="studio-ghost" onClick={()=>{invalidateAnalysis();setInstruction(MAIN_EDITING_CRITERIA);}}>Cập nhật ô yêu cầu</button></p>}
@@ -2164,7 +2178,7 @@ export default function Home() {
           >
             <VideoFilterDefinition filter={previewVisualStyle.filter} id="studio-preview-video-color" />
             {previewVideoUrl ? (
-              <PreviewBackground suspended={workspace!=='editor'} video={previewVideoRef} filter={`${videoColorFilter} blur(${40 * previewScale}px)`} opacity={previewVisualStyle.background.mode === "source-blur" ? previewVisualStyle.background.opacity : 0} />
+              <PreviewBackground suspended={workspace!=='editor'} activeDeck={visibleDeck} sourceKey={previewVideoUrl} video={previewVideoRef} filter={`${videoColorFilter} blur(${40 * previewScale}px)`} opacity={previewVisualStyle.background.mode === "source-blur" ? previewVisualStyle.background.opacity : 0} />
             ) : (
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
             )}
