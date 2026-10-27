@@ -137,9 +137,9 @@ function manualDownloadError(error){
   if(error?.code==='SOURCE_BUSY')return'Nguồn đang được di chuyển. Chờ xong rồi tải lại.';
   if(['WEB_VIDEO_SOURCE_CHANGED','WEB_VIDEO_VARIANT_CHANGED'].includes(error?.code))return'Nguồn hoặc bản video đã đổi. Tải TXT mới rồi tải video lại.';
   if(error?.code==='SOURCE_MEDIA_MISSING'||error?.code==='ENOENT')return'Không còn video nguồn. Chuẩn bị hoặc khôi phục nguồn rồi tải lại.';
-  if(error?.code==='ENOSPC')return'Không đủ dung lượng để chuẩn bị video nén.';
+  if(error?.code==='ENOSPC')return'Không đủ dung lượng để chuẩn bị video 480p.';
   if(error?.code==='WEB_VIDEO_TOO_LONG'||error?.code==='WEB_VIDEO_TOO_LARGE')return'Chưa tạo được video đầy đủ trong giới hạn 512 MiB; nguồn và plan vẫn được giữ.';
-  return'Không chuẩn bị hoặc truyền được video nén. Bấm Tải video để thử lại.';
+  return'Không chuẩn bị hoặc truyền được video 480p. Bấm Tải video để thử lại.';
 }
 const exportNameAllocator = createExportNameAllocator();
 const batches = new Map();
@@ -791,7 +791,7 @@ function protectedAnalysisKeys() {
   return keys;
 }
 
-const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-video'),ffmpeg,run,probeMedia,fingerprint:hookSourceFingerprint,isLocked:id=>mediaLibrary.isLocked(id)});
+const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-video'),youtube,ffmpeg,run,probeMedia,fingerprint:hookSourceFingerprint,isLocked:id=>mediaLibrary.isLocked(id)});
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
 const processBatch = createBatchProcessor({acquire:async(url,signal,onProgress)=>{const stop=youtube.subscribeProgress(url,onProgress);try{return await importYouTube(url,signal);}finally{stop();}},load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});

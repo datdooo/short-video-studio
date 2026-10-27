@@ -4,7 +4,7 @@ import {Download,Loader2,Square} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {TaskProgress} from './task-progress';
 import {downloadManualVideo,type ManualVideoProgress} from '@/lib/manual-video-download';
-const phases:Record<string,string>={identity:'Kiểm tra nguồn video',cache:'Kiểm tra video đã chuẩn bị',waiting:'Chờ tài nguyên xử lý video',download:'Chuẩn bị video',converting:'Nén video gửi AI',validating:'Kiểm tra video nén',ready:'Video đã sẵn sàng',transferring:'Truyền video về trình duyệt',completed:'Đã truyền video cho trình duyệt',error:'Chưa tải được video',cancelled:'Đã dừng tải video'};
+const phases:Record<string,string>={identity:'Kiểm tra nguồn video',cache:'Kiểm tra video đã chuẩn bị',waiting:'Chờ tài nguyên xử lý video',download:'Tải bản YouTube 480p',converting:'Tạo bản 480p từ video local',validating:'Kiểm tra video 480p',ready:'Video đã sẵn sàng',transferring:'Truyền video về trình duyệt',completed:'Đã truyền video cho trình duyệt',error:'Chưa tải được video',cancelled:'Đã dừng tải video'};
 const mib=(n:number)=>(n/1048576).toFixed(1);
 export function ManualVideoDownload({worker,sourceId,sourceKey,variantKey,disabled=false}:{worker:string;sourceId:string;sourceKey?:string;variantKey?:string;disabled?:boolean}) {
  const active=useRef<AbortController|null>(null);
@@ -25,7 +25,7 @@ export function ManualVideoDownload({worker,sourceId,sourceKey,variantKey,disabl
  const value=task?.progress,running=value?.state==='running';
  const detail=value?.completedBytes!==undefined?`${mib(value.completedBytes)}${value.totalBytes?` / ${mib(value.totalBytes)}`:''} MiB${value.bytesPerSecond?` · ${mib(value.bytesPerSecond)} MiB/s`:''}${value.etaSeconds!==undefined?` · còn khoảng ${Math.ceil(value.etaSeconds)}s của bước truyền`:''}`:value?.phase==='completed'?'Trình duyệt quản lý bước lưu tệp.':undefined;
  return <div className="studio-web-download-control">
-  <Button type="button" variant="outline" size="action" onClick={()=>void start()} disabled={disabled||running||!sourceId} aria-busy={running} title="Bản nén riêng từ nguồn gốc, giữ nguyên video edit/render">{running?<Loader2 className="animate-spin"/>:<Download/>}Tải video nén</Button>
+  <Button type="button" variant="outline" size="action" onClick={()=>void start()} disabled={disabled||running||!sourceId} aria-busy={running} title="Bản tối đa 480p gửi AI; video edit/render giữ nguyên">{running?<Loader2 className="animate-spin"/>:<Download/>}Tải video 480p</Button>
   {value&&<><TaskProgress compact indeterminate label={phases[value.phase]||'Chuẩn bị video'} state={value.state==='done'?'done':value.state} percent={value.percent} startedAt={task?.startedAt} detail={detail}/>
    {running&&<Button type="button" size="sm" variant="ghost" onClick={()=>active.current?.abort(new DOMException('Đã dừng tải video.','AbortError'))}><Square/>Dừng tải video</Button>}
    {value.state==='error'&&value.error&&<details className="text-xs"><summary>Chi tiết</summary><p className="studio-muted break-words">{value.error}</p></details>}
