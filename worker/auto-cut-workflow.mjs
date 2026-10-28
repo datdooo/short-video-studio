@@ -12,23 +12,39 @@ import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTea
 import {validatePlan} from './plan-validation.mjs';
 import {stat} from 'node:fs/promises';
 // One orchestration path for single-source Auto, external context/import and batch.
-export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers,describeWebVideo}) {
+export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers,describeWebVideo,externalSnapshots}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
-    const {context,options}=await measureAiStage('preparation',()=>prepareInputs(source,body,signal));
-    if(body.mode==='context'||body.mode==='import'){
+    let context,options,input,snapshot;
+    if(body.mode==='import'&&externalSnapshots){
+      if(!['gemini','muse','chatgpt-web'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');
+      if(body.transcript!==undefined&&typeof body.transcript!=='string'||String(body.transcript??source.transcript??'').length>1_000_000)throw Error('Transcript quá lớn hoặc sai định dạng; chưa nhập JSON.');
+      if(body.currentPlan){
+        if(body.currentPlan.analysis?.sourceId&&body.currentPlan.analysis.sourceId!==source.id)throw Error('Plan thuộc nguồn khác.');
+        validatePlan(body.currentPlan,source,{teasers:false});
+      }
+      const media=await describeWebVideo(source,signal);
+      snapshot=await measureAiStage('preparation',()=>externalSnapshots.load(source,body,media),{reason:'external-prompt-snapshot'});
+      context=structuredClone(snapshot.context);input=structuredClone(snapshot.input);
+      const captionTrack=structuredClone(snapshot.captionTrack);
+      options={cues:captionTrack.cues,boundaryCues:captionTrack.cues,captionTrack,local:snapshot.local,currentPlan:body.currentPlan,
+        transcript:String(body.transcript??source.transcript??''),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),signal,webAiVideo:media};
+    }else ({context,options}=await measureAiStage('preparation',()=>prepareInputs(source,body,signal)));
+    if((body.mode==='context'||body.mode==='import')&&!options.webAiVideo){
       if(describeWebVideo)options.webAiVideo=await measureAiStage('preparation',()=>describeWebVideo(source,signal),{reason:'web-video-manifest'});
       else options.sourceMediaBytes=(await stat(source.mediaPath)).size;
     }
     if(body.mode==='context'){
       const input=await measureAiStage('preparation',()=>mainContent.prepare(source,context,options),{reason:'main-candidates'});
-      return{context:await measureAiStage('preparation',()=>buildExternalEditingContext(source,context,options,input,body),{reason:'prompt-context'})};
+      const external=await measureAiStage('preparation',()=>buildExternalEditingContext(source,context,options,input,body),{reason:'prompt-context'});
+      await externalSnapshots?.save(source,body,{context,options,input,external});
+      signal?.throwIfAborted();return{context:external};
     }
     if(body.mode==='import'){
       if(!['gemini','muse','chatgpt-web'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');
-      const input=await mainContent.prepare(source,context,options);
-      const externalContext=buildExternalEditingContext(source,context,options,input,body);
-      if(body.analysisKey!==externalContext.analysisKey)throw new Error('Dữ liệu nguồn, transcript, main/locks hoặc quy tắc prompt đã đổi. Tạo prompt mới trước khi nhập JSON.');
+      input??=await mainContent.prepare(source,context,options);
+      const externalContext=snapshot?{analysisKey:snapshot.analysisKey,attachments:{sourceVideo:options.webAiVideo}}:buildExternalEditingContext(source,context,options,input,body);
+      if(body.analysisKey!==externalContext.analysisKey)throw new Error('Context TXT không khớp dữ liệu kiểm tra; bản nháp được giữ. Tải TXT mới.');
       const attachment=body.attachmentConfirmation;
       if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Video đính kèm không khớp source/request/context hiện tại.');
       if(externalContext.attachments.sourceVideo.sourceKey&&attachment.sourceKey!==externalContext.attachments.sourceVideo.sourceKey)throw Error('Video nguồn đã đổi từ lúc tạo TXT; tải TXT/video mới trước khi nhập JSON.');

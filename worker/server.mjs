@@ -4,6 +4,7 @@ import {createEditorSourceLeases} from './editor-source-leases.mjs';
 import {createRequestOriginPolicy} from './request-origin.mjs';
 import {createHistoryPersistence} from './history-persistence.mjs';
 import {mediaByteRange} from './media-http.mjs';
+import {createExternalPromptSnapshots} from './external-prompt-snapshot.mjs';
 import {createWebAiVideo} from './web-ai-video.mjs';
 import {providerError,readProviderOutput,safeProviderId} from './provider-response.mjs';
 import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
@@ -795,7 +796,7 @@ const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-vide
 const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
 function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
 const processBatch = createBatchProcessor({acquire:async(url,signal,onProgress)=>{const stop=youtube.subscribeProgress(url,onProgress);try{return await importYouTube(url,signal);}finally{stop();}},load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
-const autoCutWorkflow = createAutoCutWorkflow({prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers,describeWebVideo:(source,signal)=>webAiVideos.describe(source,signal)});
+const autoCutWorkflow = createAutoCutWorkflow({externalSnapshots:createExternalPromptSnapshots(path.join(dataRoot,'cache','external-prompt-snapshots')),prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers,describeWebVideo:(source,signal)=>webAiVideos.describe(source,signal)});
 const analyzeSource=(source,body,signal)=>withAiOperation('generate',()=>autoCutWorkflow(source,body,signal));
 
 async function mainAnalysisInputs(source, body, signal) {
