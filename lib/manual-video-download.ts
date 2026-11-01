@@ -14,11 +14,11 @@ function pause(signal:AbortSignal){return new Promise<void>((resolve,reject)=>{
 });}
 // Keep the browser's native download stream: no full-video Blob/ArrayBuffer in
 // the Editor heap. Polling observes one existing request; it never starts a job.
-export async function downloadManualVideo({worker,sourceId,sourceKey,variantKey,signal,onProgress}:{worker:string;sourceId:string;sourceKey?:string;variantKey?:string;signal:AbortSignal;onProgress:(value:ManualVideoProgress)=>void}) {
+export async function downloadManualVideo({worker,sourceId,sourceKey,variantKey,rendition='original',signal,onProgress}:{worker:string;sourceId:string;sourceKey?:string;variantKey?:string;rendition?:'original'|'480p';signal:AbortSignal;onProgress:(value:ManualVideoProgress)=>void}) {
  signal.throwIfAborted();
  const id=crypto.randomUUID(),base=`${worker}/api/sources/${encodeURIComponent(sourceId)}`;
- const status=`${base}/manual-video-status/${id}`,params=new URLSearchParams({downloadId:id});
- if(sourceKey)params.set('source',sourceKey);else if(variantKey)params.set('variant',variantKey);
+ const status=`${base}/manual-video-status/${id}`,params=new URLSearchParams({downloadId:id,rendition});
+ if(sourceKey)params.set('source',sourceKey);else if(rendition==='480p'&&variantKey)params.set('variant',variantKey);
  const frame=document.createElement('iframe');frame.hidden=true;frame.tabIndex=-1;frame.setAttribute('aria-hidden','true');frame.title='Tải video phân tích';
  let completed=false,terminal=false,cancelSent=false;
  const cancel=()=>{if(cancelSent)return;cancelSent=true;void fetch(status,{method:'DELETE',keepalive:true}).catch(()=>{});frame.remove();};

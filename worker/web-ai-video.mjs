@@ -68,8 +68,8 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
  function descriptor(source,file,bytes,{method='original',width=source.width,height=source.height,key,deliveryHash,originalBytes=bytes}={}){
   return{file,manifest:{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}.mp4`,bytes,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],width,height,representation:'lower-resolution',preparation:method,qualityPolicy:WEB_AI_VIDEO_POLICY,originalBytes,variantKey:deliveryHash?createHash('sha256').update(JSON.stringify([key,deliveryHash])).digest('hex'):key,delivery:'website-file-input',providerReceipt:'not-verified',limitation:'Bản tối đa 480p giữ toàn bộ timeline; chi tiết nhỏ có thể khó đọc. Rendition YouTube cùng ID được kiểm tra thời lượng/timing, không chứng minh mọi cảnh trên máy chủ không đổi.'}};
  }
- // TXT and JSON import need a stable source binding, not a completed delivery
- // encode. Do not hash/download/transcode here or inspect derivative cache: the
+ // TXT and JSON import need a stable source binding, not a completed optional
+ // derivative. Do not hash/download/transcode here or inspect derivative cache: the
  // same prompt must remain valid before and after the separate video download.
  async function describe(source,signal){
   const release=retain(source.id);
@@ -77,7 +77,7 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
    signal?.throwIfAborted();const info=await stat(source.mediaPath);signal?.throwIfAborted();
    if(!info.isFile())throw error('WEB_VIDEO_SOURCE','Không đọc được video nguồn.');
    const sourceKey=createHash('sha256').update(JSON.stringify({version:'web-video-source-binding-v1',sourceId:source.id,bytes:info.size,mtimeMs:info.mtimeMs,dev:info.dev,ino:info.ino,duration:source.duration,sourceStart:source.sourceStart,videoStart:source.videoStart,videoDuration:source.videoDuration,audioStart:source.audioStart,audioEnd:source.audioEnd,hasAudio:source.hasAudio,width:source.width,height:source.height})).digest('hex');
-   return{id:`source-video-${source.id}`,sourceId:source.id,sourceKey,filename:`source-${source.id}.mp4`,bytes:null,originalBytes:info.size,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],maxHeight:480,representation:'delivery-copy-pending',preparation:'on-video-download',qualityPolicy:WEB_AI_VIDEO_POLICY,maxBytes:WEB_AI_VIDEO_LIMIT,delivery:'manual-download',providerReceipt:'not-verified',limitation:'YouTube: tải rendition tối đa 480p riêng khi bấm Tải video, không nén hình ảnh nguồn 1080p. Nguồn local: tạo bản tối đa 480p. Giữ đầy đủ timeline; kích thước cuối chưa xác định. Chưa xác minh khả năng đọc chi tiết hoặc tốc độ model.'};
+   return{id:`source-video-${source.id}`,sourceId:source.id,sourceKey,filename:`source-${source.id}${path.extname(source.mediaPath)}`,bytes:info.size,originalBytes:info.size,duration:source.duration,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],width:source.width,height:source.height,representation:'source-or-optional-480p',preparation:'original-ready',defaultDownload:'original',optionalDownload:{rendition:'480p',maxHeight:480,maxBytes:WEB_AI_VIDEO_LIMIT},delivery:'manual-download',providerReceipt:'not-verified',limitation:'Nút chính tải đúng file nguồn đã chuẩn bị, không nén/tải lại; độ phân giải thực theo nguồn. Menu phụ tải bản tối đa 480p riêng (YouTube rendition hoặc derivative local). Bản nguồn có thể vượt giới hạn website; chọn 480p khi cần. Manifest không chứng minh website đã nhận hoặc đọc video.'};
   }finally{release();}
  }
  async function cached(source,key,originalBytes){
@@ -160,5 +160,12 @@ export function createWebAiVideo({root,youtube,ffmpeg,run,probeMedia,fingerprint
    throw caught;
   }finally{const n=progressUsers.get(source.id)||0;if(n<=1)progressUsers.delete(source.id);else progressUsers.set(source.id,n-1);release();}
  }
- return{describe,ensure,subscribeProgress,isBusy:sourceId=>(busy.get(sourceId)||0)>0,async using(source,signal,work){const release=retain(source.id);try{return await work(await ensure(source,signal));}finally{release();}}};
+ return{describe,ensure,subscribeProgress,async usingOriginal(source,signal,work){
+  const release=retain(source.id);
+  try{
+   signal?.throwIfAborted();const info=await stat(source.mediaPath);signal?.throwIfAborted();
+   if(!info.isFile())throw error('WEB_VIDEO_SOURCE','Không đọc được video nguồn.');
+   return await work({file:source.mediaPath,manifest:{bytes:info.size,filename:`source-${source.id}${path.extname(source.mediaPath)}`}});
+  }finally{release();}
+ },isBusy:sourceId=>(busy.get(sourceId)||0)>0,async using(source,signal,work){const release=retain(source.id);try{return await work(await ensure(source,signal));}finally{release();}}};
 }

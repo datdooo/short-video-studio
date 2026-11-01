@@ -2005,10 +2005,6 @@ export default function Home() {
                 <Link2 aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" />
                 <Input id="youtube-url" value={sourceUrl} onChange={(event) => { resetSourceSelection(); setSourceUrl(event.target.value); }} placeholder="youtube.com/watch?v=..." className="studio-input studio-icon-input pl-10" />
               </div>
-              {(youtubeState === "loading" || youtubeState === "error") && <p className="mt-2 text-[11px] leading-5 text-zinc-600">
-                {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
-                {youtubeState === "error" && youtubeError}
-              </p>}
             </TabsContent>
             <TabsContent value="local" className="pt-3">
               <label className="flex h-[84px] cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-white/12 bg-white/[.02] text-sm text-zinc-400 transition hover:border-[#ff4d2e]/40 hover:bg-[#ff4d2e]/5 hover:text-white">
@@ -2019,6 +2015,10 @@ export default function Home() {
             </TabsContent>
           </Tabs>
           <button type="button" onClick={()=>void prepareSource()} disabled={isPreparingSource||!workerHealth?.ok||(!preparedSource&&(sourceMode==='youtube'?!sourceUrl.trim():!localFile))} className={`studio-primary w-full${preparedSource&&!isPreparingSource?' studio-source-ready':''}`} aria-busy={isPreparingSource}>{isPreparingSource?<><Loader2 size={14} className="animate-spin"/><span>{sourcePreparationLabel(sourcePreparationProgress?{...sourcePreparationProgress,percent:null}:null)}</span></>:preparedSource?<><Check size={14}/>Nguồn sẵn sàng</>:<><Download size={14}/>Chuẩn bị nguồn</>}</button>
+          {sourceMode === "youtube" && (youtubeState === "loading" || youtubeState === "error") && <p className="text-[11px] leading-5 text-zinc-600 break-words" role="status">
+            {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
+            {youtubeState === "error" && youtubeError}
+          </p>}
           {isPreparingSource&&<><TaskProgress label={sourcePreparationLabel(sourcePreparationProgress?{...sourcePreparationProgress,percent:null}:null)} startedAt={sourcePreparationStartedAt} percent={sourcePreparationProgress?.percent} estimated={sourcePreparationProgress?.estimated} detail={sourcePreparationProgress?.downloadedBytes!==undefined?`${(sourcePreparationProgress.downloadedBytes/1048576).toFixed(1)}${sourcePreparationProgress.totalBytes?` / ${(sourcePreparationProgress.totalBytes/1048576).toFixed(1)}`:''} MiB${sourcePreparationProgress.bytesPerSecond?` · ${(sourcePreparationProgress.bytesPerSecond/1048576).toFixed(1)} MiB/s`:''}${sourcePreparationProgress.etaSeconds!==undefined?` · còn khoảng ${Math.ceil(sourcePreparationProgress.etaSeconds)}s của bước tải`:''}`:undefined}/><button type="button" className="studio-ghost" onClick={()=>{sourcePreparation.current?.abort(new DOMException('Đã dừng chuẩn bị nguồn','AbortError'));setError('Đã dừng chuẩn bị nguồn.');}}>Dừng chuẩn bị</button></>}
           {preparedSource?<div className="studio-source-status"><span>{formatTime(preparedSource.duration)} · {preparedSource.width}×{preparedSource.height}</span></div>:<p className="studio-muted text-xs">{isPreparingSource?'':localFileName||'Chưa có nguồn'}</p>}
           <div className="mt-1">

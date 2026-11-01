@@ -1,3 +1,15 @@
+# Hiện hành — tải nguồn mặc định, 480p tùy chọn (2026-11-01)
+
+- Nút **Tải video** tải đúng file nguồn local ở bước chuẩn bị (thường1080p), không chạy FFmpeg, hash toàn file, tải mạng hoặc đổi source.
+- Mũi tên nhỏ bên cạnh mở **Tải bản480p**. Chỉ lựa chọn này đi qua cache/download rendition YouTube hoặc tạo derivative cho video local như trước.
+- Thanh tải/cancel dùng chung operation telemetry, truyền bằng native browser stream, không giữ toàn video trong RAM Editor.
+- Prompt v15 mô tả hai lựa chọn và không coi manifest là chứng nhận upload/đọc video. Tải TXT mới một lần. Nguồn gốc có thể vượt giới hạn upload website; không tự thay bằng480p.
+- File nguồn giữ extension thực, kích thước/độ phân giải thực; không upscale nguồn thấp hơn rồi gọi là1080p. Profile và dữ liệu DEV/Beta giữ nguyên.
+- Chưa build hoặc nghiệm thu runtime trong lượt sửa source này.
+
+---
+Các mục bên dưới là lịch sử, không phải chính sách tải hiện hành.
+
 # Beta1113 / promptv12 — quyết định mới nhất — 2026-10-27
 
 Nút Tải video nén THAY THẾ Tải video480p. Dùng nguồn1080 hiện có (hoặc kích

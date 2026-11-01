@@ -138,9 +138,9 @@ function manualDownloadError(error){
   if(error?.code==='SOURCE_BUSY')return'Nguồn đang được di chuyển. Chờ xong rồi tải lại.';
   if(['WEB_VIDEO_SOURCE_CHANGED','WEB_VIDEO_VARIANT_CHANGED'].includes(error?.code))return'Nguồn hoặc bản video đã đổi. Tải TXT mới rồi tải video lại.';
   if(error?.code==='SOURCE_MEDIA_MISSING'||error?.code==='ENOENT')return'Không còn video nguồn. Chuẩn bị hoặc khôi phục nguồn rồi tải lại.';
-  if(error?.code==='ENOSPC')return'Không đủ dung lượng để chuẩn bị video 480p.';
+  if(error?.code==='ENOSPC')return'Không đủ dung lượng để chuẩn bị video.';
   if(error?.code==='WEB_VIDEO_TOO_LONG'||error?.code==='WEB_VIDEO_TOO_LARGE')return'Chưa tạo được video đầy đủ trong giới hạn 512 MiB; nguồn và plan vẫn được giữ.';
-  return'Không chuẩn bị hoặc truyền được video 480p. Bấm Tải video để thử lại.';
+  return'Không chuẩn bị hoặc truyền được video. Bấm Tải video để thử lại.';
 }
 const exportNameAllocator = createExportNameAllocator();
 const batches = new Map();
@@ -2060,6 +2060,8 @@ const server = createServer(async (request, response) => {
     }
     const manualMedia=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/manual-video$/i);
     if(['GET','HEAD'].includes(request.method)&&manualMedia){
+      const rendition=requestUrl.searchParams.get('rendition')||'original';
+      if(!['original','480p'].includes(rendition))throw Object.assign(Error('Lựa chọn tải video không hợp lệ.'),{status:400});
       const downloadId=requestUrl.searchParams.get('downloadId');
       if(downloadId!==null&&(request.method!=='GET'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(downloadId)))throw Object.assign(Error('Định danh lượt tải video không hợp lệ.'),{status:400});
       let tracked;
@@ -2088,7 +2090,7 @@ const server = createServer(async (request, response) => {
         const expectedSource=requestUrl.searchParams.get('source');
         if(expectedSource!==null&&!/^[a-f0-9]{64}$/.test(expectedSource))throw Object.assign(Error('Định danh nguồn video gửi web không hợp lệ.'),{status:400});
         const source=await loadSource(manualMedia[1],controller.signal);
-        if(tracked)unsubscribe=webAiVideos.subscribeProgress(source.id,event=>{
+        if(tracked&&rendition==='480p')unsubscribe=webAiVideos.subscribeProgress(source.id,event=>{
           if(transferring||tracked.progress.state!=='running'||['error','cancelled'].includes(event.phase))return;
           const progress={phase:event.phase==='ready'?'validating':event.phase,state:'running',percent:event.phase==='ready'?null:event.percent};
           for(const key of ['completedSeconds','totalSeconds','attempt','maxAttempts'])if(Number.isFinite(event[key])&&event[key]>=0)progress[key]=event[key];
@@ -2097,8 +2099,9 @@ const server = createServer(async (request, response) => {
         });
         const assertDownloadSource=async()=>{if(expectedSource!==null&&(await webAiVideos.describe(source,controller.signal)).sourceKey!==expectedSource)throw Object.assign(Error('Nguồn đã đổi từ lúc tạo TXT; chưa tải video của lượt cũ.'),{status:409,code:'WEB_VIDEO_SOURCE_CHANGED'});};
         await assertDownloadSource();
-        await webAiVideos.using(source,controller.signal,async prepared=>{
-          if(expectedVariant!==null&&prepared.manifest.variantKey!==expectedVariant)throw Object.assign(Error('Bản video hoặc nguồn đã đổi; chưa truyền video của lượt cũ.'),{status:409,code:'WEB_VIDEO_VARIANT_CHANGED'});
+        const useVideo=rendition==='original'?webAiVideos.usingOriginal:webAiVideos.using;
+        await useVideo(source,controller.signal,async prepared=>{
+          if(rendition==='480p'&&expectedVariant!==null&&prepared.manifest.variantKey!==expectedVariant)throw Object.assign(Error('Bản video hoặc nguồn đã đổi; chưa truyền video của lượt cũ.'),{status:409,code:'WEB_VIDEO_VARIANT_CHANGED'});
           await assertDownloadSource();
           transferring=true;unsubscribe?.();unsubscribe=undefined;
           let lastUpdate=0,latestBytes=0,latestTotal=0;const transferStart=performance.now();
