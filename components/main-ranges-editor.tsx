@@ -1,6 +1,7 @@
 'use client';
 import {Fragment,useEffect,useRef} from 'react';
 import {X} from 'lucide-react';
+import {CutTimeline} from './cut-timeline';
 import {useEditorDraft} from './editor-draft-context';
 import type {ReactNode} from 'react';
 import type {EditPlan,EditPart} from '@/lib/edit-plan';
@@ -8,11 +9,11 @@ import {hookRangeKey} from '@/lib/teaser-hooks.mjs';
 import {MAX_MAIN_RANGES,mainRangeRows,inspectMainRanges,rangeTime} from '@/lib/main-ranges.mjs';
 import type {MainRangeRow} from '@/lib/main-ranges.mjs';
 
-type Props={active?:boolean;children?:ReactNode;plan:EditPlan;part:EditPart;duration:number;
+type Props={active?:boolean;children?:ReactNode;timelineBusy?:boolean;sourceId:string;currentTime:number;cues:{start:number;end:number;text:string}[];onTimeSeek:(time:number)=>void;onTeaserChange:(part:EditPart)=>Promise<void>;plan:EditPlan;part:EditPart;duration:number;
  onSeek?:(index:number)=>void;onEdit:(id:number,rows:MainRangeRow[],expectedKey:string)=>void;
  onDraft:(id:number,key:string,invalid:boolean)=>void;
  onRestore:(id:number)=>void;onInvalidate:()=>void};
-export function MainRangesEditor({active=true,plan,part,duration,onEdit,onDraft,onRestore,onInvalidate,children,onSeek}:Props){
+export function MainRangesEditor({active=true,plan,part,duration,onEdit,onDraft,onRestore,onInvalidate,children,onSeek,timelineBusy=false,sourceId,currentTime,cues,onTimeSeek,onTeaserChange}:Props){
  const key=hookRangeKey(part);
  const[draft,setDraft]=useEditorDraft<{key:string;appliedKey?:string;rows:MainRangeRow[]}|null>(`main-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'rows'in v&&Array.isArray(v.rows)&&v.rows.length<=MAX_MAIN_RANGES&&v.rows.every(r=>r&&typeof r.start==='string'&&typeof r.end==='string'&&(r.exactStart===undefined||Number.isFinite(r.exactStart))&&(r.exactEnd===undefined||Number.isFinite(r.exactEnd))));
  const ownApplied=useRef<string|null>(null);
@@ -28,6 +29,7 @@ export function MainRangesEditor({active=true,plan,part,duration,onEdit,onDraft,
    if(!bad){ownApplied.current=JSON.stringify(result.ranges.map(r=>[r.start,r.end]));onEdit(part.id,next,key);}
  }
  return <section hidden={!active} className="mt-3 min-w-0 space-y-2" aria-label={`Timeline Part ${part.id}`}>
+  {active&&<CutTimeline key={`${sourceId}:${part.id}`} part={part} sourceId={sourceId} duration={duration} currentTime={currentTime} disabled={invalid||!sourceId||timelineBusy} cues={cues} onSeek={onTimeSeek} onMain={edit} checkMain={next=>{const check=inspectMainRanges(plan,part.id,next,duration);return check.error||check.errors.find(Boolean)||'';}} onTeaser={onTeaserChange}/>}
   {children}
   <div className="studio-main-editor min-w-0 space-y-2 text-xs">
   <div className="studio-teaser-header"><h4 className="font-semibold">Nội dung chính <span className="font-normal text-zinc-500">· {part.segments.filter(s=>!s.isPadding).reduce((n,s)=>n+s.end-s.start,0).toFixed(2)}s preview 1×</span></h4></div>

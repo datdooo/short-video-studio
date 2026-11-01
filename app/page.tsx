@@ -101,6 +101,7 @@ import {
   AnalyzeRequest,
   EDIT_PLAN_SCHEMA,
   EditPlan,
+  EditPart,
   durationOf,
   formatTime,
   isChronological,
@@ -1840,6 +1841,27 @@ export default function Home() {
     }
   }
 
+  async function applyEditorTeaser(next:EditPart,proposalTrack?:CaptionTrack){
+    const source=preparedSource;if(!source)throw Error('Chuẩn bị đúng nguồn trước khi áp dụng teaser.');
+    const epoch=sourceSelectionEpoch.current,identity=latestPartHookIdentities.current[next.id];
+    const captionCues=proposalTrack?sourceCaptionTrack(proposalTrack,source):previewPlan.captionCues;
+    if(proposalTrack&&previewPlan.captionCues?.origin==='user-edited'&&JSON.stringify(captionCues?.cues)!==JSON.stringify(previewPlan.captionCues.cues))throw Error('Ứng viên dùng phụ đề khác bản chỉnh tay; chọn lại với phụ đề hiện tại.');
+    const selected={...previewPlan,...(captionCues?{captionCues}:{}),parts:previewPlan.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:{...p,teaserEnabled:false})};
+    const target=selected.parts.find(p=>p.id===next.id)!;validateTeaser(target,source.duration,source.id);
+    await assertTeaserContexts(selected,source,captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
+    if(!await externalHooksCurrent(selected,source,transcript||source.transcript||''))throw Error('Ứng viên import đã cũ; tạo prompt lại.');
+    if(epoch!==sourceSelectionEpoch.current||identity!==latestPartHookIdentities.current[next.id])throw Error('Nguồn/main đã đổi; ứng viên chưa được áp dụng.');
+    if(proposalTrack&&captionCues)setSourceCaptions(captionCues);
+    invalidateAnalysis();setPlan(current=>{
+    try{const base=effectiveCutPlan(current);
+      const effective=base;
+      const target=effective.parts.find(p=>p.id===next.id);
+      if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
+      return {...current,...(captionCues?{captionCues}:{}),teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:p)};
+    }catch{return current;}
+              });
+  }
+
   function updatePartTitle(title: string) {
     invalidateAnalysis();
     setPlan((current) => ({
@@ -2290,7 +2312,7 @@ export default function Home() {
           {hasEditPlan && <div className="min-w-0 rounded-xl border border-white/8 bg-white/[.025] p-3">
             <h3 className="text-sm font-semibold">Timeline · Part {activePart.id}{teaserIssues.filter(issue=>issue.partId!==activePart.id).map(issue=><span key={issue.partId} className="studio-other-part-status">Part {issue.partId} cần sửa</span>)}</h3>
             <p className="mt-1 text-xs text-zinc-500" title="Timestamp nguồn HH:MM:SS:FF, 30 FPS; FF từ 00 đến 29. Mốc AI chưa sửa vẫn giữ độ chính xác gốc.">Mốc thời gian theo video nguồn</p>
-            {previewPlan.parts.map((part,index)=><MainRangesEditor key={`${preparedSource?.id||previewVideoUrl}:${part.id}`} active={index===activePartIndex} plan={previewPlan} part={part} duration={preparedSource?.duration||previewDuration||Infinity}
+            {previewPlan.parts.map((part,index)=><MainRangesEditor key={`${preparedSource?.id||previewVideoUrl}:${part.id}`} active={workspace==='editor'&&index===activePartIndex} timelineBusy={isAnalyzing||Object.values(teaserOperations).some(operation=>operation.running)} sourceId={preparedSource?.id||''} currentTime={previewCurrentTime} onTimeSeek={seekPreview} cues={subtitleCues} onTeaserChange={applyEditorTeaser} plan={previewPlan} part={part} duration={preparedSource?.duration||previewDuration||Infinity}
               onSeek={rangeIndex=>{const main=part.segments.filter(s=>!s.isPadding)[rangeIndex],segments=presentationSegments(part);if(main){const index=segments.indexOf(main);if(index>=0)seekPreview(timelineTimeForSegment(segments,index,main.start,PREVIEW_RATE));}}}
               onInvalidate={()=>{invalidateAnalysis();activeTeaserRequests.current.get(part.id)?.controller.abort(new Error('Mốc main đang được sửa; đã dừng lựa chọn teaser cũ.'));setRenderJob(null);}}
               onDraft={(id,key,invalid)=>setMainDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.invalid===invalid?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,invalid}})}
@@ -2306,25 +2328,7 @@ export default function Home() {
               onResolve={(input,signal,previousRanges)=>resolveCustomTeaser(part.id,input,signal,previousRanges)}
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
               onAudition={()=>{stopWorkspacePlayback(part.id);setActivePartIndex(index);}}
-              onChange={async (next,proposalTrack)=>{
-                const source=preparedSource;if(!source)throw Error('Chuẩn bị đúng nguồn trước khi áp dụng teaser.');
-                const epoch=sourceSelectionEpoch.current,identity=latestPartHookIdentities.current[next.id];
-                const captionCues=proposalTrack?sourceCaptionTrack(proposalTrack,source):previewPlan.captionCues;
-                if(proposalTrack&&previewPlan.captionCues?.origin==='user-edited'&&JSON.stringify(captionCues?.cues)!==JSON.stringify(previewPlan.captionCues.cues))throw Error('Ứng viên dùng phụ đề khác bản chỉnh tay; chọn lại với phụ đề hiện tại.');
-                const selected={...previewPlan,...(captionCues?{captionCues}:{}),parts:previewPlan.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:{...p,teaserEnabled:false})};
-                const target=selected.parts.find(p=>p.id===next.id)!;validateTeaser(target,source.duration,source.id);
-                await assertTeaserContexts(selected,source,captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
-                if(!await externalHooksCurrent(selected,source,transcript||source.transcript||''))throw Error('Ứng viên import đã cũ; tạo prompt lại.');
-                if(epoch!==sourceSelectionEpoch.current||identity!==latestPartHookIdentities.current[next.id])throw Error('Nguồn/main đã đổi; ứng viên chưa được áp dụng.');
-                if(proposalTrack&&captionCues)setSourceCaptions(captionCues);
-                invalidateAnalysis();setPlan(current=>{
-                try{const base=effectiveCutPlan(current);
-                  const effective=base;
-                  const target=effective.parts.find(p=>p.id===next.id);
-                  if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
-                  return {...current,...(captionCues?{captionCues}:{}),teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:p)};
-                }catch{return current;}
-              });}}/>
+              onChange={applyEditorTeaser}/>
             </MainRangesEditor>)}
           </div>}
           {!hasEditPlan&&<p className="studio-muted text-xs">Chưa có bản cắt.</p>}

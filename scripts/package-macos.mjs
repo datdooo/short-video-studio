@@ -62,6 +62,8 @@ await cp(path.join(projectRoot, "desktop"), path.join(resources, "desktop"), { r
 // Web providers use manual TXT/video downloads; no browser extension is shipped.
 await mkdir(path.join(resources,"docs"),{recursive:true});
 await copyFile(path.join(projectRoot,"docs","CHATGPT-WEB-HANDOFF.md"),path.join(resources,"docs","CHATGPT-WEB-HANDOFF.md"));
+await mkdir(path.join(resources,"licenses","timeline"),{recursive:true});
+await copyFile(path.join(projectRoot,"docs","licenses","react-timeline-editor-MIT.txt"),path.join(resources,"licenses","timeline","react-timeline-editor-MIT.txt"));
 await writeFile(path.join(resources, "config.json"), JSON.stringify(target.config, null, 2));
 
 // Only Sharp and its installed runtime dependencies are additional to vinext's standalone output.
