@@ -6,6 +6,7 @@ import {captureAiMainRanges} from '../lib/main-ranges.mjs';
 import {assertTeaserContexts,selectionDigest,selectionRequestValue,transcriptValue} from '../lib/teaser-context.mjs';
 import {externalHooksCurrent} from '../lib/teaser-import.mjs';
 import {externalPlanAnalysis} from '../lib/auto-cut/main-content.mjs';
+import {validateWebMediaReview} from '../lib/web-media-review.mjs';
 import {attachExternalHooks} from '../lib/teaser-import.mjs';
 import {assertMainLocks} from '../lib/auto-cut/locks.mjs';
 import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTeaser,mainRanges} from '../lib/teaser-hooks.mjs';
@@ -55,10 +56,12 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
       assertContentLanguage(plan.language,sourceContentLanguage(source));
       if(plan.providerUsed!==body.provider||plan.parts?.some((p,i)=>p.id!==i+1))throw new Error('External plan provider/part identity mismatch.');
       validatePlan(plan,source,{teasers:false});assertMainLocks(plan,body.currentPlan);
+      const mediaReview=validateWebMediaReview(body.mediaReview,source,plan.parts,body.hookSelections);
       plan=await attachExternalHooks({...plan,captionCues:options.captionTrack},body.hookSelections,{...source,sourceContext:context},String(body.transcript??source.transcript??''),body.provider,options.cues,{instruction:options.instruction,supplementalPrompt:options.supplementalPrompt,externalVideo:true});
       validatePlan(plan,source);
       if(plan.parts.some(p=>p.teaserEnabled!==false&&!(p.teaser?.status==='unavailable'&&isLaterHookPolicy(p.teaser.selectionPolicy))&&(p.teaser?.selection!=='external-import'||p.teaser.provider!==body.provider)))throw new Error('Part bật teaser cần kết quả import hợp lệ. Sửa teaserSelection trong JSON, không tự chuyển provider.');
-      return{plan:captureAiMainRanges(externalPlanAnalysis(plan,source,context,options,input),body.currentPlan)};
+      const analyzed=externalPlanAnalysis(plan,source,context,options,input);
+      return{plan:captureAiMainRanges(analyzed,body.currentPlan),mediaReview};
     }
     let plan=await mainContent.select(source,context,options);
     if(options.captionTrack)plan.captionCues=structuredClone(options.captionTrack);

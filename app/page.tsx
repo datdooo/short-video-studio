@@ -1599,7 +1599,7 @@ export default function Home() {
       const importTrack=context.captionTrack||previewPlan.captionCues;
       let nextPlan:EditPlan = {...refined,captionCues:importTrack};
       if(context.analysisKey){
-        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,...(context.captionTrack?{captionCues:context.captionTrack}:{}),attachmentConfirmation:{attached:true,sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,mediaId:context.media.id,sourceKey:context.media.sourceKey,method:'manual-import'},hookSelections:selections,plan:nextPlan})});
+        const response=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/auto-cut`,{method:"POST",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:"import",sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,provider:context.provider,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt,currentPlan:context.lockedPlan,...(context.captionTrack?{captionCues:context.captionTrack}:{}),attachmentConfirmation:{attached:true,sourceId:preparedSource.id,requestId:context.requestId,analysisKey:context.analysisKey,mediaId:context.media.id,sourceKey:context.media.sourceKey,method:'manual-import'},mediaReview:imported.mediaReview,hookSelections:selections,plan:nextPlan})});
         const data=await response.json() as {plan?:EditPlan;error?:string};if(!response.ok||!data.plan)throw new Error(data.error||"Import context đã thay đổi.");nextPlan=data.plan;
       }
       const verified=await fetch(`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/teaser-hooks`,{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'validate-import',plan:nextPlan,transcript:context.transcript,instruction:context.instruction,supplementalPrompt:context.supplementalPrompt})});
@@ -1621,7 +1621,7 @@ export default function Home() {
       setActivePartIndex(0);
       setRenderJob(null);
       setError("");
-      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}.`);
+      setWebAiNotice(`Đã áp dụng 2 part từ ${webAiName}. Rà video${imported.mediaReview?.reviewDepth==='deep'?' kỹ':''}: AI tự khai, chưa xác minh độc lập.`);
     } catch (caughtError) {
       if (analysisRequests.current.isCurrent(ticket) && selectionEpoch === sourceSelectionEpoch.current) setWebAiError(caughtError instanceof Error ? caughtError.message : `Không nhập được JSON ${webAiName}.`);
     }
@@ -2116,7 +2116,7 @@ export default function Home() {
                 <label htmlFor="web-ai-result" className="field-label block">JSON kết quả</label>
                 <Textarea id="web-ai-result" value={webAiResult} onChange={event=>setWebAiResult(event.target.value)} placeholder="Dán JSON kết quả…" className="studio-textarea studio-web-json font-mono"/>
                 <Button type="button" size="action" onClick={()=>void applyWebAiResult()} disabled={!preparedSource||!webAiPromptIsCurrent||!webAiResult.trim()||isAnalyzing||isPreparingSource} className="w-full"><Check/>Áp dụng 2 part</Button>
-                {webAiError&&<p role="alert" className="break-words text-xs text-red-300">{webAiError}</p>}
+                {webAiError&&(webAiError.startsWith('WEB_MEDIA_REVIEW_')?<div role="alert" className="break-words text-xs text-red-300"><p>Chưa đủ thông tin rà video. Bản cắt hiện tại được giữ.</p><details><summary>Chi tiết</summary><p>{webAiError}</p></details></div>:<p role="alert" className="break-words text-xs text-red-300">{webAiError}</p>)}
                 {webAiNotice&&<p role="status" className="text-xs text-emerald-300">{webAiNotice}</p>}
               </section>:null}
           {!(editMode==='ai'&&isWebAi)&&<button type="button" className="studio-primary w-full" disabled={isAnalyzing||Object.values(teaserOperations).some(operation=>operation.running)||isPreparingSource||!workerHealth?.ok||!preparedSource||(editMode==='manual'&&hasEditPlan)} onClick={()=>{if(editMode==='manual')applyManualPlan();else if(isWebAi)void downloadWebAiPrompt();else void analyze();}}>{isAnalyzing?<Loader2 size={14} className="animate-spin"/>:<WandSparkles size={14}/>} {isAnalyzing?'Đang phân tích…':editMode==='manual'?'Áp dụng main thủ công':isWebAi?`Tạo prompt ${webAiName}`:'Phân tích'}</button>}
