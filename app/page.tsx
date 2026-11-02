@@ -101,7 +101,6 @@ import {
   AnalyzeRequest,
   EDIT_PLAN_SCHEMA,
   EditPlan,
-  EditPart,
   durationOf,
   formatTime,
   isChronological,
@@ -480,6 +479,7 @@ export default function Home() {
   const editorSourceId=sessionReady?(preparedSource?.id||retainedSourceId):'';
   const {ensureCurrent:ensureEditorSource,error:sourceLeaseError}=useEditorSourceLease(WORKER_ORIGIN,editorSourceId,sessionReady&&Boolean(workerHealth));
   const jobRestoreEpoch=useRef(0);
+  const [timelineStatusTarget,setTimelineStatusTarget]=useState<HTMLDivElement|null>(null);
   const [sourceRestoreNotice,setSourceRestoreNotice]=useState(''),[sourceRestoreVersion,setSourceRestoreVersion]=useState(0);
   const [controls,setControls]=useState<Controls>({}),[draftActivities,setDraftActivities]=useState<Record<string,boolean>>({});
   const {manualPart1Title,manualPart2Title,manualPart1Ranges,manualPart2Ranges,setManualPart1Title,setManualPart2Title,setManualPart1Ranges,setManualPart2Ranges}=useManualCutDraft({controls,setControls,scope:manualCutScope(sourceMode,sourceUrl,localFileName,batchDraftItem||batchEditing,localDraftId)});
@@ -1841,27 +1841,6 @@ export default function Home() {
     }
   }
 
-  async function applyEditorTeaser(next:EditPart,proposalTrack?:CaptionTrack){
-    const source=preparedSource;if(!source)throw Error('Chuẩn bị đúng nguồn trước khi áp dụng teaser.');
-    const epoch=sourceSelectionEpoch.current,identity=latestPartHookIdentities.current[next.id];
-    const captionCues=proposalTrack?sourceCaptionTrack(proposalTrack,source):previewPlan.captionCues;
-    if(proposalTrack&&previewPlan.captionCues?.origin==='user-edited'&&JSON.stringify(captionCues?.cues)!==JSON.stringify(previewPlan.captionCues.cues))throw Error('Ứng viên dùng phụ đề khác bản chỉnh tay; chọn lại với phụ đề hiện tại.');
-    const selected={...previewPlan,...(captionCues?{captionCues}:{}),parts:previewPlan.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:{...p,teaserEnabled:false})};
-    const target=selected.parts.find(p=>p.id===next.id)!;validateTeaser(target,source.duration,source.id);
-    await assertTeaserContexts(selected,source,captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
-    if(!await externalHooksCurrent(selected,source,transcript||source.transcript||''))throw Error('Ứng viên import đã cũ; tạo prompt lại.');
-    if(epoch!==sourceSelectionEpoch.current||identity!==latestPartHookIdentities.current[next.id])throw Error('Nguồn/main đã đổi; ứng viên chưa được áp dụng.');
-    if(proposalTrack&&captionCues)setSourceCaptions(captionCues);
-    invalidateAnalysis();setPlan(current=>{
-    try{const base=effectiveCutPlan(current);
-      const effective=base;
-      const target=effective.parts.find(p=>p.id===next.id);
-      if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
-      return {...current,...(captionCues?{captionCues}:{}),teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:p)};
-    }catch{return current;}
-              });
-  }
-
   function updatePartTitle(title: string) {
     invalidateAnalysis();
     setPlan((current) => ({
@@ -2311,8 +2290,7 @@ export default function Home() {
         timeline={<>
           {hasEditPlan && <div className="min-w-0 rounded-xl border border-white/8 bg-white/[.025] p-3">
             <h3 className="text-sm font-semibold">Timeline · Part {activePart.id}{teaserIssues.filter(issue=>issue.partId!==activePart.id).map(issue=><span key={issue.partId} className="studio-other-part-status">Part {issue.partId} cần sửa</span>)}</h3>
-            <p className="mt-1 text-xs text-zinc-500" title="Timestamp nguồn HH:MM:SS:FF, 30 FPS; FF từ 00 đến 29. Mốc AI chưa sửa vẫn giữ độ chính xác gốc.">Mốc thời gian theo video nguồn</p>
-            {previewPlan.parts.map((part,index)=><MainRangesEditor key={`${preparedSource?.id||previewVideoUrl}:${part.id}`} active={workspace==='editor'&&index===activePartIndex} timelineBusy={isAnalyzing||Object.values(teaserOperations).some(operation=>operation.running)} sourceId={preparedSource?.id||''} currentTime={previewCurrentTime} onTimeSeek={seekPreview} cues={subtitleCues} onTeaserChange={applyEditorTeaser} plan={previewPlan} part={part} duration={preparedSource?.duration||previewDuration||Infinity}
+            {previewPlan.parts.map((part,index)=><MainRangesEditor key={`${preparedSource?.id||previewVideoUrl}:${part.id}`} statusTarget={timelineStatusTarget} active={workspace==='editor'&&index===activePartIndex} plan={previewPlan} part={part} duration={preparedSource?.duration||previewDuration||Infinity}
               onSeek={rangeIndex=>{const main=part.segments.filter(s=>!s.isPadding)[rangeIndex],segments=presentationSegments(part);if(main){const index=segments.indexOf(main);if(index>=0)seekPreview(timelineTimeForSegment(segments,index,main.start,PREVIEW_RATE));}}}
               onInvalidate={()=>{invalidateAnalysis();activeTeaserRequests.current.get(part.id)?.controller.abort(new Error('Mốc main đang được sửa; đã dừng lựa chọn teaser cũ.'));setRenderJob(null);}}
               onDraft={(id,key,invalid)=>setMainDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.invalid===invalid?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,invalid}})}
@@ -2323,12 +2301,30 @@ export default function Home() {
               });}}
               onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
             >
-            <TeaserEditor sourceId={preparedSource?.id||''} sourceDuration={preparedSource?.duration||previewDuration} issues={teaserIssues.filter(issue=>issue.partId===part.id).map(issue=>issue.reason)} reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={workspace!=='editor'} aiBusy={isAnalyzing} progress={teaserOperations[part.id]&&<AiOperationStatus {...teaserOperations[part.id]}/>} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id} cues={previewPlan.captionCues?.cues||subtitleCues}
+            <TeaserEditor statusTarget={timelineStatusTarget} sourceId={preparedSource?.id||''} sourceDuration={preparedSource?.duration||previewDuration} issues={teaserIssues.filter(issue=>issue.partId===part.id).map(issue=>issue.reason)} reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={workspace!=='editor'} aiBusy={isAnalyzing} progress={teaserOperations[part.id]&&<AiOperationStatus {...teaserOperations[part.id]}/>} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
               onResolve={(input,signal,previousRanges)=>resolveCustomTeaser(part.id,input,signal,previousRanges)}
               onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
               onAudition={()=>{stopWorkspacePlayback(part.id);setActivePartIndex(index);}}
-              onChange={applyEditorTeaser}/>
+              onChange={async (next,proposalTrack)=>{
+                const source=preparedSource;if(!source)throw Error('Chuẩn bị đúng nguồn trước khi áp dụng teaser.');
+                const epoch=sourceSelectionEpoch.current,identity=latestPartHookIdentities.current[next.id];
+                const captionCues=proposalTrack?sourceCaptionTrack(proposalTrack,source):previewPlan.captionCues;
+                if(proposalTrack&&previewPlan.captionCues?.origin==='user-edited'&&JSON.stringify(captionCues?.cues)!==JSON.stringify(previewPlan.captionCues.cues))throw Error('Ứng viên dùng phụ đề khác bản chỉnh tay; chọn lại với phụ đề hiện tại.');
+                const selected={...previewPlan,...(captionCues?{captionCues}:{}),parts:previewPlan.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:{...p,teaserEnabled:false})};
+                const target=selected.parts.find(p=>p.id===next.id)!;validateTeaser(target,source.duration,source.id);
+                await assertTeaserContexts(selected,source,captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
+                if(!await externalHooksCurrent(selected,source,transcript||source.transcript||''))throw Error('Ứng viên import đã cũ; tạo prompt lại.');
+                if(epoch!==sourceSelectionEpoch.current||identity!==latestPartHookIdentities.current[next.id])throw Error('Nguồn/main đã đổi; ứng viên chưa được áp dụng.');
+                if(proposalTrack&&captionCues)setSourceCaptions(captionCues);
+                invalidateAnalysis();setPlan(current=>{
+                try{const base=effectiveCutPlan(current);
+                  const effective=base;
+                  const target=effective.parts.find(p=>p.id===next.id);
+                  if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
+                  return {...current,...(captionCues?{captionCues}:{}),teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:p)};
+                }catch{return current;}
+              });}}/>
             </MainRangesEditor>)}
           </div>}
           {!hasEditPlan&&<p className="studio-muted text-xs">Chưa có bản cắt.</p>}
@@ -2406,7 +2402,7 @@ export default function Home() {
 
         </>} music={<>
           <MusicPanel suspended={workspace!=='editor'} autoPrepare={sessionReady&&(!restorePassive||musicIntent)} previewReady={hasEditPlan} onPlayback={registerMusicPlayback} plan={previewPlan} worker={WORKER_ORIGIN} settings={previewPlan.music} activity={previewPlan.musicSpeech} source={preparedSource} part={activePart} duration={timelineDuration} time={previewCurrentTime} playing={workspace==="editor"&&isPreviewPlaying&&!previewBuffering} video={previewVideoRef} onChange={music=>{setMusicIntent(true);setPlan(current=>({...current,music}));}} onSpeech={musicSpeech=>setPlan(current=>({...current,musicSpeech}))} onAudition={()=>stopWorkspacePlayback()} />        </>}/>}
-        status={<StudioRenderStatus job={renderJob} submitting={isStartingRender} canRender={hasEditPlan&&!teaserIssues.length&&!isStartingRender&&!subtitleBusy&&!isAnalyzing&&!effectiveTiming.error&&renderJob?.state!=='queued'&&renderJob?.state!=='rendering'&&!!workerHealth?.ok} hasPlan={hasEditPlan} blockedReason={!workerHealth?.ok?'Worker chưa kết nối':subtitleBusy?'Đang tạo phụ đề…':isAnalyzing?'Đang phân tích…':''} validation={effectiveTiming.error} issues={teaserIssues} stopping={!!renderJob&&stoppingRenderIds.includes(renderJob.id)} worker={WORKER_ORIGIN} onRender={()=>void startRender()} onCancel={()=>{if(renderJob)void stopRender(renderJob);}} onPart={id=>setActivePartIndex(id-1)} busy={exportActivity}/>}
+        status={<StudioRenderStatus timelineDraftInvalid={Boolean(mainDraftErrors[activePart.id]?.sourceKey===mainEditorSourceKey&&mainDraftErrors[activePart.id]?.invalid||teaserDraftErrors[activePart.id]?.sourceKey===mainEditorSourceKey&&teaserDraftErrors[activePart.id]?.message)} timelineNotice={<div ref={setTimelineStatusTarget} className="studio-timeline-notices"/>} job={renderJob} submitting={isStartingRender} canRender={hasEditPlan&&!teaserIssues.length&&!isStartingRender&&!subtitleBusy&&!isAnalyzing&&!effectiveTiming.error&&renderJob?.state!=='queued'&&renderJob?.state!=='rendering'&&!!workerHealth?.ok} hasPlan={hasEditPlan} blockedReason={!workerHealth?.ok?'Worker chưa kết nối':subtitleBusy?'Đang tạo phụ đề…':isAnalyzing?'Đang phân tích…':''} validation={effectiveTiming.error} issues={teaserIssues} stopping={!!renderJob&&stoppingRenderIds.includes(renderJob.id)} worker={WORKER_ORIGIN} onRender={()=>void startRender()} onCancel={()=>{if(renderJob)void stopRender(renderJob);}} onPart={id=>setActivePartIndex(id-1)} busy={exportActivity}/>}
 
        />
       </div>

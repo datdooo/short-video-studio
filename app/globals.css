@@ -907,28 +907,10 @@ button, input, textarea { font: inherit; }
 .studio-teaser-status summary { cursor:pointer; color:#bcb2a5; }
 .studio-teaser-status details p { margin:5px 0 0; overflow-wrap:anywhere; }
 
-/* MIT React Timeline Editor: presentation only; existing preview owns media. */
-.studio-cut-timeline { min-width:0; border:1px solid #3b342b; border-radius:10px; background:#171510; padding:10px; }
-.studio-cut-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:8px; font-size:11px; }
-.studio-cut-toolbar > span { color:#b6aea1; flex:1; }
-.studio-cut-toolbar button { border:1px solid #484035; border-radius:5px; padding:3px 8px; }
-.studio-cut-toolbar button:disabled { opacity:.4; }
-.studio-cut-toolbar label { display:flex; align-items:center; gap:4px; }
-.studio-cut-toolbar input[type=range] { width:80px; accent-color:#ff5733; }
-.studio-cut-tracks { display:flex; min-width:0; }
-.studio-cut-track-labels { width:54px; flex-shrink:0; padding-top:42px; }
-.studio-cut-track-labels span { display:flex; align-items:center; height:44px; font-size:11px; }
-.studio-cut-track-body { flex:1; min-width:0; }
-.studio-cut-timeline .timeline-editor { background:#171510; font-family:inherit; }
-.studio-cut-timeline .timeline-editor-edit-row { background-image:linear-gradient(#1e1b16,#1e1b16),linear-gradient(90deg,#ffffff12 1px,transparent 0); }
-.studio-cut-timeline .timeline-editor-action { background:transparent; border-radius:5px; border:1px solid #86704a; overflow:visible; }
-.studio-cut-timeline .timeline-editor-action.action-selected { outline:2px solid #ff5733; z-index:3; }
-.studio-cut-clip { height:100%; padding:3px 10px; overflow:hidden; border-radius:4px; background:#4d4329; color:#f9f0d9; display:flex; flex-direction:column; white-space:nowrap; pointer-events:none; font-size:11px; }
-.studio-cut-clip small { font:9px monospace; opacity:.8; }
-.studio-cut-teaser { background:#66301f; }
-.studio-cut-padding { background:repeating-linear-gradient(45deg,#38332a 0 6px,#29251f 6px 12px); }
-.studio-cut-timeline .timeline-editor-action-left-stretch { left:-5px; cursor:ew-resize; }
-.studio-cut-timeline .timeline-editor-action-right-stretch { right:-5px; cursor:ew-resize; }
-.studio-cut-timeline .timeline-editor-cursor { border-color:#ff5733; }
-.studio-cut-toolbar button:focus-visible { outline:2px solid #ff8868; outline-offset:2px; }
-.studio-cut-clip:focus-visible { outline:2px solid #ff8868; outline-offset:-2px; }
+
+.studio-timeline-notices { display:contents; }
+.studio-timeline-notice { display:flex; min-width:0; max-width:100%; align-items:center; flex-wrap:wrap; gap:4px 8px; font-size:var(--ui-text-caption,12px); color:var(--studio-accent-text); }
+.studio-timeline-notice details { min-width:0; }
+.studio-timeline-notice summary { cursor:pointer; font-size:inherit; }
+.studio-timeline-notice details[open] { flex-basis:100%; }
+.studio-timeline-notice p { margin:3px 0; overflow-wrap:anywhere; }
