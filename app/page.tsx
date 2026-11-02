@@ -1635,7 +1635,9 @@ export default function Home() {
     setTxtDownloadTask({revision,startedAt,state:'running'});setWebAiPreparationLabel('Tạo tệp TXT');
     setWebAiError("");setWebAiNotice("");
     try {
-      const prepared=webAiPromptIsCurrent&&webAiContext?{prompt:webAiPrompt,context:webAiContext}:await createWebAiPrompt(true);
+      // Old TXT versions remain valid for importing their existing JSON, but
+      // a fresh download must not keep re-exporting the removed review gate.
+      const prepared=webAiPromptIsCurrent&&webAiContext?.promptVersion===WEB_AI_PROMPT_VERSION?{prompt:webAiPrompt,context:webAiContext}:await createWebAiPrompt(true);
       if(!prepared||currentWebRevision.current!==revision)return;
       const url=URL.createObjectURL(new Blob([prepared.prompt],{type:'text/plain;charset=utf-8'}));
       const link=document.createElement('a');
