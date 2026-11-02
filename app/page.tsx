@@ -91,6 +91,7 @@ import { EditorRenderList } from "@/components/editor-render-list";
 import { completedRenderJobs } from '@/lib/render-delete.mjs';
 import { CopyButton } from "@/components/copy-button";
 import { effectiveCutPlan } from "@/worker/part-start.mjs";
+import {useCutHistory} from '@/components/use-cut-history';
 import {MainRangesEditor} from '@/components/main-ranges-editor';
 import {applyMainRanges,captureAiMainRanges,restoreAiMainRanges} from '@/lib/main-ranges.mjs';
 import type {MainRangeRow} from '@/lib/main-ranges.mjs';
@@ -284,7 +285,8 @@ export default function Home() {
   const [supplementalPrompt, setSupplementalPrompt] = useState("");
   const [teaserDraftErrors,setTeaserDraftErrors]=useState<Record<number,{sourceKey:string;key:string;message:string}>>({});
   const [mainDraftErrors,setMainDraftErrors]=useState<Record<number,{sourceKey:string;key:string;invalid:boolean}>>({});
-  const [plan, setPlan] = useState<EditPlan>(() => mockPlan(DEFAULT_REQUEST));
+  const cutHistory=useCutHistory(()=>mockPlan(DEFAULT_REQUEST));
+  const {plan,setPlan,setCutPlan}=cutHistory;
   const subtitleSettings = useMemo(() => resolvePlanVisualStyle(plan).subtitle, [plan]);
   const setSubtitleSettings = useCallback((update: SubtitleStyle | ((current: SubtitleStyle) => SubtitleStyle)) => {
     setPlan((current) => {
@@ -431,6 +433,7 @@ export default function Home() {
   }
   // Called synchronously before source state/ref changes, not after unmount.
   function resetSourceSelection(){
+    cutHistory.clear();
     stopWorkspacePlayback();
     transcriptRequest.current?.abort();transcriptRequest.current=null;transcriptRevision.current++;transcriptEdited.current=false;
     subtitleController.current?.abort();subtitleController.current=null;webAiPending.current=false;setWebAiPhase(null);
@@ -490,6 +493,7 @@ export default function Home() {
   const draftContext=useMemo(()=>({controls,setControls,scope:sessionScope,activity:reportDraftActivity}),[controls,sessionScope,reportDraftActivity]);
   // Shared by startup and explicit draft restore. No task or playback resumes.
   function restoreEditorDraft(d:Partial<EditorSession>,nextWorkspace=d.workspace||'editor'){
+    cutHistory.clear();
     stopWorkspacePlayback();setPreparedSource(null);setLocalFile(null);setLocalVideoUrl('');
     setRestorePassive(true);setMusicIntent(false);
     setSourceMode(d.sourceMode||'youtube');setSourceUrl(d.sourceUrl||'');setLocalFileName(d.localFileName||'');
@@ -628,6 +632,37 @@ export default function Home() {
   const partDuration = presentationDuration(activePart)/PREVIEW_RATE;
   const previewEffectTime=previewToExportTime(previewCurrentTime);
   const mainSignature = webAiEditorSignature(previewPlan,subtitleCues);
+  const cutHistoryScope=useMemo(()=>JSON.stringify([preparedSource?.id,preparedSource?.duration,sourceSelectionEpoch.current,subtitleCues,transcript,instruction,supplementalPrompt,provider]),[preparedSource?.id,preparedSource?.duration,subtitleCues,transcript,instruction,supplementalPrompt,provider]);
+  const cutHistoryScopeRef=useRef(cutHistoryScope);
+  const cutHistoryTravelRevision=useRef(0);
+  useEffect(()=>{if(cutHistoryScopeRef.current!==cutHistoryScope){cutHistoryScopeRef.current=cutHistoryScope;cutHistory.clear();}},[cutHistoryScope,cutHistory.clear]);
+  const cutHistoryBlocked=workspace!=='editor'||!hasEditPlan||!preparedSource||Boolean(draftError||teaserDraftError)||isAnalyzing||Object.entries(draftActivities).some(([key,busy])=>busy&&key.startsWith('teaser Part '))||Object.values(teaserOperations).some(op=>op.running)||cutHistoryScopeRef.current!==cutHistoryScope;
+  function travelCutHistory(direction:'undo'|'redo'){
+    const entry=direction==='undo'?cutHistory.previous:cutHistory.next;
+    if(cutHistoryBlocked||!entry)return;
+    cutHistoryTravelRevision.current++;stopWorkspacePlayback();invalidateAnalysis();setRenderJob(null);
+    // Applied-only history: invalid/pending drafts block travel. Clear only
+    // projected timing drafts of affected parts, never unrelated input text.
+    const suffixes=entry.partIds.flatMap(id=>[`main-${id}`,`teaser-times-${id}`,`teaser-candidate-${id}`]);
+    setControls(current=>Object.fromEntries(Object.entries(current).filter(([key])=>!suffixes.some(suffix=>key===`${sessionScope}:${suffix}`))));
+    setMainDraftErrors(current=>Object.fromEntries(Object.entries(current).filter(([id])=>!entry.partIds.includes(Number(id)))));
+    setTeaserDraftErrors(current=>Object.fromEntries(Object.entries(current).filter(([id])=>!entry.partIds.includes(Number(id)))));
+    if(entry.partIds.length)setActivePartIndex(Math.max(0,plan.parts.findIndex(p=>p.id===entry.partIds[0])));
+    if(direction==='undo')cutHistory.undo();else cutHistory.redo();
+  }
+  const cutHistoryAction=useRef(travelCutHistory);cutHistoryAction.current=travelCutHistory;
+  useEffect(()=>{
+    const handler=(event:KeyboardEvent)=>{
+      if(event.defaultPrevented||event.isComposing||event.repeat||event.altKey||(!event.metaKey&&!event.ctrlKey)||workspaceRef.current!=='editor')return;
+      const target=event.target;
+      if(target instanceof HTMLElement&&(target.isContentEditable||target.closest('input,textarea,select,[role="textbox"],[role="combobox"],[role="dialog"],[role="menu"]')))return;
+      const key=event.key.toLowerCase();
+      const direction=key==='z'?(event.shiftKey?'redo':'undo'):event.ctrlKey&&!event.metaKey&&key==='y'?'redo':null;
+      if(!direction)return;event.preventDefault();cutHistoryAction.current(direction);
+    };
+    window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);
+  },[]);
+
   const basicTeaserIssues=useMemo(()=>teaserReadiness(previewPlan,preparedSource?.duration||previewDuration||Infinity,previewPlan.captionCues?.cues||subtitleCues,preparedSource?.id),[previewPlan.parts,preparedSource?.duration,preparedSource?.id,previewDuration,previewPlan.captionCues?.cues,subtitleCues]);
   const [freshnessState,setFreshnessState]=useState<{key:string;issues:{partId:number;reason:string}[]}>({key:'',issues:[]});
   const freshnessKey=JSON.stringify({source:preparedSource?{id:preparedSource.id,duration:preparedSource.duration,title:preparedSource.title}:null,parts:previewPlan.parts,cues:subtitleCues,transcript:transcript||preparedSource?.transcript||'',instruction,supplementalPrompt});
@@ -1630,7 +1665,9 @@ export default function Home() {
         part2Title: manualPart2Title,
         part2Ranges: manualPart2Ranges,
       });
-      replacePlan(nextPlan);
+      if(hasEditPlan){
+        setCutPlan(current=>{const style=resolvePlanVisualStyle(current);return snapshotPlanVisualStyle({...captureAiMainRanges(nextPlan),music:current.music,musicSpeech:current.musicSpeech,visualStyle:style,subtitles:style.subtitle,hookTransition:current.hookTransition??nextPlan.hookTransition});},'Áp dụng Manual cut');
+      }else replacePlan(nextPlan);
       setHasEditPlan(true);
       setActivePartIndex(0);
     } catch (caughtError) {
@@ -2286,42 +2323,47 @@ export default function Home() {
         </>}
         timeline={<>
           {hasEditPlan && <div className="min-w-0 rounded-xl border border-white/8 bg-white/[.025] p-3">
-            <h3 className="text-sm font-semibold">Timeline · Part {activePart.id}{teaserIssues.filter(issue=>issue.partId!==activePart.id).map(issue=><span key={issue.partId} className="studio-other-part-status">Part {issue.partId} cần sửa</span>)}</h3>
+            <div className="studio-cut-history-toolbar"><h3 className="text-sm font-semibold">Timeline · Part {activePart.id}{teaserIssues.filter(issue=>issue.partId!==activePart.id).map(issue=><span key={issue.partId} className="studio-other-part-status">Part {issue.partId} cần sửa</span>)}</h3>
+             <div role="group" aria-label="Lịch sử chỉnh cut">
+              <button type="button" className="studio-control" disabled={cutHistoryBlocked||!cutHistory.previous} title={cutHistory.previous?`Hoàn tác: ${cutHistory.previous.label} · ⌘/Ctrl+Z`:'Chưa có chỉnh cut để hoàn tác'} onClick={()=>travelCutHistory('undo')}>Undo</button>
+              <button type="button" className="studio-control" disabled={cutHistoryBlocked||!cutHistory.next} title={cutHistory.next?`Làm lại: ${cutHistory.next.label} · ⌘/Ctrl+Shift+Z hoặc Ctrl+Y`:'Chưa có chỉnh cut để làm lại'} onClick={()=>travelCutHistory('redo')}>Redo</button>
+             </div>
+            </div>
             {previewPlan.parts.map((part,index)=><MainRangesEditor key={`${preparedSource?.id||previewVideoUrl}:${part.id}`} statusTarget={timelineStatusTarget} active={workspace==='editor'&&index===activePartIndex} plan={previewPlan} part={part} duration={preparedSource?.duration||previewDuration||Infinity}
               onSeek={rangeIndex=>{const main=part.segments.filter(s=>!s.isPadding)[rangeIndex],segments=presentationSegments(part);if(main){const index=segments.indexOf(main);if(index>=0)seekPreview(timelineTimeForSegment(segments,index,main.start,PREVIEW_RATE));}}}
               onInvalidate={()=>{invalidateAnalysis();activeTeaserRequests.current.get(part.id)?.controller.abort(new Error('Mốc main đang được sửa; đã dừng lựa chọn teaser cũ.'));setRenderJob(null);}}
               onDraft={(id,key,invalid)=>setMainDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.invalid===invalid?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,invalid}})}
-              onEdit={(id,rows:MainRangeRow[],expectedKey)=>{invalidateAnalysis();setRenderJob(null);setPlan(current=>{
+              onHistoryBoundary={cutHistory.boundary} onEdit={(id,rows:MainRangeRow[],expectedKey,group)=>{invalidateAnalysis();setRenderJob(null);setCutPlan(current=>{
                 const base=effectiveCutPlan(current),target=base.parts.find(p=>p.id===id);
                 if(!target||hookRangeKey(target)!==expectedKey)return current;
                 try{return applyMainRanges(base,id,rows,preparedSource?.duration||previewDuration||Infinity);}catch{return current;}
-              });}}
-              onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setPlan(next);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
+              },`Chỉnh Main Part ${id}`,group);}}
+              onRestore={id=>{invalidateAnalysis();setRenderJob(null);try{const next=restoreAiMainRanges(previewPlan,id,preparedSource?.duration||previewDuration||Infinity);setCutPlan(next,`Khôi phục Main AI Part ${id}`);setMainDraftErrors(current=>({...current,[id]:{sourceKey:mainEditorSourceKey,key:hookRangeKey(next.parts.find(p=>p.id===id)!),invalid:false}}));setError('');}catch(e){setError(e instanceof Error?e.message:String(e));}}}
             >
             <TeaserEditor statusTarget={timelineStatusTarget} sourceId={preparedSource?.id||''} sourceDuration={preparedSource?.duration||previewDuration} issues={teaserIssues.filter(issue=>issue.partId===part.id).map(issue=>issue.reason)} reviewTarget={reviewTarget} reviewVisible={reviewVisible} reviewSourceKey={sessionReady&&preparedSource?`${WORKER_ORIGIN}/api/sources/${preparedSource.id}/media`:''} reviewRequest={JSON.stringify([transcript,instruction,supplementalPrompt,provider])} onAuditionControl={registerTeaserAudition} onDraft={(id,key,message)=>setTeaserDraftErrors(current=>current[id]?.sourceKey===mainEditorSourceKey&&current[id]?.key===key&&current[id]?.message===message?current:{...current,[id]:{sourceKey:mainEditorSourceKey,key,message}})} suspended={workspace!=='editor'} aiBusy={isAnalyzing} progress={teaserOperations[part.id]&&<AiOperationStatus {...teaserOperations[part.id]}/>} part={part} sourceUrl={previewVideoUrl} active={workspace==='editor'&&part.id===activePart.id} cues={previewPlan.captionCues?.cues||subtitleCues}
               transition={<label className="mt-3 block min-w-0 space-y-1 text-xs"><span className="block font-semibold leading-5">Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span></span><select aria-label="Transition Hook → Main" className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal" value={previewPlan.hookTransition||'legacy'} onChange={e=>setPlan(current=>({...current,hookTransition:e.target.value==='legacy'?undefined:e.target.value as EditPlan['hookTransition']}))}><option value="legacy">Theo lựa chọn đã lưu</option><option value="vr-light-leak-v2">Warm Light Leak</option><option value="rainbow-light-leak">Legacy Rainbow Wash</option><option value="dip-black">Dip Black</option><option value="flash-white">Flash White</option><option value="none">None</option></select></label>}
               onResolve={(input,signal,previousRanges)=>resolveCustomTeaser(part.id,input,signal,previousRanges)}
-              onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}));}}
+              onToggle={enabled=>{stopTeaserAuditions();previewPlayingRef.current=false;setIsPreviewPlaying(false);decks.current?.pause();previewVideoRef.current?.pause();musicPlaybackControl.current?.pause();invalidateAnalysis();setCutPlan(current=>({...current,parts:current.parts.map(p=>p.id===part.id?{...p,teaserEnabled:enabled}:p)}),`Bật/tắt Teaser Part ${part.id}`);}}
               onAudition={()=>{stopWorkspacePlayback(part.id);setActivePartIndex(index);}}
               onChange={async (next,proposalTrack)=>{
                 const source=preparedSource;if(!source)throw Error('Chuẩn bị đúng nguồn trước khi áp dụng teaser.');
-                const epoch=sourceSelectionEpoch.current,identity=latestPartHookIdentities.current[next.id];
+                const epoch=sourceSelectionEpoch.current,identity=latestPartHookIdentities.current[next.id],historyRevision=cutHistoryTravelRevision.current;
                 const captionCues=proposalTrack?sourceCaptionTrack(proposalTrack,source):previewPlan.captionCues;
                 if(proposalTrack&&previewPlan.captionCues?.origin==='user-edited'&&JSON.stringify(captionCues?.cues)!==JSON.stringify(previewPlan.captionCues.cues))throw Error('Ứng viên dùng phụ đề khác bản chỉnh tay; chọn lại với phụ đề hiện tại.');
                 const selected={...previewPlan,...(captionCues?{captionCues}:{}),parts:previewPlan.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:{...p,teaserEnabled:false})};
                 const target=selected.parts.find(p=>p.id===next.id)!;validateTeaser(target,source.duration,source.id);
                 await assertTeaserContexts(selected,source,captionCues?.cues||subtitleCues,transcript||source.transcript||'',{instruction,supplementalPrompt});
                 if(!await externalHooksCurrent(selected,source,transcript||source.transcript||''))throw Error('Ứng viên import đã cũ; tạo prompt lại.');
-                if(epoch!==sourceSelectionEpoch.current||identity!==latestPartHookIdentities.current[next.id])throw Error('Nguồn/main đã đổi; ứng viên chưa được áp dụng.');
+                if(epoch!==sourceSelectionEpoch.current||identity!==latestPartHookIdentities.current[next.id]||historyRevision!==cutHistoryTravelRevision.current)throw Error('Nguồn/main hoặc lịch sử cut đã đổi; ứng viên chưa được áp dụng.');
                 if(proposalTrack&&captionCues)setSourceCaptions(captionCues);
-                invalidateAnalysis();setPlan(current=>{
+                invalidateAnalysis();setCutPlan(current=>{
                 try{const base=effectiveCutPlan(current);
                   const effective=base;
                   const target=effective.parts.find(p=>p.id===next.id);
                   if(!target||hookRangeKey(target)!==hookRangeKey(next))return current;
                   return {...current,...(captionCues?{captionCues}:{}),teaserPolicy:TEASER_POLICY,parts:current.parts.map(p=>p.id===next.id?{...p,teaser:next.teaser,customTeaser:next.customTeaser,teaserNeedsReselection:false}:p)};
                 }catch{return current;}
-              });}}/>
+              },`Áp dụng Teaser Part ${next.id}`);}}/>
             </MainRangesEditor>)}
           </div>}
           {!hasEditPlan&&<p className="studio-muted text-xs">Chưa có bản cắt.</p>}

@@ -916,3 +916,7 @@ button, input, textarea { font: inherit; }
 .studio-timeline-notice summary { cursor:pointer; font-size:inherit; }
 .studio-timeline-notice details[open] { flex-basis:100%; }
 .studio-timeline-notice p { margin:3px 0; overflow-wrap:anywhere; }
+
+.studio-cut-history-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 12px; }
+.studio-cut-history-toolbar > div { display:flex; gap:6px; }
+.prototype-shell .studio-cut-history-toolbar button { min-height:28px; height:28px; padding:3px 9px; font-size:12px; }

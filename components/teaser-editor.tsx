@@ -49,7 +49,7 @@ export function TeaserEditor({statusTarget,issues=[],transition,progress,aiBusy=
  const [applyAcknowledgement,setApplyAcknowledgement]=useState<{signature:string;revision:number}|null>(null);
  const audition=useRef<{pause:()=>void}|null>(null);
  const bindAudition=useCallback((control:{pause:()=>void}|null)=>{audition.current=control;},[]);
- useDraftActivity(`teaser Part ${part.id}`,enabled&&busy);
+ useDraftActivity(`teaser Part ${part.id}`,enabled&&(busy||applying));
  const proposed=candidate?.key===identity?candidate.part:null,h=proposed?.teaser;
  const values=draft&&draft.key===identity?draft.times:baseline;
  // Raw prompt draft belongs to source/part (context scope), not to changing
