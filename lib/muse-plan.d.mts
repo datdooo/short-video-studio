@@ -3,7 +3,7 @@ export type MuseSource = { id: string; title: string; duration: number; sourceUr
 export function buildMusePrompt(prompt: string, schema: { properties: object; required: readonly string[] }, source: MuseSource, options?: { requestId: string; analysisKey?:string; lockedPlan?:EditPlan; context?:Record<string,unknown> }): string;
 export function parseMusePlan(raw: string, source: MuseSource, providerName?: string, options?: { requestId: string; analysisKey?:string; lockedPlan?:EditPlan }): Omit<EditPlan, "providerUsed" | "render"> & { hookSelections?: import("./teaser-import.mjs").ExternalSelection[] };
 
-export const WEB_AI_PROMPT_VERSION:'external-editing-full-media-compact-v21';
+export const WEB_AI_PROMPT_VERSION:'external-editing-full-media-compact-v22';
 export const WEB_AI_COMPATIBLE_PROMPT_VERSIONS:readonly string[];
 export function isCompatibleWebAiPromptVersion(version:unknown):boolean;
 export function splitWebAiPrompt(prompt:string):string[];

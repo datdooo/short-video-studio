@@ -3,13 +3,13 @@ import {createAnalysisCache} from './analysis-cache.mjs';
 import {sourceCaptionTrack} from '../lib/subtitles.mjs';
 import {WEB_AI_PROMPT_VERSION,WEB_AI_COMPATIBLE_PROMPT_VERSIONS} from '../lib/muse-plan.mjs';
 import {MAIN_INSTRUCTIONS} from '../lib/auto-cut/main-content.mjs';
-import {externalHookInstructions} from '../lib/teaser-import.mjs';
+import {externalHookInstructionsForPromptVersion} from '../lib/teaser-import.mjs';
 import {hookDurationLimits} from '../lib/teaser-hooks.mjs';
 
 const stable=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 const hash=value=>createHash('sha256').update(stable(value)).digest('hex');
 const fail=(code,message)=>Object.assign(Error(message),{code});
-const promptRules=version=>({version,main:MAIN_INSTRUCTIONS,teaser:externalHookInstructions,limits:hookDurationLimits()});
+const promptRules=version=>({version,main:MAIN_INSTRUCTIONS,teaser:externalHookInstructionsForPromptVersion(version),limits:hookDurationLimits()});
 // Only editorial inputs belong here. Renderer focus/appearance, history metadata,
 // AI binding diagnostics and object key order cannot invalidate a TXT snapshot.
 function mainInput(plan){
@@ -49,10 +49,10 @@ export function createExternalPromptSnapshots(root){
    if(saved.analysisKey!==body.analysisKey)throw fail('WEB_CONTEXT_KEY','analysisKey không khớp lượt TXT này. Dùng đúng JSON của TXT đã tải.');
    if(!body.captionCues)throw fail('WEB_CONTEXT_CAPTIONS','Thiếu snapshot phụ đề của lượt TXT; chưa nhập kết quả.');
    const current=identities(source,body,body.captionCues,media);
-   // The v21 relaxation removes only the viewing-receipt gate. Accept prior
-   // v19/v20 rules hashes only if ALL actual editorial rules/limits still
-   // match. Source, request, transcript, requirements, main and captions must
-   // retain their exact existing fingerprints; analysisKey is never replaced.
+   // Known v19-v21 snapshots keep their original candidate-count wording;
+   // v22 asks for three choices. ALL actual editorial/evidence/duration rules
+   // must still match. Source, request, transcript, requirements, main and
+   // captions retain exact fingerprints; analysisKey is never replaced.
    const compatibleRules=WEB_AI_COMPATIBLE_PROMPT_VERSIONS.some(version=>hash(promptRules(version))===saved.identities.rules);
    const changed=Object.keys(current).filter(key=>current[key]!==saved.identities[key]&&!(key==='rules'&&compatibleRules));
    if(changed.length)throw fail('WEB_CONTEXT_'+changed[0].toUpperCase(),changed.map(key=>labels[key]).join(' ')+' Tải TXT mới; plan hiện tại được giữ.');
