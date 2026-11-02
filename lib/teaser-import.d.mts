@@ -5,6 +5,7 @@ export type ExternalSelection = ExternalChoice & {alternatives:ExternalChoice[];
 export type ExternalAiProvider = 'gemini'|'muse'|'chatgpt-web';
 export function externalHookSchema(winnerOnly?:boolean): object;
 export const externalHookInstructions: string;
+export const MANUAL_WEB_TEASER_REVIEW_INSTRUCTIONS:string;
 export function externalHookKey(source:MuseSource,part:EditPart,transcript:string,provider:string,model:string,selectionPolicy?:string,contextVersion?:number):Promise<string>;
 export function attachExternalHooks(plan:EditPlan,selections:ExternalSelection[],source:MuseSource,transcript:string,provider:ExternalAiProvider,cues?:{start:number|null;end:number|null;text:string}[],request?:import('./teaser-context.mjs').SelectionRequest&{externalVideo?:boolean}):Promise<EditPlan>;
 export function externalHooksCurrent(plan:EditPlan,source:MuseSource,transcript:string):Promise<boolean>;

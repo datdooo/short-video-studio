@@ -1,6 +1,6 @@
 "use client";
 
-import {MAIN_EDITING_CRITERIA,mainInstruction} from '@/lib/main-instructions.mjs';
+import {mainInstruction} from '@/lib/main-instructions.mjs';
 import {explainInVietnamese} from "@/lib/explanation-language.mjs";
 import {hookNeedsReselection,validateTeaser,hookRangeKey,teaserReadiness,requireBothTeasers} from "@/lib/teaser-hooks.mjs";
 import {PREVIEW_RATE,PREVIEW_TIMEBASE,previewToExportTime} from '@/lib/preview-config.mjs';
@@ -259,7 +259,7 @@ const DEMO_TRANSCRIPT = `00:00 Willkommen zurück auf dem Kanal.
 const DEFAULT_REQUEST: AnalyzeRequest = {
   originalTitle: "",
   transcript: DEMO_TRANSCRIPT,
-  instruction: MAIN_EDITING_CRITERIA,
+  instruction: '',
   provider: "mock",
 };
 
@@ -1343,8 +1343,12 @@ export default function Home() {
     setError("");
   }
 
+  const legacyUserInstruction=mainInstruction(instruction).text;
+  const visibleSupplementalPrompt=legacyUserInstruction?legacyUserInstruction+(supplementalPrompt?'\n\n'+supplementalPrompt:''):supplementalPrompt;
+  function editSupplementalPrompt(value:string){invalidateAnalysis();setInstruction('');setSupplementalPrompt(value);}
+
   const isWebAi = provider === "muse" || provider === "gemini" || provider === 'chatgpt-web';
-  const webAiName = provider === "gemini" ? "Gemini Pro" : provider==='chatgpt-web'?'ChatGPT web':"Muse";
+  const webAiName = provider === "gemini" ? "Gemini" : provider==='chatgpt-web'?'ChatGPT':"Muse";
   async function createWebAiPrompt(throwOnError=false) {
     const requestedRevision=currentWebRevision.current;
     const selectionEpoch = sourceSelectionEpoch.current;
@@ -1918,12 +1922,8 @@ export default function Home() {
         </div>
         <details className="studio-batch-options mt-3 rounded-xl border border-white/8 p-3">
           <summary>Yêu cầu và cấu hình lượt mới</summary>
-        <details className="mt-4 rounded-xl border border-white/8 p-4">
-          <summary className="cursor-pointer text-sm text-zinc-300">Quy tắc chia part · xem / sửa</summary>
-          <Textarea aria-label="Quy tắc chia part hàng loạt" value={instruction} onChange={(event) => {invalidateAnalysis();setInstruction(event.target.value);}} className="studio-textarea studio-transcript mt-3" />
-        </details>
-        <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">Prompt bổ sung (không bắt buộc)</label>
-        <Textarea id="batch-extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…" />
+        <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">Yêu cầu bổ sung (không bắt buộc)</label>
+        <Textarea id="batch-extra-prompt" value={visibleSupplementalPrompt} onChange={(event) => editSupplementalPrompt(event.target.value)} className="studio-textarea mt-2 min-h-[80px]" placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…" />
         <label className="mt-3 flex items-center gap-2 text-xs text-zinc-300"><input type="checkbox" checked={subtitleSettings.enabled} onChange={(event) => setSubtitleSettings((current) => ({ ...current, enabled: event.target.checked }))} /> Auto Subtitle cho lượt chạy mới · dùng style ở tab chỉnh từng video</label>
         </details>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
@@ -2043,7 +2043,7 @@ export default function Home() {
 
           <div>
             <label htmlFor="extra-prompt" className="field-label">Yêu cầu bổ sung</label>
-            <Textarea id="extra-prompt" value={supplementalPrompt} onChange={(event) => {invalidateAnalysis();setSupplementalPrompt(event.target.value);}} className="studio-textarea mt-2 min-h-[80px]" placeholder="Ví dụ: Bỏ đoạn đầu, tập trung cảnh sửa xe, Part 2 ưu tiên cảnh chạy thử." />
+            <Textarea id="extra-prompt" value={visibleSupplementalPrompt} onChange={(event) => editSupplementalPrompt(event.target.value)} className="studio-textarea mt-2 min-h-[80px]" placeholder="Ví dụ: Bỏ đoạn đầu, tập trung cảnh sửa xe, Part 2 ưu tiên cảnh chạy thử." />
           </div>
           {editMode==='ai'&&<>
               <div className="studio-source-provider">
@@ -2054,9 +2054,9 @@ export default function Home() {
                   </SelectTrigger>
                   <SelectContent position="popper" align="start">
                     <SelectItem value="chatgpt">ChatGPT Auto · Sol low</SelectItem>
-                    <SelectItem value="chatgpt-web">ChatGPT · Web</SelectItem>
-                    <SelectItem value="gemini">Gemini Pro · Web</SelectItem>
-                    <SelectItem value="muse">Muse · Web</SelectItem>
+                    <SelectItem value="chatgpt-web">ChatGPT</SelectItem>
+                    <SelectItem value="gemini">Gemini</SelectItem>
+                    <SelectItem value="muse">Muse</SelectItem>
                     {provider==="mock"&&<SelectItem value="mock">Mô phỏng cũ · không AI</SelectItem>}
                   </SelectContent>
                 </Select>
@@ -2073,11 +2073,11 @@ export default function Home() {
                  </div>
                  <ManualVideoDownload key={preparedSource?.id||'no-source'} worker={WORKER_ORIGIN} sourceId={preparedSource?.id||''} sourceKey={webAiPromptIsCurrent?webAiContext?.media?.sourceKey:undefined} variantKey={webAiPromptIsCurrent?webAiContext?.media?.variantKey:undefined} disabled={!preparedSource||!workerHealth?.ok||isPreparingSource}/>
                 </div>
-                <p className="studio-muted text-xs">Gửi TXT + video trong {webAiName}, rồi dán JSON bên dưới.</p>
+                <p className="studio-muted text-xs">Gửi TXT + video cho AI, rồi dán JSON bên dưới.</p>
                 {webAiPrompt&&webAiPromptIsCurrent&&<p className="studio-muted text-xs">TXT · {(new TextEncoder().encode(webAiPrompt).byteLength/1024).toFixed(1)} KiB{webAiPrompt.length>100000?' · Tệp lớn; nơi nhận có thể giới hạn dung lượng.':''}</p>}
                 {webAiPrompt&&!webAiPromptIsCurrent&&<p role="status" className="text-xs text-amber-200">{webAiContextIssue}</p>}
-                <label htmlFor="web-ai-result" className="field-label block">JSON từ {webAiName}</label>
-                <Textarea id="web-ai-result" value={webAiResult} onChange={event=>setWebAiResult(event.target.value)} placeholder={`Dán JSON ${webAiName}…`} className="studio-textarea studio-web-json font-mono"/>
+                <label htmlFor="web-ai-result" className="field-label block">JSON kết quả</label>
+                <Textarea id="web-ai-result" value={webAiResult} onChange={event=>setWebAiResult(event.target.value)} placeholder="Dán JSON kết quả…" className="studio-textarea studio-web-json font-mono"/>
                 <Button type="button" size="action" onClick={()=>void applyWebAiResult()} disabled={!preparedSource||!webAiPromptIsCurrent||!webAiResult.trim()||isAnalyzing||isPreparingSource} className="w-full"><Check/>Áp dụng 2 part</Button>
                 {webAiError&&<p role="alert" className="break-words text-xs text-red-300">{webAiError}</p>}
                 {webAiNotice&&<p role="status" className="text-xs text-emerald-300">{webAiNotice}</p>}
@@ -2088,10 +2088,7 @@ export default function Home() {
           {analysisNotice&&<p role="status" className="studio-inline-notice">{analysisNotice}</p>}
           {isWebAi?(webAiPhase==='import'?<TaskProgress indeterminate label="Kiểm tra và lưu JSON" startedAt={webAiStartedAt}/>:null):<AiOperationStatus diagnostics={analysisDiagnostics} startedAt={analysisStartedAt} running={isAnalyzing&&Boolean(activeAnalysis.current)} finishedAt={analysisFinishedAt} finishedStage={analysisFinishedStage}/>}
           <SourceOptionsSection id="source-advanced" label="Nâng cao" open={sourceAdvancedOpen} onOpenChange={setSourceAdvancedOpen} className="studio-advanced">
-          <SourceOptionsSection id="source-ai-instructions" label="Yêu cầu AI" className="studio-ai-instructions mt-2">
-          {mainInstruction(instruction).compatibility==='legacy-factory-default-replaced'&&<p className="studio-muted text-xs">Quy tắc mặc định cũ dùng tiêu chí MAIN mới khi phân tích. <button type="button" className="studio-ghost" onClick={()=>{invalidateAnalysis();setInstruction(MAIN_EDITING_CRITERIA);}}>Cập nhật ô yêu cầu</button></p>}
-            <Textarea id="ai-instruction-primary" aria-label="Yêu cầu AI" rows={3} value={instruction} onChange={event=>{invalidateAnalysis();setInstruction(event.target.value);}} placeholder="Yêu cầu phân tích…" className="studio-textarea mt-2 min-h-[64px] resize-y"/>
-          </SourceOptionsSection>
+
 
           <Tabs value={editMode} onValueChange={(value) => { setEditMode(value as "ai" | "manual"); setError(""); }} className="mt-5">
             <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">

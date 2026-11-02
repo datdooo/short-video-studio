@@ -27,9 +27,9 @@ export function ManualVideoDownload({worker,sourceId,sourceKey,variantKey,disabl
  const detail=value?.completedBytes!==undefined?`${mib(value.completedBytes)}${value.totalBytes?` / ${mib(value.totalBytes)}`:''} MiB${value.bytesPerSecond?` · ${mib(value.bytesPerSecond)} MiB/s`:''}${value.etaSeconds!==undefined?` · còn khoảng ${Math.ceil(value.etaSeconds)}s của bước truyền`:''}`:value?.phase==='completed'?'Trình duyệt quản lý bước lưu tệp.':undefined;
  return <div className="studio-web-download-control">
   <div className="studio-video-download-split">
-   <Button type="button" variant="outline" size="action" onClick={()=>void start()} disabled={disabled||running||!sourceId} aria-busy={running} title="Tải đúng video nguồn ở bước chuẩn bị, không nén hoặc tải lại">{running?<Loader2 className="animate-spin"/>:<Download/>}Tải video</Button>
+   <Button type="button" variant="outline" size="action" className="studio-video-download-main" onClick={()=>void start()} disabled={disabled||running||!sourceId} aria-busy={running} title="Tải đúng video nguồn ở bước chuẩn bị, không nén hoặc tải lại">{running?<Loader2 className="animate-spin"/>:<Download/>}Tải video</Button>
    <DropdownMenu>
-    <DropdownMenuTrigger asChild><Button type="button" variant="outline" size="action" disabled={disabled||running||!sourceId} aria-label="Chọn bản video để tải" title="Tùy chọn tải video"><ChevronDown/></Button></DropdownMenuTrigger>
+    <DropdownMenuTrigger asChild><Button type="button" variant="outline" size="action" disabled={disabled||running||!sourceId} className="studio-video-download-menu" aria-label="Chọn bản video để tải"><ChevronDown/></Button></DropdownMenuTrigger>
     <DropdownMenuContent align="end"><DropdownMenuItem onSelect={()=>void start('480p')}><Download/>Tải bản 480p</DropdownMenuItem></DropdownMenuContent>
    </DropdownMenu>
   </div>
