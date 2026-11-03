@@ -13,6 +13,7 @@ export function StudioHeader({
   workerReady,
   providerLabel,
   providerReady,
+  drafts,
   saveState,
   saveMessage,
   onSave,
@@ -25,6 +26,7 @@ export function StudioHeader({
   workerReady: boolean;
   providerLabel: string;
   providerReady: boolean;
+  drafts?: ReactNode;
   saveState: SaveState;
   saveMessage: string;
   onSave: () => void;
@@ -66,7 +68,6 @@ export function StudioHeader({
         ))}
       </nav>
       <div className="studio-header-status">
-        <ShortcutHelp />
         <span
           role="status"
           title={workerReady ? "Media worker đang kết nối" : "Media worker chưa kết nối"}
@@ -76,11 +77,12 @@ export function StudioHeader({
           <span>{workerReady ? "Worker sẵn sàng" : "Mất kết nối"}</span>
         </span>
         <span
-          className={providerReady ? "studio-connected" : "studio-warning"}
+          className={`studio-provider-status ${providerReady ? "studio-connected" : "studio-warning"}`}
           title="Trạng thái cấu hình/đăng nhập; không đồng nghĩa đã kiểm chứng inference."
         >
           {providerLabel}
         </span>
+        {drafts}
         <button
           type="button"
           className="studio-session-save"
@@ -127,6 +129,7 @@ export function StudioHeader({
             </div>
           </PopoverContent>
         </Popover>
+        <ShortcutHelp />
       </div>
     </header>
   );

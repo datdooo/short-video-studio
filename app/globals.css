@@ -1101,7 +1101,7 @@ textarea {
     justify-content: space-between;
     font-size: 12px;
   }
-  .studio-header-status > span:nth-child(2) {
+  .studio-header-status > .studio-provider-status {
     display: none;
   }
   .prototype-shell .preview-controls {
@@ -3965,36 +3965,83 @@ textarea {
 .studio-status-details-popover p {
   margin: 4px 0;
 }
-.studio-preserved-drafts {
-  min-width: 0;
-  width: min(100%, 40rem);
-  font-size: 12px;
+/* Header actions stay compact; draft contents float outside the layout. */
+.prototype-shell .studio-header-status > button {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
-.studio-preserved-drafts summary {
-  cursor: pointer;
+.prototype-shell .studio-header-status > button.studio-session-drafts {
+  margin-inline-start: 4px;
+}
+.studio-header-status .studio-draft-count {
+  min-width: 18px;
+  height: 18px;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--background);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.studio-preserved-drafts {
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(400px, var(--radix-popover-content-available-height));
+  overflow: auto;
+  padding: 12px;
+  font: 12px/1.5 var(--ui-font);
+  color: var(--foreground);
+  background: var(--panel);
+}
+.studio-preserved-drafts-heading {
+  margin: 0;
+  font-weight: 600;
+}
+.studio-preserved-drafts-empty {
+  margin: 8px 0 0;
+  color: var(--muted-foreground);
 }
 .studio-preserved-drafts ul {
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
-  max-height: 240px;
-  overflow: auto;
 }
 .studio-preserved-drafts li {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 0;
+  padding: 8px 0;
   border-top: 1px solid var(--border);
 }
 .studio-preserved-drafts li > span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 .studio-preserved-drafts button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   flex-shrink: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  background: var(--secondary);
+  color: var(--foreground);
+  cursor: pointer;
+}
+.studio-preserved-drafts button:hover:not(:disabled) {
+  background: var(--control-hover);
+}
+.studio-preserved-drafts button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.studio-preserved-drafts button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

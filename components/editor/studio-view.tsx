@@ -413,6 +413,14 @@ export function StudioView({
                   ? "Mô phỏng (không AI)"
                   : provider
           }
+          drafts={
+            <PreservedDrafts
+              drafts={preservedDrafts}
+              onOpen={restorePreservedDraft}
+              onDelete={deletePreservedDraft}
+              disabled={!sessionReady}
+            />
+          }
           saveState={saveState}
           saveMessage={
             saveError ||
@@ -428,8 +436,7 @@ export function StudioView({
           saveError ||
           sourceRestoreNotice ||
           (sourceLeaseError && workspace !== "storage") ||
-          interruptedTasks.length > 0 ||
-          preservedDrafts.length > 0) && (
+          interruptedTasks.length > 0) && (
           <div className="studio-notices" role="status">
             {sessionNotice && <span>{sessionNotice}</span>}
             {saveError && <span className="studio-danger">{saveError}</span>}
@@ -454,13 +461,6 @@ export function StudioView({
               >
                 Giữ bản gốc
               </button>
-            )}
-            {!!preservedDrafts.length && (
-              <PreservedDrafts
-                drafts={preservedDrafts}
-                onOpen={restorePreservedDraft}
-                onDelete={deletePreservedDraft}
-              />
             )}
           </div>
         )}
