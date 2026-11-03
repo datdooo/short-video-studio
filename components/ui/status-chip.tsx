@@ -6,7 +6,7 @@ export function StatusChip({
   className,
   ...props
 }: ComponentProps<"span"> & {
-  tone?: "neutral" | "success" | "warning";
+  tone?: "neutral" | "success" | "warning" | "error";
 }) {
   return <span data-slot="status-chip" data-tone={tone} className={cn(className)} {...props} />;
 }

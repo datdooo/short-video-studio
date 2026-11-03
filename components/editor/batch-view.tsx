@@ -6,12 +6,22 @@ import { BatchProgress } from "@/components/batch-progress";
 import { CopyButton } from "@/components/copy-button";
 import { RenderProgress } from "@/components/render-progress";
 import { TaskProgress } from "@/components/task-progress";
-import { Badge } from "@/components/ui/badge";
+import { StatusChip } from "@/components/ui/status-chip";
+import {
+  EmptyState,
+  InlineNotice,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  Toolbar,
+  WorkspaceHeader,
+} from "@/components/ui/workspace";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
   WORKER_ORIGIN,
+  workerErrorMessage,
   sourcePreparationLabel,
   type BatchJob,
   type ChatGPTSession,
@@ -19,7 +29,7 @@ import {
 } from "@/lib/api/worker-client";
 import { AiProvider } from "@/lib/edit-plan";
 import { type SubtitleStyle } from "@/lib/subtitles.mjs";
-import { Download, Film, Loader2, LogIn, Play, Square, Trash2 } from "lucide-react";
+import { Download, Film, ListVideo, Loader2, LogIn, Play, Square, Trash2 } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 
 type Props = {
@@ -104,10 +114,10 @@ export function BatchView({ model }: { model: Props }) {
 
   return (
     <section className="studio-batch-workspace px-5 py-6">
-      <h1 className="text-2xl font-semibold">Xử lý hàng loạt</h1>
+      <WorkspaceHeader icon={<ListVideo />} title="Xử lý hàng loạt" />
       <div className="studio-batch-grid">
         <div className="studio-batch-setup min-w-0">
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Toolbar>
             <Select value={isWebAi ? provider : "chatgpt"} onValueChange={changeProvider}>
               <SelectTrigger aria-label="AI provider hàng loạt" className="studio-input w-[220px]">
                 <SelectValue />
@@ -125,35 +135,37 @@ export function BatchView({ model }: { model: Props }) {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <Badge
-              variant="secondary"
-              className={provider === "chatgpt" && chatGPTSession?.sharing ? "text-emerald-300" : "text-zinc-400"}
-            >
+            <StatusChip tone={provider === "chatgpt" && chatGPTSession?.sharing ? "success" : "neutral"}>
               {isWebAi
                 ? `${webAiName} thủ công`
                 : chatGPTSession?.sharing
                   ? "ChatGPT đã kết nối"
                   : "Chưa kết nối ChatGPT"}
-            </Badge>
+            </StatusChip>
             {provider === "chatgpt" && !chatGPTSession?.sharing && (
               <Button
                 onClick={() => void connectChatGPT()}
                 disabled={isChatGPTConnecting || isChatGPTDisconnecting || !workerHealth?.ok}
-                className="bg-white text-black"
               >
                 <LogIn /> Kết nối ChatGPT
               </Button>
             )}
             {isWebAi && (
-              <p className="w-full text-xs leading-5 text-amber-200/80">
+              <InlineNotice tone="warning" className="w-full">
                 {webAiName} cần import từng video.{" "}
-                <Button variant="secondary" size="md" type="button" onClick={() => changeWorkspace("editor")} className="underline">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  type="button"
+                  onClick={() => changeWorkspace("editor")}
+                  className="underline"
+                >
                   Mở Editor
                 </Button>
-              </p>
+              </InlineNotice>
             )}
-          </div>
-          <Disclosure className="studio-batch-options mt-3 rounded-xl border border-white/8 p-3">
+          </Toolbar>
+          <Disclosure className="studio-batch-options mt-3 rounded-xl border border-border p-3">
             <DisclosureTrigger>Yêu cầu và cấu hình lượt mới</DisclosureTrigger>
             <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">
               Yêu cầu bổ sung (không bắt buộc)
@@ -165,7 +177,7 @@ export function BatchView({ model }: { model: Props }) {
               className="studio-textarea mt-2 min-h-[80px]"
               placeholder="Yêu cầu thêm cho các video trong lượt chạy mới…"
             />
-            <label className="mt-3 flex items-center gap-2 text-xs text-zinc-300">
+            <label className="mt-3 flex items-center gap-2 text-xs text-foreground">
               <input
                 aria-label="Bật phụ đề tự động"
                 type="checkbox"
@@ -175,7 +187,7 @@ export function BatchView({ model }: { model: Props }) {
               Phụ đề tự động cho lượt chạy mới · dùng style ở tab chỉnh từng video
             </label>
           </Disclosure>
-          <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
+          <Panel>
             <label htmlFor="batch-urls" className="field-label">
               Link video (tối đa 20, mỗi dòng một link) ·{" "}
               {isWebAi ? `${webAiName} · chuẩn bị + import từng item` : "ChatGPT Auto"}
@@ -198,7 +210,7 @@ export function BatchView({ model }: { model: Props }) {
                 !workerHealth?.ok ||
                 (provider === "chatgpt" && !chatGPTSession?.sharing)
               }
-              className="mt-3 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
+              className="mt-3 w-full"
             >
               {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />}{" "}
               {isStartingBatch
@@ -213,46 +225,58 @@ export function BatchView({ model }: { model: Props }) {
               variant="destructive"
               onClick={() => void stopBatch()}
               disabled={!batch || batch.finished || isStoppingBatch || isStartingBatch}
-              className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10"
+              className="mt-2 w-full"
             >
               {isStoppingBatch ? <Loader2 className="animate-spin" /> : <Square />}{" "}
               {isStoppingBatch ? "Đang dừng…" : "Dừng hàng đợi"}
             </Button>
-            <div className="mt-3 rounded-xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-xs leading-5 text-emerald-200">
+            <InlineNotice tone="success" className="mt-3">
               <p className="font-semibold">Tự động tải từng part khi render xong</p>
-              <p className="mt-1 text-zinc-400">Giữ trang mở và cho phép tải nhiều file.</p>
+              <p className="mt-1 text-muted-foreground">Giữ trang mở và cho phép tải nhiều file.</p>
               {autoDownloadRequests > 0 && (
                 <p className="mt-1">
                   Đã gửi {autoDownloadRequests} yêu cầu tải trong phiên này. Kiểm tra mục Downloads của trình duyệt.
                 </p>
               )}
-              {autoDownloadError && <p className="mt-1 text-red-300">{autoDownloadError}</p>}
-            </div>
-            {batchError && <p className="mt-3 text-xs leading-5 text-red-300">{batchError}</p>}
-            {batchNotice && (
-              <p role="status" className="mt-3 text-xs leading-5 text-emerald-300">
-                {batchNotice}
-              </p>
+              {autoDownloadError && (
+                <InlineNotice tone="error" className="mt-2">
+                  {workerErrorMessage(autoDownloadError)}
+                </InlineNotice>
+              )}
+            </InlineNotice>
+            {batchError && (
+              <InlineNotice tone="error" className="mt-3">
+                {workerErrorMessage(batchError)}
+              </InlineNotice>
             )}
-          </div>
+            {batchNotice && (
+              <InlineNotice tone="success" role="status" className="mt-3">
+                {batchNotice}
+              </InlineNotice>
+            )}
+          </Panel>
         </div>
-        <section className="studio-batch-queue" aria-label="Hàng đợi video">
-          <h2 className="text-sm font-semibold">Hàng đợi video</h2>
+        <Panel className="studio-batch-queue" aria-label="Hàng đợi video">
+          <PanelHeader>
+            <h2 className="text-sm font-semibold">Hàng đợi video</h2>
+          </PanelHeader>
           {(batch || pastBatches.length > 0) && (
-            <div className="studio-batch-item-list mt-4 max-h-[480px] space-y-3 overflow-y-auto">
+            <div className="studio-batch-item-list mt-3 max-h-[480px] space-y-3 overflow-y-auto">
               {[...(batch ? [batch] : []), ...pastBatches.filter((group) => group.id !== batch?.id)].map((group) => (
                 <div key={group.id} className="space-y-3">
-                  <p className="text-xs uppercase tracking-wider text-zinc-500">
+                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
                     {group.id === batch?.id ? "Hàng đợi hiện tại" : "Video đã xử lý trước đó"}
                   </p>
                   <BatchProgress items={group.items.filter((item) => !deletedBatchItems.current.has(item.id))} />
                   {group.items
                     .filter((item) => !deletedBatchItems.current.has(item.id))
                     .map((item, index) => (
-                      <div
+                      <Panel
+                        as="article"
+                        padding="sm"
                         key={item.id || item.url}
                         data-batch-state={item.state}
-                        className="rounded-xl border border-white/8 p-3"
+                        className="workspace-list-row"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <p className="min-w-0 break-words text-xs font-semibold leading-5">
@@ -290,7 +314,7 @@ export function BatchView({ model }: { model: Props }) {
                                 ? "Xoá video và file render"
                                 : "Dừng hoặc chờ xử lý xong trước khi xoá"
                             }
-                            className="h-8 shrink-0 rounded-lg border-red-400/20 bg-transparent text-xs text-red-300 hover:bg-red-400/10"
+                            className="shrink-0"
                           >
                             {deletingBatchItems.includes(item.id) ? (
                               <Loader2 className="size-3.5 animate-spin" />
@@ -300,6 +324,27 @@ export function BatchView({ model }: { model: Props }) {
                             Xoá
                           </Button>
                         </div>
+                        <StatusChip
+                          tone={item.state === "done" ? "success" : item.state === "error" ? "error" : "neutral"}
+                        >
+                          {
+                            {
+                              pending: "Đang chờ",
+                              downloading: "Chuẩn bị nguồn",
+                              analyzing: "Phân tích",
+                              queued: "Chờ render",
+                              rendering: "Đang render",
+                              done: "Hoàn tất",
+                              error: "Lỗi",
+                              cancelled: "Đã dừng",
+                              paused: "Tạm dừng",
+                              "awaiting-import": "Chờ import",
+                              "review-required": "Cần kiểm tra",
+                              "render-ready": "Sẵn sàng render",
+                              submitting: "Đang ghi tác vụ",
+                            }[item.state]
+                          }
+                        </StatusChip>
                         {item.job ? (
                           <RenderProgress job={item.job} compact />
                         ) : (
@@ -371,14 +416,18 @@ export function BatchView({ model }: { model: Props }) {
                             </Button>
                           )}
                         </div>
-                        {item.error && <p className="mt-2 text-xs leading-5 text-red-300">{item.error}</p>}
+                        {item.error && (
+                          <InlineNotice tone="error" className="mt-2">
+                            {workerErrorMessage(item.error)}
+                          </InlineNotice>
+                        )}
                         {item.plan?.parts.map((part) => (
                           <div key={part.id} className="mt-3">
-                            <p className="text-xs text-zinc-500">TITLE SAU CÙNG · Part {part.id}</p>
+                            <p className="text-xs text-muted-foreground">TITLE SAU CÙNG · Part {part.id}</p>
                             <p className="mt-1 break-words select-text text-xs leading-5">
                               {item.plan!.originalTitle} | {part.title} ({part.id}/{item.plan!.parts.length})
                             </p>
-                            <p className="mt-1 break-words select-text text-xs leading-5 text-zinc-400">
+                            <p className="mt-1 break-words select-text text-xs leading-5 text-muted-foreground">
                               {part.hashtags.join(" ")}
                             </p>
                             <CopyButton
@@ -397,67 +446,73 @@ export function BatchView({ model }: { model: Props }) {
                                 setSelectedBatchPreviewKey(`${group.id}:${item.id}:${output.part}`);
                                 setBatchPreviewError("");
                               }}
-                              className={`h-9 rounded-xl border-white/15 text-xs ${batchPreviewOutput?.key === `${group.id}:${item.id}:${output.part}` ? "bg-white/10 text-white" : "bg-transparent text-zinc-300"}`}
+                              aria-pressed={batchPreviewOutput?.key === `${group.id}:${item.id}:${output.part}`}
                             >
                               <Play className="size-3.5" /> Xem Part {output.part}
                             </Button>
-                            <a
-                              href={`${WORKER_ORIGIN}${output.url}`}
-                              download={output.filename}
-                              className="studio-control studio-download flex min-w-0 flex-1 items-start gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/5 px-3 py-2 text-xs leading-5 text-emerald-300 hover:bg-emerald-400/10"
-                            >
-                              <Download className="mt-0.5 size-4 shrink-0" />
-                              <span className="break-all">
-                                Tải lại Part {output.part} · {output.filename}
-                              </span>
-                            </a>
+                            <Button variant="secondary" size="sm" asChild>
+                              <a
+                                href={`${WORKER_ORIGIN}${output.url}`}
+                                download={output.filename}
+                                className="studio-download min-w-0"
+                              >
+                                <Download className="mt-0.5 size-4 shrink-0" />
+                                <span className="break-all">
+                                  Tải lại Part {output.part} · {output.filename}
+                                </span>
+                              </a>
+                            </Button>
                           </div>
                         ))}
-                      </div>
+                      </Panel>
                     ))}
-                  {!group.items.length && (
-                    <p className="py-4 text-center text-xs text-zinc-500">Không còn video trong hàng đợi.</p>
-                  )}
+                  {!group.items.length && <EmptyState icon={<ListVideo />} title="Không còn video trong hàng đợi." />}
                 </div>
               ))}
             </div>
           )}
           {!batch && !pastBatches.length && (
-            <p className="studio-empty-state">Chưa có video trong hàng đợi. Thêm link ở cột bên trái.</p>
+            <EmptyState
+              icon={<ListVideo />}
+              title="Chưa có video trong hàng đợi."
+              description="Thêm link trong biểu mẫu để bắt đầu."
+            />
           )}
-        </section>
-        <aside
-          aria-label="Xem trước hàng loạt"
-          className="studio-batch-preview rounded-2xl border border-white/10 bg-card p-4"
-        >
-          <p className="eyebrow">PREVIEW RENDER</p>
-          {batchPreviewOutput ? (
-            <>
-              <video
-                ref={batchPreviewRef}
-                key={batchPreviewOutput.url}
-                src={`${WORKER_ORIGIN}${batchPreviewOutput.url}?preview=1`}
-                aria-label={`Xem trước Part ${batchPreviewOutput.part}`}
-                controls
-                playsInline
-                preload="metadata"
-                onLoadedMetadata={() => setBatchPreviewError("")}
-                onError={() => setBatchPreviewError("Không mở được video. Kiểm tra worker hoặc chọn Part khác.")}
-                className="mx-auto mt-3 aspect-[9/16] w-full max-w-[200px] rounded-xl bg-black object-contain"
-              />
-              <p className="mt-3 break-words text-xs font-semibold leading-5">{batchPreviewOutput.title}</p>
-              <p className="mt-1 break-all text-xs text-accent-foreground">
-                Part {batchPreviewOutput.part} · {batchPreviewOutput.filename}
-              </p>
-              {batchPreviewError && <p className="mt-2 text-xs leading-5 text-red-300">{batchPreviewError}</p>}
-            </>
-          ) : (
-            <div className="mx-auto mt-3 flex aspect-[9/16] w-full max-w-[200px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-white/10 bg-black/30 px-5 text-center text-xs leading-5 text-zinc-500">
-              <Play className="size-7 text-zinc-600" />
-              <p>Chưa chọn Part đã xuất.</p>
-            </div>
-          )}
-        </aside>
+        </Panel>
+        <Panel as="aside" aria-label="Xem trước hàng loạt" className="studio-batch-preview">
+          <PanelHeader>
+            <h2 className="text-sm font-semibold">Xem trước render</h2>
+          </PanelHeader>
+          <PanelBody>
+            {batchPreviewOutput ? (
+              <>
+                <video
+                  ref={batchPreviewRef}
+                  key={batchPreviewOutput.url}
+                  src={`${WORKER_ORIGIN}${batchPreviewOutput.url}?preview=1`}
+                  aria-label={`Xem trước Part ${batchPreviewOutput.part}`}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  onLoadedMetadata={() => setBatchPreviewError("")}
+                  onError={() => setBatchPreviewError("Không mở được video. Kiểm tra worker hoặc chọn Part khác.")}
+                  className="mx-auto mt-3 aspect-[9/16] w-full max-w-[200px] rounded-xl bg-(--sample-black) object-contain"
+                />
+                <p className="mt-3 break-words text-xs font-semibold leading-5">{batchPreviewOutput.title}</p>
+                <p className="mt-1 break-all text-xs text-accent-foreground">
+                  Part {batchPreviewOutput.part} · {batchPreviewOutput.filename}
+                </p>
+                {batchPreviewError && (
+                  <InlineNotice tone="error" className="mt-2">
+                    {workerErrorMessage(batchPreviewError)}
+                  </InlineNotice>
+                )}
+              </>
+            ) : (
+              <EmptyState icon={<Play />} title="Chưa chọn Part đã xuất." description="Chọn Xem Part trong hàng đợi." />
+            )}
+          </PanelBody>
+        </Panel>
       </div>
     </section>
   );

@@ -256,6 +256,17 @@ export type WorkerPath = "/health" | `/api/${string}`;
 export function workerFetch(path: WorkerPath, init?: RequestInit): Promise<Response> {
   return fetch(WORKER_ORIGIN + path, init);
 }
+/** Display-only translation. Never mutate the original error, code or HTTP status. */
+export function workerErrorMessage(value: unknown, fallback = "Không xử lý được yêu cầu media worker."): string {
+  const message = value instanceof Error ? value.message
+    : typeof value === "string" ? value
+      : value && typeof value === "object" && "error" in value && typeof value.error === "string" ? value.error
+        : fallback;
+  return (message || fallback).replace(
+    /(?:TypeError:\s*)?\b(?:Failed to fetch|Load failed|NetworkError when attempting to fetch resource|fetch failed)\b\.?/gi,
+    "Không kết nối được media worker.",
+  );
+}
 export function workerError(value: unknown, fallback: string): Error {
   const message =
     value && typeof value === "object" && "error" in value && typeof value.error === "string" ? value.error : fallback;

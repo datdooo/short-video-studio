@@ -1,8 +1,19 @@
 "use client";
+import { workerErrorMessage } from "@/lib/api/worker-client";
 import { useConfirm, toast } from "./confirmation-provider";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, Film, FolderOpen, Loader2, Play, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
+import { StatusChip } from "@/components/ui/status-chip";
+import {
+  EmptyState,
+  InlineNotice,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  Toolbar,
+  WorkspaceHeader,
+} from "@/components/ui/workspace";
 import { TaskProgress } from "./task-progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -294,49 +305,45 @@ export function MediaLibraryPanel({
           setSelected(new Set());
         }}
       >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold">
-              <FolderOpen className="size-6 text-accent-foreground" /> Kho
-            </h1>
+        <WorkspaceHeader
+          icon={<FolderOpen />}
+          title="Kho"
+          actions={
+            <Button variant="secondary" onClick={() => void refresh()} disabled={!ready || loading || working}>
+              {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Làm mới
+            </Button>
+          }
+        />
+        <Toolbar>
+          <div className="studio-library-search relative min-w-0">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <Input
+              aria-label="Tìm trong Kho"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setSelected(new Set());
+              }}
+              placeholder="Tìm theo title, tên file hoặc mã render…"
+              className="studio-input studio-icon-input pl-9"
+            />
           </div>
-          <Button
-            variant="secondary"
-            onClick={() => void refresh()}
-            disabled={!ready || loading || working}
-            className="border-white/15 bg-white/5"
-          >
-            {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Làm mới
-          </Button>
-        </div>
-        <div className="studio-library-search relative mt-5 min-w-0">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input
-            aria-label="Tìm trong Kho"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setSelected(new Set());
-            }}
-            placeholder="Tìm theo title, tên file hoặc mã render…"
-            className="studio-input studio-icon-input pl-9"
-          />
-        </div>
-        <TabsList className="studio-library-tabs mt-3" aria-label="Nội dung Kho">
-          <TabsTrigger value="renders">
-            Danh sách render <span className="studio-count">{renderCount}</span>
-          </TabsTrigger>
-          <TabsTrigger value="originals">
-            Nguồn <span className="studio-count">{library ? library.originals.length : "…"}</span>
-          </TabsTrigger>
-          <TabsTrigger value="parts">
-            Part <span className="studio-count">{library ? library.parts.length : "…"}</span>
-          </TabsTrigger>
-          <TabsTrigger value="trash">
-            Thùng rác <span className="studio-count">{library ? library.trash.length : "…"}</span>
-          </TabsTrigger>
-        </TabsList>
-        {!ready && <p className="mt-4 text-sm text-amber-200">App chưa kết nối media worker.</p>}
+          <TabsList className="studio-library-tabs" aria-label="Nội dung Kho">
+            <TabsTrigger value="renders">
+              Danh sách render <span className="studio-count">{renderCount}</span>
+            </TabsTrigger>
+            <TabsTrigger value="originals">
+              Nguồn <span className="studio-count">{library ? library.originals.length : "…"}</span>
+            </TabsTrigger>
+            <TabsTrigger value="parts">
+              Part <span className="studio-count">{library ? library.parts.length : "…"}</span>
+            </TabsTrigger>
+            <TabsTrigger value="trash">
+              Thùng rác <span className="studio-count">{library ? library.trash.length : "…"}</span>
+            </TabsTrigger>
+          </TabsList>
+        </Toolbar>
+        {!ready && <InlineNotice tone="warning">App chưa kết nối media worker.</InlineNotice>}
         {operation && (
           <TaskProgress
             label={operation.label}
@@ -350,19 +357,19 @@ export function MediaLibraryPanel({
           />
         )}
         {error && (
-          <p role="alert" className="mt-4 break-words text-sm text-red-300">
-            {error}
-          </p>
+          <InlineNotice tone="error" role="alert">
+            {workerErrorMessage(error)}
+          </InlineNotice>
         )}
         {notice && (
-          <p role="status" className="mt-4 text-sm text-emerald-300">
+          <InlineNotice tone="success" role="status">
             {notice}
-          </p>
+          </InlineNotice>
         )}
         {library?.warnings.map((warning) => (
-          <p key={warning} className="mt-2 text-xs text-amber-200">
-            {warning}
-          </p>
+          <InlineNotice key={warning} tone="warning">
+            {workerErrorMessage(warning)}
+          </InlineNotice>
         ))}
         <TabsContent value="renders" forceMount hidden={tab !== "renders"}>
           {renderList(search)}
@@ -371,12 +378,11 @@ export function MediaLibraryPanel({
           <p className="mt-3 text-xs text-muted-foreground">
             {tab !== "renders" && library ? sizeLabel(library.totals[tab]) : "—"} trong mục này.
           </p>
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          <Toolbar className="mt-3">
             <Button
               variant="secondary"
               onClick={() => setSelected(new Set(available.map((file) => file.id)))}
               disabled={!available.length || working}
-              className="border-white/15 bg-white/5"
             >
               Chọn tất cả {available.length > 1 ? `(${available.length})` : ""}
             </Button>
@@ -385,20 +391,16 @@ export function MediaLibraryPanel({
                 variant="destructive"
                 onClick={() => void handleStorageAction(tab === "trash" ? "purge" : "move", selectedFiles)}
                 disabled={working}
-                className="bg-red-500/15 text-red-200 hover:bg-red-500/25"
               >
                 {working ? <Loader2 className="animate-spin" /> : <Trash2 />}{" "}
                 {tab === "trash" ? "Xoá vĩnh viễn" : "Chuyển vào thùng rác"} ({selectedFiles.length})
               </Button>
             )}
-          </div>
-          <div className="studio-library-content-grid mt-4 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+          </Toolbar>
+          <div className="studio-library-content-grid mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="studio-library-file-list max-h-[65vh] space-y-3 overflow-y-auto pr-1">
               {files.map((file) => (
-                <div
-                  key={file.id}
-                  className="studio-library-card rounded-2xl border border-white/10 bg-white/[.025] p-4"
-                >
+                <Panel as="article" padding="sm" key={file.id} className="studio-library-card workspace-list-row">
                   <div className="flex items-start gap-3">
                     <input
                       type="checkbox"
@@ -420,7 +422,7 @@ export function MediaLibraryPanel({
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="break-words text-sm font-semibold leading-6">{file.title}</p>
-                      <p className="mt-1 break-all text-xs text-zinc-400">
+                      <p className="mt-1 break-all text-xs text-muted-foreground">
                         {file.kind === "original"
                           ? "Video gốc"
                           : file.kind === "parts"
@@ -428,7 +430,7 @@ export function MediaLibraryPanel({
                             : `Part ${file.part}`}{" "}
                         · {file.filename} · {sizeLabel(file.size)}
                       </p>
-                      <p className="mt-1 text-xs text-zinc-500">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {library?.storages.find((store) => store.id === file.storageId)?.label}
                         {file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}
                       </p>
@@ -437,10 +439,14 @@ export function MediaLibraryPanel({
                           (file.storageId === "current" &&
                             file.kind === "original" &&
                             file.sourceId === editorSourceId)) && (
-                          <p className="mt-2 text-xs text-amber-200">Nguồn đang dùng trong Editor.</p>
+                          <StatusChip tone="warning" className="mt-2">
+                            Nguồn đang dùng trong Editor.
+                          </StatusChip>
                         )}
                       {file.busy && (
-                        <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>
+                        <StatusChip tone="warning" className="mt-2">
+                          Đang xử lý — chưa thể xoá hoặc khôi phục.
+                        </StatusChip>
                       )}
                     </div>
                   </div>
@@ -454,23 +460,23 @@ export function MediaLibraryPanel({
                             setPreview(file);
                             setPreviewError("");
                           }}
-                          className="border-white/15 bg-transparent"
                         >
                           <Play className="size-3.5" /> Xem
                         </Button>
-                        <a
-                          href={`${workerOrigin}/api/storage/media/${encodeURIComponent(file.id)}?download=1`}
-                          download={file.filename}
-                          className="studio-control studio-download flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs"
-                        >
-                          <Download className="size-3.5" /> Tải file
-                        </a>
+                        <Button variant="secondary" size="sm" asChild>
+                          <a
+                            href={`${workerOrigin}/api/storage/media/${encodeURIComponent(file.id)}?download=1`}
+                            download={file.filename}
+                            className="studio-download"
+                          >
+                            <Download className="size-3.5" /> Tải file
+                          </a>
+                        </Button>
                         <Button
                           variant="destructive"
                           size="sm"
                           disabled={working || file.busy}
                           onClick={() => void handleStorageAction("move", [file])}
-                          className="border-red-400/20 bg-transparent text-red-300"
                         >
                           <Trash2 className="size-3.5" /> Chuyển vào thùng rác
                         </Button>
@@ -482,7 +488,6 @@ export function MediaLibraryPanel({
                           size="sm"
                           disabled={working || file.busy}
                           onClick={() => void handleStorageAction("restore", [file])}
-                          className="border-emerald-400/20 bg-transparent text-emerald-300"
                         >
                           <RotateCcw className="size-3.5" /> Khôi phục
                         </Button>
@@ -491,48 +496,65 @@ export function MediaLibraryPanel({
                           size="sm"
                           disabled={working || file.busy}
                           onClick={() => void handleStorageAction("purge", [file])}
-                          className="border-red-400/20 bg-transparent text-red-300"
                         >
                           <Trash2 className="size-3.5" /> Xoá vĩnh viễn
                         </Button>
                       </>
                     )}
                   </div>
-                </div>
+                </Panel>
               ))}
               {!files.length && (
-                <p className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">
-                  {loading
-                    ? "Đang đọc kho video…"
-                    : tab === "trash"
-                      ? "Thùng rác đang trống."
-                      : "Không có video phù hợp."}
-                </p>
+                <EmptyState
+                  icon={<FolderOpen />}
+                  title={
+                    loading
+                      ? "Đang đọc kho video…"
+                      : tab === "trash"
+                        ? "Thùng rác đang trống."
+                        : "Không có video phù hợp."
+                  }
+                  description={
+                    loading ? "Vui lòng chờ trong giây lát." : "Chọn mục khác hoặc thay đổi từ khóa tìm kiếm."
+                  }
+                />
               )}
             </div>
-            <aside className="rounded-2xl border border-white/10 bg-card p-4 lg:sticky lg:top-20">
-              <p className="eyebrow">XEM TRƯỚC FILE</p>
-              {preview ? (
-                <>
-                  <video
-                    aria-label="Xem trước file trong kho"
-                    ref={bindPreviewVideo}
-                    key={preview.id}
-                    src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")}
-                    onLoadedMetadata={() => setPreviewError("")}
-                    className="mt-3 max-h-[360px] w-full rounded-xl bg-black object-contain"
+            <Panel as="aside" className="lg:sticky lg:top-20">
+              <PanelHeader>
+                <h2 className="text-sm font-semibold">Xem trước file</h2>
+              </PanelHeader>
+              <PanelBody>
+                {preview ? (
+                  <>
+                    <video
+                      aria-label="Xem trước file trong kho"
+                      ref={bindPreviewVideo}
+                      key={preview.id}
+                      src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")}
+                      onLoadedMetadata={() => setPreviewError("")}
+                      className="mt-3 max-h-[360px] w-full rounded-xl bg-(--sample-black) object-contain"
+                    />
+                    <p className="mt-3 break-words text-xs leading-5">{preview.title}</p>
+                    {previewError && (
+                      <InlineNotice tone="error" className="mt-2">
+                        {workerErrorMessage(previewError)}
+                      </InlineNotice>
+                    )}
+                  </>
+                ) : (
+                  <EmptyState
+                    icon={<Play />}
+                    title="Chưa chọn video."
+                    description="Chọn Xem trên một file trong danh sách."
                   />
-                  <p className="mt-3 break-words text-xs leading-5">{preview.title}</p>
-                  {previewError && <p className="mt-2 text-xs text-red-300">{previewError}</p>}
-                </>
-              ) : (
-                <p className="mt-3 text-xs leading-6 text-zinc-500">Chưa chọn video.</p>
-              )}
-            </aside>
+                )}
+              </PanelBody>
+            </Panel>
           </div>
         </TabsContent>
       </Tabs>

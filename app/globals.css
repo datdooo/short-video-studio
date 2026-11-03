@@ -31,13 +31,18 @@
   --accent-foreground: #ffb199;
   --success: #7dcea0;
   --warning: #e7c36a;
-  --destructive: #f0a097;
+  --destructive: #ff6b7a;
+  --destructive-background: color-mix(in srgb, var(--destructive) 8%, var(--panel));
+  --destructive-hover-background: color-mix(in srgb, var(--destructive) 12%, var(--panel));
   --border: #322c27;
   --input: var(--border);
   --ring: var(--primary);
   --radius: 12px;
   --control-radius: 8px;
   --card-radius: 12px;
+  --panel-padding-sm: 12px;
+  --panel-padding-md: 16px;
+  --workspace-gap: 12px;
   --control-hover: var(--panel);
   --primary-hover: #ffb199;
   --primary-pressed: #ff5a36;
@@ -993,8 +998,9 @@ textarea {
   margin-top: 10px;
 }
 .studio-inspector-body .visual-customize > summary {
-  padding: 8px;
-  font-size: 12px;
+  padding: 6px 28px 6px 8px;
+  font-size: var(--control-font-size);
+  border-radius: var(--control-radius);
 }
 .studio-inspector-body .visual-customize-options .grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2047,7 +2053,7 @@ textarea {
     .studio-batch-workspace,
     .studio-library-workspace
   )
-  :is(.text-xs, .text-sm, [class~="text-[12px]"], [class~="text-[13px]"]):not(summary) {
+  :is(.text-xs, .text-sm, [class~="text-[12px]"], [class~="text-[13px]"]):not(summary):not([data-slot="select-trigger"]):not([data-slot="select-item"]) {
   font-size: var(--ui-text-body);
 }
 .prototype-shell
@@ -2768,8 +2774,10 @@ textarea {
   padding: 0;
 }
 .prototype-shell .studio-inspector-body .visual-customize > summary {
-  padding: 8px 36px 8px 12px;
-  min-height: var(--control-lg-height);
+  padding: 6px 28px 6px 8px;
+  min-height: var(--control-height);
+  font-size: var(--control-font-size);
+  border-radius: var(--control-radius);
 }
 .prototype-shell .studio-inspector-body .visual-customize > summary::after {
   right: 12px;
@@ -3470,62 +3478,38 @@ textarea {
   overflow: visible;
 }
 
-/* Full workspace layouts, using existing job/media components and callbacks. */
+/* Batch lets setup size itself; the workspace scrolls when content exceeds the viewport. */
 .prototype-shell > .studio-batch-workspace {
   max-width: none;
   margin: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  scroll-padding: var(--workspace-gap);
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  padding: var(--workspace-gap);
 }
 .studio-batch-grid {
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 auto;
+  min-height: min-content;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
-  grid-template-rows: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 12px;
-  margin-top: 12px;
+  grid-template-rows: auto minmax(160px, 1fr);
+  gap: var(--workspace-gap);
+  margin-top: var(--workspace-gap);
 }
-.studio-batch-grid > * {
-  min-width: 0;
-  min-height: 0;
-}
-.studio-batch-setup {
-  grid-column: 1;
-  grid-row: 1;
-}
-.studio-batch-queue {
-  grid-column: 1;
-  grid-row: 2;
-}
-.studio-batch-preview {
-  grid-column: 2;
-  grid-row: 1 / -1;
-}
-.studio-batch-setup,
-.studio-batch-preview {
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.studio-batch-setup > :first-child {
-  margin-top: 0;
-}
-.studio-batch-queue {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--card-radius);
-  padding: 12px;
-  background: var(--surface);
-}
+.studio-batch-grid > * { min-width: 0; min-height: 0; }
+.studio-batch-setup { grid-column: 1; grid-row: 1; overflow: visible; }
+.studio-batch-queue { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; }
+.studio-batch-preview { grid-column: 2; grid-row: 1 / -1; align-self: start; }
 .prototype-shell .studio-batch-queue .studio-batch-item-list {
   flex: 1;
   min-height: 0;
-  max-height: none;
+  max-height: 480px;
   overflow: auto;
+  scrollbar-gutter: stable;
+  scroll-padding: var(--workspace-gap);
   overscroll-behavior: contain;
 }
 .prototype-shell .studio-library-workspace .studio-library {
@@ -3543,7 +3527,7 @@ textarea {
 .prototype-shell .studio-library .studio-render-job-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--workspace-gap);
 }
 .prototype-shell :is(.studio-library-file-list, .studio-library .studio-render-job-list) > * {
   margin-top: 0;
@@ -3604,9 +3588,6 @@ textarea {
 }
 .prototype-shell .studio-batch-options > summary {
   min-height: var(--control-height);
-}
-.prototype-shell .studio-batch-setup > div:last-child {
-  margin-top: 10px;
 }
 @media (max-width: 1200px) {
   .studio-library-card {
@@ -4200,10 +4181,10 @@ textarea {
 
 .studio-button[data-variant="secondary"] { background: var(--secondary); border-color: var(--border); color: var(--foreground); }
 .studio-button[data-variant="ghost"], .studio-button[data-variant="icon"] { background: transparent; border-color: transparent; color: var(--foreground); }
-.studio-button[data-variant="destructive"] { background: var(--panel); border-color: var(--destructive); color: var(--destructive); }
+.studio-button[data-variant="destructive"] { background: var(--destructive-background); border-color: var(--destructive); color: var(--destructive); }
 .studio-button[data-variant="primary"] { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
 .studio-button[data-variant="primary"]:hover:not(:disabled) { background: var(--primary-hover); }
-.studio-button[data-variant="destructive"]:hover:not(:disabled) { background: color-mix(in srgb, var(--destructive) 12%, var(--panel)); border-color: var(--destructive); }
+.studio-button[data-variant="destructive"]:hover:not(:disabled) { background: var(--destructive-hover-background); border-color: var(--destructive); }
 .studio-button { min-width: var(--target-min-size); white-space: normal; overflow-wrap: anywhere; }
 .prototype-shell .studio-render-button { font-size: var(--control-font-size); font-weight: 500; }
 
@@ -4236,11 +4217,81 @@ textarea {
   background: transparent; border-color: transparent; color: var(--foreground);
 }
 :is(:root, .prototype-shell) .studio-button[data-slot][data-size][data-variant="destructive"] {
-  background: var(--panel); border-color: var(--destructive); color: var(--destructive);
+  background: var(--destructive-background); border-color: var(--destructive); color: var(--destructive);
 }
 :is(:root, .prototype-shell) .studio-button[data-slot][data-size][data-variant="destructive"]:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--destructive) 12%, var(--panel));
+  background: var(--destructive-hover-background);
 }
 :is(:root, .prototype-shell) .studio-button[data-slot][data-size][data-variant="segmented"][data-state="active"] {
   background: var(--selection-bg); border-color: var(--primary); color: var(--selection-text);
+}
+
+/* Shared workspace chrome: Batch and Kho use the same surface contract. */
+[data-slot="workspace-header"] {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: var(--workspace-gap); min-width: 0;
+}
+[data-slot="workspace-header"] h1 {
+  display: flex; align-items: center; gap: var(--control-gap);
+  margin: 0; font-size: var(--ui-text-heading); font-weight: 600;
+}
+[data-slot="workspace-header"] h1 svg { width: var(--target-min-size); height: var(--target-min-size); color: var(--accent-foreground); }
+[data-slot="workspace-header"] p { margin-top: 4px; color: var(--muted-foreground); }
+:is(:root, .prototype-shell) [data-slot="panel"].workspace-panel {
+  min-width: 0; border: 1px solid var(--border); border-radius: var(--card-radius);
+  background: var(--surface); padding: var(--panel-padding-md);
+}
+:is(:root, .prototype-shell) [data-slot="panel"][data-padding="sm"] { padding: var(--panel-padding-sm); }
+[data-slot="panel-header"], [data-slot="panel-footer"] {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--workspace-gap);
+}
+[data-slot="panel-body"] { min-width: 0; }
+[data-slot="panel"] > [data-slot="panel-body"]:not(:first-child),
+[data-slot="panel-footer"] { margin-top: var(--workspace-gap); }
+:is(:root, .prototype-shell) [data-slot="empty-state"] {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: var(--panel-padding-md); border: 1px dashed var(--border);
+  border-radius: var(--card-radius); color: var(--muted-foreground); text-align: center;
+}
+[data-slot="empty-state"] > span > svg { width: var(--target-min-size); height: var(--target-min-size); }
+[data-slot="empty-state"] p { margin: 0; }
+:is(:root, .prototype-shell) [data-slot="inline-notice"] {
+  padding: var(--panel-padding-sm); border: 1px solid color-mix(in srgb, var(--notice-color) 35%, var(--border));
+  border-radius: var(--control-radius); color: var(--notice-color);
+  background: color-mix(in srgb, var(--notice-color) 8%, var(--surface));
+  font-size: var(--control-font-size); line-height: 1.5; overflow-wrap: anywhere;
+}
+[data-slot="inline-notice"][data-tone="info"] { --notice-color: var(--muted-foreground); }
+[data-slot="inline-notice"][data-tone="success"] { --notice-color: var(--success); }
+[data-slot="inline-notice"][data-tone="warning"] { --notice-color: var(--warning); }
+[data-slot="inline-notice"][data-tone="error"] { --notice-color: var(--destructive); }
+[data-slot="workspace-toolbar"] { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+:is(:root, .prototype-shell) [data-slot="workspace-toolbar"] :is([data-slot="button"], [data-slot="input"], [data-slot="select-trigger"], [data-slot="tabs-trigger"]) {
+  --button-height: var(--control-height);
+  height: var(--control-height); min-height: var(--control-height);
+}
+:is(:root, .prototype-shell) [data-slot="status-chip"][data-tone="error"] { color: var(--destructive); }
+:is(:root, .prototype-shell) .workspace-list-row { min-height: 80px; }
+.workspace-list-row > [data-slot="status-chip"] { margin-top: 8px; }
+.prototype-shell .studio-library > [data-slot="tabs"] { gap: var(--workspace-gap); }
+.prototype-shell .studio-library-search { flex: 1 1 260px; width: auto; margin: 0; }
+.prototype-shell [data-slot="workspace-toolbar"] .studio-library-tabs {
+  display: flex; flex-wrap: wrap; gap: 4px; width: auto; height: auto;
+  padding: 0; margin: 0; background: transparent;
+}
+.prototype-shell [data-slot="workspace-toolbar"] .studio-library-tabs [data-slot="tabs-trigger"] { flex: 0 1 auto; }
+.studio-batch-setup { display: flex; flex-direction: column; gap: var(--workspace-gap); }
+.prototype-shell .studio-batch-setup > * { margin-top: 0; flex-shrink: 0; }
+.prototype-shell .studio-batch-setup > [data-slot="panel"] { margin-top: 0; }
+.prototype-shell .studio-batch-workspace .studio-button[aria-pressed="true"] {
+  border-color: var(--primary); background: var(--selection-bg); color: var(--selection-text);
+}
+
+/* Controls keep 13px even when a caller uses the historical text-sm utility.
+   Only the label of a sample card changes; artwork keeps its own typography. */
+:root [data-slot="select-trigger"],
+.prototype-shell button[data-slot="select-trigger"][data-size],
+[data-slot="select-content"] [data-slot="select-item"],
+.prototype-shell .studio-inspector-body [data-ui-exception="sample-card"] > span:last-child {
+  font-size: var(--control-font-size);
 }
