@@ -11,7 +11,7 @@ export function TaskProgress({label,percent,estimated=false,scope='bước',stat
  const detailId=useId();
  const started=typeof startedAt==='number'&&Number.isFinite(startedAt)&&startedAt>0?startedAt:undefined;
  const [now,setNow]=useState(()=>Date.now());
- useEffect(()=>{if(state!=='running'||!started)return;setNow(Date.now());const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[state,started]);
+ useEffect(()=>{if(state!=='running'||!started)return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[state,started]);
  const measured=typeof percent==='number'&&Number.isFinite(percent);
  const value=state==='done'?100:measured?Math.max(0,Math.min(99,Math.floor(percent))):null;
  const elapsed=state==='running'&&started?Math.max(0,Math.floor((now-started)/1000)):null;

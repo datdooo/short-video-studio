@@ -18,7 +18,7 @@ function retryReason(code:string){
 }
 export function AiOperationStatus({diagnostics,startedAt,running,finishedAt,finishedStage}:{diagnostics:AiDiagnostics|null;startedAt:number;running:boolean;finishedAt?:number;finishedStage?:'complete'|'error'|'cancelled'}){
  const[now,setNow]=useState(startedAt);
- useEffect(()=>{setNow(Date.now());if(!running)return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[running,startedAt]);
+ useEffect(()=>{if(!running)return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[running,startedAt]);
  if(!startedAt&&!diagnostics)return null;
  const elapsed=running?Math.max(diagnostics?.elapsedMs||0,startedAt?now-startedAt:0):diagnostics?.elapsedMs??Math.max(0,(finishedAt||startedAt)-startedAt);
  const stage=!running&&finishedStage?finishedStage:diagnostics?.stage||(running?'preparation':'complete');

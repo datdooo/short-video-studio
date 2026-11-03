@@ -1,6 +1,9 @@
 import test from 'node:test';import assert from 'node:assert/strict';
-import {mkdtemp,rm,stat,readdir} from 'node:fs/promises';import {tmpdir} from 'node:os';import path from 'node:path';import {spawn} from 'node:child_process';
+import {mkdtemp,rm,stat,readdir} from 'node:fs/promises';import {tmpdir} from 'node:os';import path from 'node:path';import {spawn,spawnSync} from 'node:child_process';
 import {createLocalSignalAnalyzer,analysisWindows,parseVideoSignals,parseAudioSignals} from './local-signals.mjs';import {normalizeLocalSignals,LOCAL_SIGNAL_VERSION} from '../lib/auto-cut/local-signals.mjs';
+const ffmpeg=process.env.FFMPEG_PATH||'ffmpeg';
+const ffmpegProbe=spawnSync(ffmpeg,['-version'],{encoding:'utf8',windowsHide:true});
+const ffmpegSkip=ffmpegProbe.error?.code==='ENOENT'?'Optional FFmpeg smoke: binary not installed (set FFMPEG_PATH).':false;
 const source={id:'local',mediaPath:'/fixture-only',duration:200,hasAudio:false};
 const execute=(binary,args,options={})=>new Promise((resolve,reject)=>{const child=spawn(binary,args,{signal:options.signal,stdio:['ignore','pipe','pipe']});let stdout='',stderr='';child.stdout.on('data',b=>{stdout+=b;if(stdout.length>(options.maxStdout||4e6)){child.kill();reject(new Error('output bound'));}});child.stderr.on('data',b=>{stderr+=b;options.onStderr?.(String(b));});child.on('error',reject);child.on('close',code=>code===0?resolve({stdout,stderr}):reject(new Error('FFmpeg fixture command failed')));});
 async function root(t){const dir=await mkdtemp(path.join(tmpdir(),'local-signals-'));t.after(()=>rm(dir,{recursive:true,force:true}));return dir;}
@@ -24,11 +27,11 @@ test('timeout degrades only optional local evidence; last-subscriber cancellatio
  const other=createLocalSignalAnalyzer({ffmpeg:'/fixture',cacheRoot:dir,fingerprint:async()=> 'different',run,timeoutMs:1000});started=false;
  const controller=new AbortController(),pending=other.forSource(source,controller.signal);while(!started)await new Promise(r=>setTimeout(r,1));controller.abort();await assert.rejects(pending);assert.equal(other.isBusy(source.id),false);
 });
-test('small actual FFmpeg scene/silence extraction smoke, no ASR/model/network and no retained intermediates',async t=>{
+test('small actual FFmpeg scene/silence extraction smoke, no ASR/model/network and no retained intermediates',{skip:ffmpegSkip},async t=>{
  const dir=await root(t),media=path.join(dir,'fixture.mp4'),cacheRoot=path.join(dir,'cache');
- await execute('/opt/homebrew/bin/ffmpeg',['-hide_banner','-v','error','-nostdin','-y','-f','lavfi','-i','color=black:s=64x64:r=2:d=2','-f','lavfi','-i','color=white:s=64x64:r=2:d=2','-f','lavfi','-i','anullsrc=r=16000:cl=mono:d=2','-f','lavfi','-i','sine=frequency=440:sample_rate=16000:duration=2','-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v];[2:a][3:a]concat=n=2:v=0:a=1[a]','-map','[v]','-map','[a]','-c:v','libx264','-preset','ultrafast','-c:a','aac',media]);
+ await execute(ffmpeg,['-hide_banner','-v','error','-nostdin','-y','-f','lavfi','-i','color=black:s=64x64:r=2:d=2','-f','lavfi','-i','color=white:s=64x64:r=2:d=2','-f','lavfi','-i','anullsrc=r=16000:cl=mono:d=2','-f','lavfi','-i','sine=frequency=440:sample_rate=16000:duration=2','-filter_complex','[0:v][1:v]concat=n=2:v=1:a=0[v];[2:a][3:a]concat=n=2:v=0:a=1[a]','-map','[v]','-map','[a]','-c:v','libx264','-preset','ultrafast','-c:a','aac',media]);
  assert.ok((await stat(media)).size<100000);
- const analyzer=createLocalSignalAnalyzer({ffmpeg:'/opt/homebrew/bin/ffmpeg',run:execute,fingerprint:async()=> 'fixture-digest',cacheRoot});
+ const analyzer=createLocalSignalAnalyzer({ffmpeg:ffmpeg,run:execute,fingerprint:async()=> 'fixture-digest',cacheRoot});
  const value=await analyzer.forSource({...source,mediaPath:media,duration:4,hasAudio:true});
  assert.equal(value.visual.status,'available');assert.ok(value.visual.boundaries.some(b=>b.time>=1.5&&b.time<=2.5));
  assert.equal(value.audio.status,'available');assert.ok(value.audio.silences.some(r=>r.start<.1&&r.end>1.5));assert.ok(value.audio.activity.some(a=>a.activity>0));

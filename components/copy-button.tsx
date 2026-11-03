@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect,useLayoutEffect, useRef, useState } from "react";
 import { Check, Copy, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,7 +16,7 @@ export function CopyButton({ text, label = "Copy title + hashtag", ariaLabel, cl
 }) {
   const [result, setResult] = useState<{ text: string; status: "pending" | "done" | "error" } | null>(null);
   const status = result?.text === text ? result.status : null;
-  const latestText = useRef(text); latestText.current = text;
+  const latestText = useRef(text); useLayoutEffect(()=>{latestText.current=text;},[text]);
   const pending = useRef(false);
   const mounted = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

@@ -11,24 +11,23 @@ import { resolveWorkerOrigin } from "../lib/worker-origin.mjs";
 const home = "/test-home";
 const projectRoot = "/dev-worktree";
 
-test("production defaults preserve identity, ports, data path and frontend origin", () => {
-  const runtime = resolveRuntime({ home });
-  assert.equal(runtime.name, "ShortCut Studio");
-  assert.equal(runtime.bundleId, "local.datdo.shortcutstudio");
-  assert.equal(runtime.webPort, 5173);
-  assert.equal(runtime.workerPort, 8787);
-  assert.equal(runtime.dataRoot, "/test-home/Library/Application Support/ShortCut Studio/media");
+const beta = options => resolveRuntime({home, platform: "darwin", ...options});
+
+test("Beta defaults preserve their own identity, fixed ports, storage and frontend origin", () => {
+  const runtime = beta();
+  assert.equal(runtime.name, "ShortCut Studio Beta");
+  assert.equal(runtime.bundleId, "local.datdo.shortcutstudio.beta");
+  assert.equal(runtime.webPort, 5373);
+  assert.equal(runtime.workerPort, 8987);
+  assert.equal(runtime.dataRoot, path.join(home, "Library", "Application Support", "ShortCut Studio Beta", "media"));
   assert.equal(resolveWorkerOrigin(), runtime.workerOrigin);
-  assert.equal(runtimeEnvironment(runtime, {}).MEDIA_WORKER_DISABLE_LEGACY, undefined);
+  assert.equal(runtimeEnvironment(runtime, {}).MEDIA_WORKER_DISABLE_LEGACY, "1");
+  for (const profile of ["production", "development"]) assert.throws(() => beta({profile}), /only supports the Beta profile/);
+  assert.throws(() => beta({existingDataRoot: "/old/worker-data"}), /cannot use an existing/);
 });
 
-test("old package config still selects an existing production worker-data root", () => {
-  assert.equal(resolveRuntime({ home, existingDataRoot: "/old/worker-data", exists: () => true }).dataRoot, "/old/worker-data");
-  assert.equal(resolveRuntime({ home, existingDataRoot: "/old/worker-data", exists: () => false }).dataRoot, resolveRuntime({ home }).dataRoot);
-});
-
-test("DEV fixes ports, data root and legacy lookup even with inherited production settings", () => {
-  const runtime = resolveRuntime({ profile: "development", home, existingDataRoot: "/stable/worker-data", exists: () => assert.fail("DEV must not inspect the production data root") });
+test("Beta environment removes inherited credentials, DEV paths and production ports", () => {
+  const runtime = beta();
   const env = runtimeEnvironment(runtime, {
     MEDIA_WORKER_PORT: "8787", PORT: "5173", MEDIA_WORKER_DATA_DIR: "/stable/worker-data", MEDIA_WORKER_DISABLE_LEGACY: "0",
     MEDIA_WORKER_LEGACY_DATA_DIR: "/stable/worker-data", NEXT_PUBLIC_MEDIA_WORKER_ORIGIN: "http://127.0.0.1:8787",
@@ -36,59 +35,45 @@ test("DEV fixes ports, data root and legacy lookup even with inherited productio
     YOUTUBE_COOKIES_FILE: "/stable/cookies.txt", YOUTUBE_COOKIES_FROM_BROWSER: "chrome", FONTCONFIG_FILE: "/stable/fontconfig.xml",
     XDG_CACHE_HOME: "/stable/cache", HOME: home, NODE_OPTIONS: "--import /stable/code.mjs",
   });
-  assert.equal(runtime.webPort, 5273);
-  assert.equal(runtime.workerPort, 8887);
-  assert.equal(env.PORT, "5273");
-  assert.equal(env.MEDIA_WORKER_PORT, "8887");
-  assert.equal(env.MEDIA_WORKER_DISABLE_LEGACY, "1");
-  assert.equal(runtime.dataRoot, "/test-home/Library/Application Support/ShortCut Studio Dev/media");
-  assert.equal(env.MEDIA_WORKER_DATA_DIR, runtime.dataRoot);
-  assert.notEqual(runtime.dataRoot, resolveRuntime({ home }).dataRoot);
-  assert.equal(resolveWorkerOrigin(env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN), "http://127.0.0.1:8887");
-  assert.equal(env.CHATGPT_KEYCHAIN_SERVICE, "ShortCut Studio Dev ChatGPT");
-  assert.ok(env.HOME.includes("ShortCut Studio Dev"));
-  assert.ok(env.TMPDIR.includes("ShortCut Studio Dev"));
+  assert.equal(env.PORT, "5373"); assert.equal(env.MEDIA_WORKER_PORT, "8987");
+  assert.equal(env.MEDIA_WORKER_DISABLE_LEGACY, "1"); assert.equal(env.MEDIA_WORKER_DATA_DIR, runtime.dataRoot);
+  assert.equal(resolveWorkerOrigin(env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN), "http://127.0.0.1:8987");
+  assert.equal(env.CHATGPT_KEYCHAIN_SERVICE, "ShortCut Studio Beta ChatGPT");
+  assert.ok(env.HOME.includes("ShortCut Studio Beta")); assert.ok(env.TMPDIR.includes("ShortCut Studio Beta"));
   for (const key of ["OPENAI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "YOUTUBE_COOKIES_FILE", "YOUTUBE_COOKIES_FROM_BROWSER", "MEDIA_WORKER_LEGACY_DATA_DIR", "FONTCONFIG_FILE", "NODE_OPTIONS"]) assert.equal(env[key], undefined, key);
 });
 
-test("DEV package target cannot overwrite production or retain existingDataRoot", () => {
-  const dev = macPackageTarget({ projectRoot, development: true });
-  const prod = macPackageTarget({ projectRoot });
-  assert.equal(dev.outputAppPath, "/dev-worktree/release/dev/ShortCut Studio Dev.app");
-  assert.equal(prod.outputAppPath, "/dev-worktree/release/ShortCut Studio.app");
-  assert.notEqual(dev.outputAppPath, prod.outputAppPath);
-  assert.equal(dev.runtime.bundleId, "local.datdo.shortcutstudio.dev");
-  assert.equal(prod.runtime.bundleId, "local.datdo.shortcutstudio");
-  assert.equal(dev.config.profile, "development");
-  assert.equal(dev.config.webPort, 5273);
-  assert.equal(dev.config.workerPort, 8887);
-  assert.equal(dev.config.existingDataRoot, null);
-  assert.equal(prod.config.existingDataRoot, "/dev-worktree/worker-data");
-  assert.equal(macPackageTarget({ projectRoot, compatible26: true }).config.existingDataRoot, null);
-  assert.throws(() => macPackageTarget({ projectRoot, development: true, compatible26: true }), /separately/);
+test("Beta packaging cannot target DEV/production or retain an existing data root", () => {
+  const target = macPackageTarget({projectRoot, beta: true});
+  assert.equal(target.outputAppPath, path.join(projectRoot, "release", "beta", "ShortCut Studio Beta.app"));
+  assert.equal(target.runtime.bundleId, "local.datdo.shortcutstudio.beta");
+  assert.deepEqual(target.config, {profile: "beta", webPort: 5373, workerPort: 8987, existingDataRoot: null});
+  for (const options of [{}, {development: true}, {beta: true, development: true}, {beta: true, compatible26: true}]) {
+    assert.throws(() => macPackageTarget({projectRoot, ...options}), /Use --beta/);
+  }
 });
 
-test("runtime resolution creates nothing; DEV directories are created lazily under a mock home", async (t) => {
+test("runtime resolution creates nothing; Beta directories are created only under the mock support root", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "shortcut-isolation-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const dev = resolveRuntime({ home: root, profile: "development" });
-  const prod = resolveRuntime({ home: root });
-  assert.equal(existsSync(dev.supportRoot), false);
-  await prepareRuntimeDirectories(dev);
-  assert.equal(existsSync(dev.dataRoot), true);
-  assert.equal(existsSync(runtimeEnvironment(dev, {}).HOME), true);
-  assert.equal(existsSync(prod.supportRoot), false);
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const supportRoot = path.join(root, "ShortCut Studio Beta");
+  const runtime = beta({supportRoot});
+  assert.equal(existsSync(supportRoot), false);
+  await prepareRuntimeDirectories(runtime);
+  assert.equal(existsSync(runtime.dataRoot), true);
+  assert.equal(existsSync(runtimeEnvironment(runtime, {}).HOME), true);
+  assert.equal(existsSync(path.join(root, "ShortCut Studio Dev")), false);
 });
 
-test("unexpected DEV symlinks fail closed without modifying their targets", async (t) => {
+test("unexpected Beta directory links fail closed without modifying their targets", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "shortcut-isolation-link-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  const dev = resolveRuntime({ home: root, profile: "development" });
-  await prepareRuntimeDirectories(dev);
+  t.after(() => rm(root, {recursive: true, force: true}));
+  const runtime = beta({supportRoot: path.join(root, "ShortCut Studio Beta")});
+  await prepareRuntimeDirectories(runtime);
   const target = await mkdtemp(path.join(root, "preserve-"));
-  await rm(dev.dataRoot, { recursive: true });
-  await symlink(target, dev.dataRoot);
-  await assert.rejects(prepareRuntimeDirectories(dev), /real directory/);
+  await rm(runtime.dataRoot, {recursive: true});
+  await symlink(target, runtime.dataRoot, process.platform === "win32" ? "junction" : "dir");
+  await assert.rejects(prepareRuntimeDirectories(runtime), /real directory/);
   assert.equal(existsSync(target), true);
 });
 
@@ -102,7 +87,7 @@ test("port collisions fail without stopping the existing listener", async (t) =>
 });
 
 test("invalid runtime profiles and worker origins fail closed", () => {
-  assert.throws(() => resolveRuntime({ profile: "typo" }), /Unknown/);
+  assert.throws(() => resolveRuntime({ profile: "typo" }), /only supports the Beta profile/);
   for (const value of ["https://example.com", "http://127.0.0.1:8887/api", "http://user@localhost:8887", "http://localhost:8887?token=x", ""]) assert.throws(() => resolveWorkerOrigin(value));
 });
 

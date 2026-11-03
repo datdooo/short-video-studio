@@ -1,0 +1,66 @@
+name: Beta Phase 1 checks
+on:
+  push:
+    branches: [beta/maintenance]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+        if: ${{ !cancelled() }}
+      - run: npx --no-install tsc --noEmit
+        if: ${{ !cancelled() }}
+      - run: npm test
+        if: ${{ !cancelled() }}
+      - uses: actions/setup-go@v5
+        if: ${{ runner.os == 'Windows' && !cancelled() }}
+        with:
+          go-version: '1.24.x'
+          cache: false
+      # Real runner-installed Node/native npm dependencies + production helper.
+      # This is a PE architecture/import audit, not full installer qualification:
+      # no packaged FFmpeg/Whisper/launcher is manufactured or claimed here.
+      - name: Audit real Windows x64 runtime resources
+        if: ${{ runner.os == 'Windows' && !cancelled() }}
+        shell: pwsh
+        run: |
+          $resources = Join-Path $env:RUNNER_TEMP 'shortcut-beta-audit-resources'
+          $bin = Join-Path $resources 'runtime/bin'
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          $node = node -p 'process.execPath'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot locate installed Node' }
+          Copy-Item $node (Join-Path $bin 'node.exe')
+          go build -o (Join-Path $bin 'chatgpt-credential-store.exe') desktop/CredentialStore_windows.go
+          if ($LASTEXITCODE -ne 0) { throw 'Credential helper compilation failed' }
+          $modules = (Resolve-Path node_modules).Path
+          Get-ChildItem $modules -Recurse -File -Filter *.node | ForEach-Object {
+            $relative = [IO.Path]::GetRelativePath($modules, $_.FullName)
+            $target = Join-Path $resources "app/node_modules/$relative"
+            New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
+            Copy-Item $_.FullName $target
+          }
+          $report = Join-Path $env:RUNNER_TEMP 'windows-runtime-imports.json'
+          go run scripts/audit-windows-runtime.go $resources > $report
+          if ($LASTEXITCODE -ne 0) { throw 'Windows runtime PE audit failed' }
+          $result = Get-Content $report -Raw | ConvertFrom-Json
+          if ($result.PSObject.Properties.Count -lt 2) { throw 'Incomplete runtime audit' }
+      - uses: actions/upload-artifact@v4
+        if: ${{ runner.os == 'Windows' && !cancelled() }}
+        with:
+          name: windows-runtime-imports
+          path: ${{ runner.temp }}/windows-runtime-imports.json
+          if-no-files-found: error

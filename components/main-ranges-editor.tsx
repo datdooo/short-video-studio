@@ -1,5 +1,5 @@
 'use client';
-import {Fragment,useEffect,useRef} from 'react';
+import {Fragment,useEffect,useRef,useState} from 'react';
 import {X} from 'lucide-react';
 import {createPortal} from 'react-dom';
 import {useEditorDraft} from './editor-draft-context';
@@ -16,17 +16,17 @@ type Props={statusTarget?:HTMLElement|null;active?:boolean;children?:ReactNode;p
 export function MainRangesEditor({statusTarget,active=true,plan,part,duration,onEdit,onDraft,onRestore,onInvalidate,children,onSeek,onHistoryBoundary}:Props){
  const key=hookRangeKey(part);
  const[draft,setDraft]=useEditorDraft<{key:string;appliedKey?:string;rows:MainRangeRow[]}|null>(`main-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'rows'in v&&Array.isArray(v.rows)&&v.rows.length<=MAX_MAIN_RANGES&&v.rows.every(r=>r&&typeof r.start==='string'&&typeof r.end==='string'&&(r.exactStart===undefined||Number.isFinite(r.exactStart))&&(r.exactEnd===undefined||Number.isFinite(r.exactEnd))));
- const ownApplied=useRef<string|null>(null);
- const rows=draft&&(draft.key===key||draft.appliedKey===key||ownApplied.current===key)?draft.rows:mainRangeRows(part);
+ const[ownApplied,setOwnApplied]=useState<string|null>(null);
+ const rows=draft&&(draft.key===key||draft.appliedKey===key||ownApplied===key)?draft.rows:mainRangeRows(part);
  const checked=inspectMainRanges(plan,part.id,rows,duration),invalid=Boolean(checked.error||checked.errors.some(Boolean));
  const report=useRef(onDraft);useEffect(()=>{report.current=onDraft;},[onDraft]);
  useEffect(()=>{report.current(part.id,key,invalid);},[part.id,key,invalid]);
  function edit(next:MainRangeRow[],group?:string){
-   onInvalidate();ownApplied.current=null;
+   onInvalidate();setOwnApplied(null);
    const result=inspectMainRanges(plan,part.id,next,duration),bad=Boolean(result.error||result.errors.some(Boolean));
    setDraft({key,rows:next,...(!bad?{appliedKey:JSON.stringify(result.ranges.map(r=>[r.start,r.end]))}:{})});
    onDraft(part.id,key,bad);
-   if(!bad){ownApplied.current=JSON.stringify(result.ranges.map(r=>[r.start,r.end]));onEdit(part.id,next,key,group);}
+   if(!bad){setOwnApplied(JSON.stringify(result.ranges.map(r=>[r.start,r.end])));onEdit(part.id,next,key,group);}
  }
  return <section hidden={!active} className="mt-3 min-w-0 space-y-2" aria-label={`Timeline Part ${part.id}`}>
   {children}
@@ -41,7 +41,7 @@ export function MainRangesEditor({statusTarget,active=true,plan,part,duration,on
   </div></Fragment>)}
   <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
    <button type="button" disabled={rows.length>=MAX_MAIN_RANGES} className="rounded border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40" onClick={()=>edit([...rows,{start:'',end:'',timecode:true}])}>+ Thêm đoạn</button>
-   <button type="button" disabled={!part.aiMainRanges} title={!part.aiMainRanges?'Chưa có bản cắt AI để khôi phục.':undefined} className="rounded border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40" onClick={()=>{setDraft(null);ownApplied.current=null;onDraft(part.id,key,false);onRestore(part.id);}}>Dùng lại bản AI</button>
+   <button type="button" disabled={!part.aiMainRanges} title={!part.aiMainRanges?'Chưa có bản cắt AI để khôi phục.':undefined} className="rounded border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40" onClick={()=>{setDraft(null);setOwnApplied(null);onDraft(part.id,key,false);onRestore(part.id);}}>Dùng lại bản AI</button>
   </div>
   </div>
   {active&&invalid&&statusTarget&&createPortal(<div className="studio-timeline-notice" role="status"><span>Part {part.id} · Mốc Main chưa hợp lệ.</span><details><summary>Chi tiết</summary>{checked.error&&<p>{checked.error}</p>}{checked.errors.map((message,i)=>message?<p key={i} id={`main-${part.id}-${i}-error`}>Đoạn {i+1}: {message}</p>:null)}</details></div>,statusTarget)}

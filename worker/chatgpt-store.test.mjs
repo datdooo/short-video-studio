@@ -40,7 +40,7 @@ test('macOS retains the exact existing app-specific Keychain service/account', (
     execute: (binary, args) => {
       assert.equal(binary, '/usr/bin/security');
       if (args[0] === 'default-keychain') return {status:0,stdout:'"/account/login.keychain-db"'};
-      assert.equal(args[args.indexOf('-s') + 1], 'ShortCut Studio ChatGPT');
+      assert.equal(args[args.indexOf('-s') + 1], 'ShortCut Studio Beta ChatGPT');
       assert.equal(args[args.indexOf('-a') + 1], 'default');
       return { status: 0, stdout: JSON.stringify(fake) };
     },

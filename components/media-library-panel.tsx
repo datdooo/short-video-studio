@@ -35,7 +35,8 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<LibraryFile | null>(null);
   const [previewError, setPreviewError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loadPending, setLoading] = useState(false);
+  const loading=ready&&loadPending;
   const [working, setWorking] = useState(false);
   const [operation,setOperation]=useState<{startedAt:number;completed:number;total:number;label:string}|null>(null);
   const requestPending = useRef(false);
@@ -59,7 +60,7 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
     if (!signal?.aborted&&mounted.current&&serial===loadSerial.current) setLibrary(data.library);
   }, [workerOrigin]);
   useEffect(() => {
-    if (!ready) {setLoading(false);return;}
+    if (!ready) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
@@ -74,7 +75,7 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
     try { await load(); } catch (caught) { if(mounted.current)setError(caught instanceof Error ? caught.message : "Không đọc được kho video."); }
     finally { refreshPending.current=false;if(mounted.current)setLoading(false); }
   }
-  async function action(kind: "move" | "restore" | "purge", files: LibraryFile[]) {
+  const handleStorageAction = useCallback(async (kind: "move" | "restore" | "purge", files: LibraryFile[]) => {
     if (requestPending.current || !files.length) return;
     // Refresh this renderer's ownership before asking the server to delete.
     // The worker independently checks every active Editor lease, not this flag.
@@ -122,7 +123,7 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
       try { await load(); } catch { /* The next refresh can reconnect. */ }
       requestPending.current = false; setWorking(false);setOperation(null);
     }
-  }
+  }, [editorSourceId,ensureEditorSource,workerOrigin,tab,onMoved,onRestored,load]);
   const files = (tab === "renders" ? [] : library?.[tab] || []).filter((file) => `${file.title} ${file.filename}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const selectedFiles = files.filter((file) => selected.has(file.id) && !file.busy).slice(0, 500);
   const available = files.filter((file) => !file.busy).slice(0, 500);
@@ -149,14 +150,14 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
     <p className="mt-3 text-xs text-muted-foreground">{tab !== "renders" && library ? sizeLabel(library.totals[tab]) : "—"} trong mục này.</p>
     <div className="mt-5 flex flex-wrap items-center gap-3">
       <Button variant="outline" onClick={() => setSelected(new Set(available.map((file) => file.id)))} disabled={!available.length || working} className="border-white/15 bg-white/5">Chọn tất cả {available.length > 1 ? `(${available.length})` : ""}</Button>
-      {selectedFiles.length > 0 && <Button onClick={() => void action(tab === "trash" ? "purge" : "move", selectedFiles)} disabled={working} className="bg-red-500/15 text-red-200 hover:bg-red-500/25">{working ? <Loader2 className="animate-spin" /> : <Trash2 />} {tab === "trash" ? "Xoá vĩnh viễn" : "Chuyển vào thùng rác"} ({selectedFiles.length})</Button>}
+      {selectedFiles.length > 0 && <Button onClick={() => void handleStorageAction(tab === "trash" ? "purge" : "move", selectedFiles)} disabled={working} className="bg-red-500/15 text-red-200 hover:bg-red-500/25">{working ? <Loader2 className="animate-spin" /> : <Trash2 />} {tab === "trash" ? "Xoá vĩnh viễn" : "Chuyển vào thùng rác"} ({selectedFiles.length})</Button>}
     </div>
     <div className="studio-library-content-grid mt-4 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="studio-library-file-list max-h-[65vh] space-y-3 overflow-y-auto pr-1">
         {files.map((file) => <div key={file.id} className="studio-library-card rounded-2xl border border-white/10 bg-white/[.025] p-4">
           <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Chọn ${file.title} ${file.filename}`} checked={selected.has(file.id)} disabled={file.busy || working} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(file.id); else next.delete(file.id); return next; })} className="mt-1 size-4 shrink-0 accent-[#ff4d2e]" /><span className="studio-library-file-icon" aria-hidden="true"><Film size={20}/></span><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold leading-6">{file.title}</p><p className="mt-1 break-all text-xs text-zinc-400">{file.kind === "original" ? "Video gốc" : file.kind === "parts" ? "Bộ Part" : `Part ${file.part}`} · {file.filename} · {sizeLabel(file.size)}</p><p className="mt-1 text-[11px] text-zinc-500">{library?.storages.find((store) => store.id === file.storageId)?.label}{file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}</p>{!file.busy&&(file.inUseByEditor||file.storageId==='current'&&file.kind==='original'&&file.sourceId===editorSourceId)&&<p className="mt-2 text-xs text-amber-200">Nguồn đang dùng trong Editor.</p>}{file.busy && <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>}</div></div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {tab !== "trash" ? <><Button variant="outline" size="sm" onClick={() => { setPreview(file); setPreviewError(""); }} className="border-white/15 bg-transparent"><Play className="size-3.5" /> Xem</Button><a href={`${workerOrigin}/api/storage/media/${encodeURIComponent(file.id)}?download=1`} download={file.filename} className="studio-control studio-download flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs"><Download className="size-3.5" /> Tải file</a><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("move", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Chuyển vào thùng rác</Button></> : <><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("restore", [file])} className="border-emerald-400/20 bg-transparent text-emerald-300"><RotateCcw className="size-3.5" /> Khôi phục</Button><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void action("purge", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Xoá vĩnh viễn</Button></>}
+            {tab !== "trash" ? <><Button variant="outline" size="sm" onClick={() => { setPreview(file); setPreviewError(""); }} className="border-white/15 bg-transparent"><Play className="size-3.5" /> Xem</Button><a href={`${workerOrigin}/api/storage/media/${encodeURIComponent(file.id)}?download=1`} download={file.filename} className="studio-control studio-download flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs"><Download className="size-3.5" /> Tải file</a><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void handleStorageAction("move", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Chuyển vào thùng rác</Button></> : <><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void handleStorageAction("restore", [file])} className="border-emerald-400/20 bg-transparent text-emerald-300"><RotateCcw className="size-3.5" /> Khôi phục</Button><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void handleStorageAction("purge", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Xoá vĩnh viễn</Button></>}
           </div>
         </div>)}
         {!files.length && <p className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">{loading ? "Đang đọc kho video…" : tab === "trash" ? "Thùng rác đang trống." : "Không có video phù hợp."}</p>}

@@ -9,18 +9,21 @@ const phases:Record<string,string>={identity:'Kiểm tra nguồn video',cache:'K
 const mib=(n:number)=>(n/1048576).toFixed(1);
 export function ManualVideoDownload({worker,sourceId,sourceKey,variantKey,disabled=false}:{worker:string;sourceId:string;sourceKey?:string;variantKey?:string;disabled?:boolean}) {
  const active=useRef<AbortController|null>(null);
- const [task,setTask]=useState<{progress:ManualVideoProgress;startedAt:number}|null>(null);
+ const identity=JSON.stringify([worker,sourceId]);
+ const [storedTask,setTask]=useState<{identity:string;progress:ManualVideoProgress;startedAt:number}|null>(null);
+ const[taskIdentity,setTaskIdentity]=useState(identity);
+ if(taskIdentity!==identity){setTaskIdentity(identity);setTask(null);}
+ const task=storedTask?.identity===identity?storedTask:null;
  useEffect(()=>()=>{active.current?.abort();active.current=null;},[worker,sourceId]);
- useEffect(()=>{setTask(null);},[worker,sourceId]);
  useEffect(()=>{if(!task||task.progress.state==='running'||task.progress.state==='error')return;const timer=setTimeout(()=>setTask(null),5000);return()=>clearTimeout(timer);},[task]);
  async function start(rendition:'original'|'480p'='original'){
   if(active.current||disabled||!sourceId)return;
   const controller=new AbortController();active.current=controller;const startedAt=Date.now();
-  setTask({startedAt,progress:{phase:'identity',state:'running',percent:null}});
+  setTask({identity,startedAt,progress:{phase:'identity',state:'running',percent:null}});
   try{
-   await downloadManualVideo({worker,sourceId,sourceKey,variantKey,rendition,signal:controller.signal,onProgress:progress=>{if(active.current===controller)setTask({startedAt,progress});}});
+   await downloadManualVideo({worker,sourceId,sourceKey,variantKey,rendition,signal:controller.signal,onProgress:progress=>{if(active.current===controller)setTask({identity,startedAt,progress});}});
   }catch(error){
-   if(active.current===controller)setTask({startedAt,progress:{phase:controller.signal.aborted||error instanceof DOMException&&error.name==='AbortError'?'cancelled':'error',state:controller.signal.aborted||error instanceof DOMException&&error.name==='AbortError'?'cancelled':'error',percent:null,...(!controller.signal.aborted?{error:error instanceof Error?error.message:'Không tải được video.'}:{})}});
+   if(active.current===controller)setTask({identity,startedAt,progress:{phase:controller.signal.aborted||error instanceof DOMException&&error.name==='AbortError'?'cancelled':'error',state:controller.signal.aborted||error instanceof DOMException&&error.name==='AbortError'?'cancelled':'error',percent:null,...(!controller.signal.aborted?{error:error instanceof Error?error.message:'Không tải được video.'}:{})}});
   }finally{if(active.current===controller)active.current=null;}
  }
  const value=task?.progress,running=value?.state==='running';

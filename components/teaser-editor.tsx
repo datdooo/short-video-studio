@@ -1,5 +1,5 @@
 'use client';
-import {useCallback,useContext,useEffect,useMemo,useRef,useState}from'react';
+import {useCallback,useContext,useEffect,useLayoutEffect,useMemo,useRef,useState}from'react';
 import {createPortal} from 'react-dom';
 import {selectionDigest} from '@/lib/teaser-context.mjs';
 import {TeaserCandidateReview,choicesOf,validTeaserCatalog,appendTeaserChoices} from './teaser-candidate-review';
@@ -56,7 +56,7 @@ export function TeaserEditor({statusTarget,issues=[],transition,progress,aiBusy=
  // cues/selected-plan identity. Timing/candidate drafts keep the stricter key.
  const input=inputDraft?inputDraft.text:savedInput(part);
  const inputElement=useRef<HTMLTextAreaElement|null>(null),composing=useRef(false),inputRevision=useRef(0);
- const inputValue=useRef(input);inputValue.current=input;
+ const inputValue=useRef(input);useLayoutEffect(()=>{inputValue.current=input;},[input]);
  useEffect(()=>{
   const node=inputElement.current;
   if(node&&!composing.current&&document.activeElement!==node&&node.value!==input)node.value=input;

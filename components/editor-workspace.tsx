@@ -47,8 +47,10 @@ export function EditorWorkspace({source,preview,timeline,inspector,status,visibl
   if(previous==='source')sourceToggle.current?.focus();
   else if(previous==='inspector')inspectorToggle.current?.focus();
  }
+ const[wasVisible,setWasVisible]=useState(visible);
+ if(wasVisible!==visible){setWasVisible(visible);if(!visible)setDrawer(null);}
  useEffect(()=>{
-  if(!visible){setDrawer(null);return;}
+  if(!visible)return;
   if(!narrow||!drawer)return;
   const panel=(drawer==='source'?sourcePanel:inspectorPanel).current;
   if(!panel)return;
@@ -59,7 +61,7 @@ export function EditorWorkspace({source,preview,timeline,inspector,status,visibl
   for(let branch:HTMLElement=panel;branch.parentElement&&branch!==document.body;branch=branch.parentElement){
    for(const sibling of branch.parentElement.children){
     if(!(sibling instanceof HTMLElement)||sibling===branch||sibling.inert||sibling.classList.contains('studio-drawer-backdrop'))continue;
-    sibling.inert=true;background.push(sibling);
+    sibling.setAttribute('inert','');background.push(sibling);
    }
   }
   (drawer==='source'?sourceClose:inspectorClose).current?.focus();
@@ -84,7 +86,7 @@ export function EditorWorkspace({source,preview,timeline,inspector,status,visibl
   return()=>{
    window.removeEventListener('keydown',escape);
    const restoreFocus=panel.contains(document.activeElement)||document.activeElement===document.body;
-   for(const element of background)element.inert=false;
+   for(const element of background)element.removeAttribute('inert');
    const trigger=(drawer==='source'?sourceToggle:inspectorToggle).current;
    if(restoreFocus&&trigger&&trigger.getClientRects().length>0&&!trigger.closest('[inert],[hidden]'))trigger.focus();
   };

@@ -54,5 +54,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	if len(imports) == 0 {
+		panic("No Windows PE binaries found; an empty resources directory is not an audit")
+	}
 	json.NewEncoder(os.Stdout).Encode(imports)
 }

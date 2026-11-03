@@ -1,11 +1,11 @@
 'use client';
-import {useCallback,useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 
 // The Editor remains an owner while viewing Batch/Kho. This is presence only;
 // raw draft / source media / authentication are never stored by the lease.
 export function useEditorSourceLease(worker:string,sourceId:string,ready:boolean){
  const owner=useRef(''),revision=useRef(0),current=useRef({sourceId,ready}),live=useRef(true);
- current.current={sourceId,ready};
+ useLayoutEffect(()=>{current.current={sourceId,ready};},[sourceId,ready]);
  const pending=useRef<{sourceId:string;controller:AbortController;promise:Promise<void>}|null>(null);
  const [failure,setFailure]=useState({sourceId:'',message:''});
  const ensureCurrent=useCallback(async()=>{

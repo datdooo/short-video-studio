@@ -31,7 +31,7 @@ test("completed/failed children are forgotten; non-detached children use their o
   await lifecycle.stop();
 });
 
-test("worker SIGTERM reaps its detached command instead of leaving an orphan", { skip: process.platform === "win32" }, async () => {
+test("worker SIGTERM reaps its detached command instead of leaving an orphan", { skip: process.platform === "win32" ? "POSIX detached process-group SIGTERM semantics are unavailable on Windows" : false }, async () => {
   const moduleUrl = new URL("./command-lifecycle.mjs", import.meta.url).href;
   const program = `import {spawn} from 'node:child_process'; import {createCommandLifecycle} from ${JSON.stringify(moduleUrl)};
     const l=createCommandLifecycle({graceMs:50});

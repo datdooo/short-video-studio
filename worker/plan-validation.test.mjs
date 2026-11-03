@@ -1,16 +1,17 @@
+import {makeSource} from "../lib/teaser-test-fixture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validatePlan } from "./plan-validation.mjs";
 
 function fixture() {
-  return { providerUsed: "muse", parts: [1, 2].map((id) => ({ title: `Part ${id}`, segments: [
+  return { providerUsed: "muse", parts: [1, 2].map((id) => ({ id, title: `Part ${id}`, segments: [
     { start: (id - 1) * 10, end: id * 10, isPadding: false },
     ...Array.from({ length: 4 }, () => ({ start: 0, end: 20, isPadding: true })),
   ] })) };
 }
 
 test("render accepts supplemental footage from anywhere in source, only after ordered main content", () => {
-  const source = { duration: 20 };
+  const source = makeSource({duration: 20});
   assert.doesNotThrow(() => validatePlan(fixture(), source));
   for (const mutation of [
     (p) => { p.parts[0].segments[0].isPadding = true; },
@@ -24,17 +25,11 @@ test("render accepts supplemental footage from anywhere in source, only after or
   }
 });
 
-test("render enforces the AI final minimum again; manual short cuts remain supported", () => {
-  for (const provider of ["muse", "chatgpt", "gemini", "openai", "qwen"]) {
+test("render does not impose the retired AI duration minimum; short manual cuts remain valid", () => {
+  for (const provider of ["muse", "chatgpt", "gemini", "openai", "qwen", "manual"]) {
     const plan = fixture(); plan.providerUsed = provider;
-    plan.parts[0].segments = [{ start: 0, end: 75 }];
-    plan.parts[1].segments = [{ start: 75, end: 151 }];
-    assert.throws(() => validatePlan(plan, { duration: 151 }), /75/);
-    plan.parts[0].segments[0].end = 75.1;
-    plan.parts[1].segments[0].start = 75.1;
-    assert.doesNotThrow(() => validatePlan(plan, { duration: 151 }));
+    plan.parts[0].segments = [{ start: 0, end: 5 }];
+    plan.parts[1].segments = [{ start: 5, end: 12 }];
+    assert.doesNotThrow(() => validatePlan(plan, makeSource({duration: 20})));
   }
-  const manual = fixture(); manual.providerUsed = "manual";
-  manual.parts.forEach((part) => { part.segments = part.segments.slice(0, 1); });
-  assert.doesNotThrow(() => validatePlan(manual, { duration: 20 }));
 });

@@ -9,7 +9,7 @@ test('duplicate aliases and concurrent consumers share one stored media source, 
 });
 test('storage preflight refuses known oversized download and source identity/locked data are never silently replaced',async t=>{
  const f=await root(t);const options={sourcesRoot:f.sourcesRoot,metadata:async()=>({metadata:{estimatedDownloadBytes:Number.MAX_SAFE_INTEGER}}),download:()=>assert.fail('No partial download'),load:async()=>({})};await assert.rejects(createSourceReuse(options).get(url),/Insufficient free storage/);
- await mkdir(path.join(f.sourcesRoot,id));await writeFile(path.join(f.sourcesRoot,id,'source.json'),JSON.stringify({kind:'youtube',sourceUrl:url}));
+ await mkdir(path.join(f.sourcesRoot,id));await writeFile(path.join(f.sourcesRoot,id,'source.json'),JSON.stringify({id,kind:'youtube',sourceUrl:url}));await writeFile(path.join(f.sourcesRoot,id,'source.mp4'),'synthetic fixture only');
  await assert.rejects(createSourceReuse({...options,isLocked:()=>true}).get(url),/busy/);
  await assert.rejects(createSourceReuse({...options,load:async()=>({kind:'youtube',sourceUrl:'https://youtu.be/abcdefghijk'})}).get(url),/identity mismatch/);
 });

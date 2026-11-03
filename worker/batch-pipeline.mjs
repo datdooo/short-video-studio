@@ -12,6 +12,7 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
       if(authBlocked&&settings.provider==='chatgpt'){item.state='paused';item.error='Cần kết nối lại ChatGPT rồi chủ động tiếp tục mục này.';item.errorCode='auth-required';await persist();continue;}
       try{
         item.startedAt=new Date().toISOString();delete item.sourceProgress;
+        if(item.errorCode==='auth-required')delete item.errorCode; // Explicit resume has passed the pause guard.
         let source;
         if(item.sourceId){source=await load(item.sourceId,signal);signal.throwIfAborted();} // A missing saved source needs user action; never redownload it silently.
         else{item.state='downloading';await persist();source=await acquire(item.url,signal,progress=>{item.sourceProgress=progress;});signal.throwIfAborted();item.sourceId=source.id;item.title=source.title;item.checkpoint='source';await persist();}
@@ -57,6 +58,8 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
         const job=await render({sourceId:source.id,plan:structuredClone(item.plan),submissionId:item.submissionId},signal);
         item.jobId=job.id;item.plan=structuredClone(job.plan);item.state=job.state;item.error=null;item.checkpoint='render';await persist();
       }catch(error){
+        const authFailure=!signal.aborted&&settings.provider==='chatgpt'&&error?.code==='provider-auth-unavailable';
+        if(authFailure){authBlocked=true;item.errorCode='auth-required';}
         item.state=signal.aborted?'cancelled':error.code==='TEASER_REQUIRED'?'review-required':'error';if(error.code==='TEASER_REQUIRED'){item.approved=false;item.errorCode='teaser-required';if(!item.jobId&&!item.needsAnalysis)item.needsTeasers=true;}item.error=signal.aborted?null:error instanceof Error?error.message:String(error);
         await persist();
       }

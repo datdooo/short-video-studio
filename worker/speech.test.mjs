@@ -23,29 +23,31 @@ test('YouTube captions return correct source/timebase with EOF clipped; repeated
 test('legacy Whisper cache is normalized at read time, not confused with a Part timeline', async (t) => {
   const { root, source, speech } = await fixture(t);
   await writeFile(path.join(root, source.id, 'speech-captions.json'), JSON.stringify({ cues: [{ start: 8, end: 10.2, text: 'Cached end' }], origin: 'whisper-local' }));
-  const track = await speech.captions(source);
+  const track = await speech.cachedCaptions(source);
   assert.equal(track.sourceId, source.id); assert.equal(track.cues[0].end, 10);
   source.duration = 7;
-  await assert.rejects(speech.captions(source), /vượt quá source/);
+  assert.equal(await speech.cachedCaptions(source), null);
 });
 test('foreign-source or mismatched-duration cached captions remain rejected', async (t) => {
   const { root, source, speech } = await fixture(t);
   const file = path.join(root, source.id, 'speech-captions.json');
   await writeFile(file, JSON.stringify({ sourceId: 'other-source', cues: [], origin: 'whisper-local' }));
-  await assert.rejects(speech.captions(source), /source khác/);
+  assert.equal(await speech.cachedCaptions(source), null);
   await writeFile(file, JSON.stringify({ sourceId: source.id, sourceDuration: 12, cues: [], origin: 'whisper-local' }));
-  await assert.rejects(speech.captions(source), /Thời lượng source/);
+  assert.equal(await speech.cachedCaptions(source), null);
 });
 
-test('explicit YouTube never silently runs Whisper; explicit Whisper ignores YouTube and uses the base cache', async (t) => {
-  const { root, source, speech } = await fixture(t);
-  await assert.rejects(speech.captions(source, undefined, { provider: 'youtube' }), /không có phụ đề YouTube/);
-  source.captions = [{ start: 1, end: 2, text: 'YouTube text' }];
-  assert.equal((await speech.captions(source, undefined, { provider: 'youtube' })).origin, 'youtube');
-  await writeFile(path.join(root, source.id, 'speech-captions.json'), JSON.stringify({ cues: [{ start: 1, end: 2, text: 'Old base cache' }], origin: 'whisper-local' }));
-  assert.equal((await speech.captions(source, undefined, { provider: 'whisper' })).cues[0].text, 'Old base cache');
-  await writeFile(path.join(root, source.id, 'speech-captions.json'), JSON.stringify({ sourceId: source.id, cues: [{ start: 3, end: 4, text: 'Base model text' }], origin: 'whisper-local' }));
-  const track = await speech.captions(source, undefined, { provider: 'whisper' });
-  assert.equal(track.origin, 'whisper-local'); assert.equal(track.cues[0].text, 'Base model text');
-  await assert.rejects(speech.captions(source, undefined, { provider: 'unknown' }), /không hợp lệ/);
+test('explicit YouTube never silently runs Whisper; current small/transcribe cache is separate from legacy base', async t => {
+  const {root,source,speech}=await fixture(t);
+  await assert.rejects(speech.captions(source,undefined,{provider:'youtube'}), /không có phụ đề YouTube/);
+  source.captions=[{start:1,end:2,text:'YouTube text'}];
+  assert.equal((await speech.captions(source,undefined,{provider:'youtube'})).origin,'youtube');
+  await writeFile(path.join(root,source.id,'speech-captions.json'),JSON.stringify({cues:[{start:1,end:2,text:'Old base text'}],origin:'whisper-local'}));
+  assert.equal((await speech.cachedCaptions(source)).cues[0].text,'Old base text');
+  await assert.rejects(speech.captions(source,undefined,{provider:'whisper'}), /Whisper small/);
+  const asrIdentity=(await speech.status()).cacheIdentity;
+  await writeFile(path.join(root,source.id,'speech-captions-small-v1.json'),JSON.stringify({sourceId:source.id,sourceDuration:10,cues:[{start:3,end:4,text:'Aktueller deutscher Text.'}],origin:'whisper-local-small',language:'de',task:'transcribe',asrIdentity,requestedLanguage:'auto'}));
+  const track=await speech.captions(source,undefined,{provider:'whisper'});
+  assert.equal(track.origin,'whisper-local-small'); assert.equal(track.language,'de'); assert.equal(track.cues[0].text,'Aktueller deutscher Text.');
+  await assert.rejects(speech.captions(source,undefined,{provider:'unknown'}), /không hợp lệ/);
 });

@@ -1,4 +1,5 @@
 "use client";
+import {planResult,contextResult} from '@/lib/ai-response';
 
 import {mainInstruction} from '@/lib/main-instructions.mjs';
 import {explainInVietnamese} from "@/lib/explanation-language.mjs";
@@ -129,8 +130,8 @@ function webAiEditorSignature(plan:Pick<EditPlan,'originalTitle'|'parts'|'provid
     mainEdited:part.mainEdited===true,manualLocked:part.manualLocked===true,teaserEnabled:part.teaserEnabled!==false,
     segments:part.segments.map(({start,end,isPadding,label,reason})=>({start,end,isPadding:isPadding===true,label,reason}))})),
     cues:cues.map(cue=>({start:cue.start,end:cue.end,text:cue.text,timing:cue.timing||'cue'})),
-    manualTeasers:plan.parts.map(part=>part.teaser?.selection==='manual'||part.customTeaser?.mode==='timestamp'?{id:part.id,
-      teaser:part.teaser?.selection==='manual'?{start:part.teaser.start,end:part.teaser.end,manualSourceId:part.teaser.manualSourceId}:undefined,
+    manualTeasers:plan.parts.map(part=>part.teaser?.status==='selected'&&part.teaser.selection==='manual'||part.customTeaser?.mode==='timestamp'?{id:part.id,
+      teaser:part.teaser?.status==='selected'&&part.teaser.selection==='manual'?{start:part.teaser.start,end:part.teaser.end,manualSourceId:part.teaser.manualSourceId}:undefined,
       customTeaser:part.customTeaser?.mode==='timestamp'?part.customTeaser:undefined}:null)},
     (_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);
 }
@@ -1421,7 +1422,7 @@ export default function Home() {
       if(!source||!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
       setAnalysisNotice("");
       const response=await fetch(`${WORKER_ORIGIN}/api/sources/${source.id}/auto-cut`,{method:"POST",signal:ticket.controller.signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({progress:true,transcript:transcript||source.transcript,instruction,supplementalPrompt,...(hasEditPlan?{currentPlan:previewPlan}:{}),...(sourceCaptions?.sourceId===source.id?{captionCues:sourceCaptions}:{})})});
-      const data=await readAiOperation<{plan?:EditPlan}>(response,diagnostics=>{if(analysisRequests.current.isCurrent(ticket)&&selectionEpoch===sourceSelectionEpoch.current)setAnalysisDiagnostics(diagnostics);});
+      const data=await readAiOperation<{plan?:EditPlan}>(response,diagnostics=>{if(analysisRequests.current.isCurrent(ticket)&&selectionEpoch===sourceSelectionEpoch.current)setAnalysisDiagnostics(diagnostics);},planResult);
       if(!analysisRequests.current.isCurrent(ticket)||selectionEpoch!==sourceSelectionEpoch.current)return;
       if(!response.ok||!data.plan)throw new Error(data.error||"Không tạo được Smart Auto Cut.");
       replacePlan(data.plan);setHasEditPlan(true);setActivePartIndex(0);
@@ -1469,7 +1470,7 @@ export default function Home() {
         const pending=new Set<string>();let latest:string|undefined;
         for(const event of diagnostics.events)if(event.reason&&labels[event.reason]){latest=event.reason;if(event.durationMs===undefined)pending.add(event.reason);else pending.delete(event.reason);}
         setWebAiPreparationLabel(pending.size>1?'Thu thập dữ liệu và tín hiệu nguồn':labels[[...pending][0]||latest||'']||'Chuẩn bị dữ liệu prompt');
-      });
+      },contextResult);
       if(!response.ok||!data.context)throw new Error(data.error||"Không chuẩn bị được context/candidates.");
       const prepared=data.context;
       signal.throwIfAborted();
@@ -1529,7 +1530,7 @@ export default function Home() {
       method:'POST',signal:combined,headers:{'Content-Type':'application/json'},
       body:JSON.stringify({progress:true,plan:requestPlan,partId,previousRanges,instruction,supplementalPrompt,transcript,...(input?{customInstruction:input}:{})})
     });
-    const result=await readAiOperation<{plan?:EditPlan}>(response,diagnostics=>{if(current())setTeaserOperations(previous=>({...previous,[partId]:{...previous[partId],diagnostics}}));});
+    const result=await readAiOperation<{plan?:EditPlan}>(response,diagnostics=>{if(current())setTeaserOperations(previous=>({...previous,[partId]:{...previous[partId],diagnostics}}));},planResult);
     if(!response.ok||!result.plan)throw new Error(result.error||"Không chọn được teaser.");
     if(combined.aborted||!current()||requestIdentity!==latestPartHookIdentities.current[partId]||subtitleSourceRef.current!==sourceId)throw new Error("Nguồn/main đã thay đổi. Chuẩn bị teaser lại.");
     const part=result.plan.parts.find(p=>p.id===partId);

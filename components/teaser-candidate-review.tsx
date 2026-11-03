@@ -1,6 +1,6 @@
 'use client';
 
-import {useCallback,useEffect,useRef,useState} from 'react';
+import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Check,Play,Pause,RotateCcw,Film} from 'lucide-react';
 import type {EditPart} from '@/lib/edit-plan';
 import type {CaptionTrack} from '@/lib/subtitles.mjs';
@@ -125,7 +125,8 @@ function RangePlayer({sourceUrl,choice,suspended,onAudition,onPlaybackControl}:{
  const pause=useCallback(()=>{playIntent.current=false;epoch.current++;startup.current?.abort();startup.current=null;clearClock();video.current?.pause();setPlaying(false);setBuffering(false);},[clearClock]);
  const bind=useCallback((node:HTMLVideoElement|null)=>{const old=video.current;if(old&&old!==node){startup.current?.abort();startup.current=null;clearClock();playIntent.current=false;epoch.current++;old.pause();old.removeAttribute('src');old.load();}video.current=node;},[clearClock]);
  useEffect(()=>{onPlaybackControl({pause});return()=>{playIntent.current=false;epoch.current++;startup.current?.abort();startup.current=null;clearClock();onPlaybackControl(null);};},[onPlaybackControl,pause,clearClock]);
- useEffect(()=>{if(suspended)pause();},[suspended,pause]);
+ const[wasSuspended,setWasSuspended]=useState(suspended);if(wasSuspended!==suspended){setWasSuspended(suspended);if(suspended){setPlaying(false);setBuffering(false);}}
+ useLayoutEffect(()=>{if(suspended){playIntent.current=false;epoch.current++;startup.current?.abort();startup.current=null;clearClock();video.current?.pause();}},[suspended,clearClock]);
  function startClock(){
   clearClock();const generation=epoch.current;
   const update=()=>{const node=video.current;if(!node||generation!==epoch.current||node.paused||!playIntent.current)return;
@@ -151,7 +152,7 @@ function RangePlayer({sourceUrl,choice,suspended,onAudition,onPlaybackControl}:{
  }
  // Mounting is explicit user intent. Start even if metadata has not arrived;
  // readiness listeners handle both cached/no-op and asynchronous seeks.
- const prepareLatest=useRef(prepare);prepareLatest.current=prepare;
+ const prepareLatest=useRef(prepare);useLayoutEffect(()=>{prepareLatest.current=prepare;});
  useEffect(()=>{const node=video.current;if(loaded&&node&&playIntent.current)void prepareLatest.current(node,requestedTime.current,true);},[loaded]);
  function toggle(){
   if(playIntent.current){pause();return;}if(suspended||!sourceUrl)return;

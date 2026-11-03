@@ -22,7 +22,8 @@
     "package:windows": "node scripts/package-windows.mjs",
     "test:isolation": "node --test desktop/runtime-config.test.mjs worker/chatgpt-store.test.mjs",
     "package:mac:beta": "node scripts/package-macos.mjs --beta",
-    "personal:beta": "node scripts/personal-dev.mjs"
+    "personal:beta": "node scripts/personal-dev.mjs",
+    "test": "node --test lib/*.test.mjs worker/*.test.mjs desktop/*.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
