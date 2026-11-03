@@ -1,4 +1,4 @@
-import { createAuthRoutes } from "./auth.mjs";
+import { createCodexRoutes } from "./codex.mjs";
 import { createBatchRoutes } from "./batch.mjs";
 import { createHealthRoutes } from "./health.mjs";
 import { createMusicRoutes } from "./music.mjs";
@@ -12,7 +12,7 @@ export function createWorkerRoutes(services) {
     [
       createSourcesRoutes(services),
       createHealthRoutes(services),
-      createAuthRoutes(services),
+      createCodexRoutes(services),
       createMusicRoutes(services),
       createBatchRoutes(services),
       createStorageRoutes(services),

@@ -1,6 +1,6 @@
 // Extracted route bodies retain their original order and response contracts.
 export function createBatchRoutes({
-  activeChatGPTCredentials,
+  ensureCodexReady,
   assertId,
   assertTeaserContexts,
   batchPreparationQueue,
@@ -74,7 +74,7 @@ export function createBatchRoutes({
             }
           }
           if (body.batchId !== undefined) body.batchId = assertId(body.batchId);
-          if (!body.provider || body.provider === "chatgpt") await activeChatGPTCredentials();
+          if (!body.provider || body.provider === "chatgpt") await ensureCodexReady();
           let batch;
           try {
             batch = batchPreparationQueue.submit({
@@ -124,7 +124,7 @@ export function createBatchRoutes({
             }
           }
           if (targets.some((i) => (i.needsAnalysis || i.needsTeasers) && i.settings?.provider === "chatgpt"))
-            await activeChatGPTCredentials();
+            await ensureCodexReady();
           const resumed = batchPreparationQueue.resume(id, body.itemIds);
           await persistBatchHistory({ strict: true });
           sendJson(request, response, 202, { batch: batchSnapshot(resumed) });

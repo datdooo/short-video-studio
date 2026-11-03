@@ -34,9 +34,6 @@ export function createRequestOriginPolicy({ webPort, workerPort }) {
           fail();
         }
       }
-      // OAuth redirects are top-level navigation and retain the existing state /
-      // single-use-code checks. Do not reinterpret the provider as an app origin.
-      if (pathname === "/auth/callback" && request.method === "GET") return;
       if (pathname.startsWith("/api/") || !["GET", "HEAD"].includes(request.method)) {
         const origin = request.headers.origin;
         if (origin !== undefined) {

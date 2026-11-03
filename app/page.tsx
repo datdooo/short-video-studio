@@ -265,7 +265,7 @@ export default function Home() {
   const [webAiError, setWebAiError] = useState("");
   const [error, setError] = useState("");
   const workerHealth = useWorkerHealth();
-  const chatGPTState = useChatGPTSession(!!workerHealth?.ok, setError);
+  const chatGPTState = useChatGPTSession(!!workerHealth?.ok);
   const renderState = useRenderJobs();
   const { renderJob, editorRenderJobs, isStartingRender } = renderState;
   const previewState = usePreviewPlayback();

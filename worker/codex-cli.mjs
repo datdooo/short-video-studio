@@ -115,7 +115,9 @@ function killTree(child, platform = process.platform) {
   }
   setTimeout(() => {
     try {
-      if (child.exitCode === null) platform === "win32" ? child.kill() : process.kill(-child.pid, "SIGKILL");
+      if (child.exitCode !== null) return;
+      if (platform === "win32") child.kill();
+      else process.kill(-child.pid, "SIGKILL");
     } catch {
       /* Already gone. */
     }
@@ -228,8 +230,14 @@ export function createCodexCli(read = () => ({}), options = {}) {
     return value;
   }
 
-  async function ensureCodexReady() {
-    const state = await status({ force: true });
+  /** Last known state without spawning anything; refreshes in the background when stale. */
+  function peek() {
+    if (!cached || now() - cached.at >= STATUS_TTL_MS) void status({ force: true });
+    return cached ? cached.value : null;
+  }
+
+  async function ensureCodexReady({ force = false } = {}) {
+    const state = await status({ force });
     if (!state.installed)
       throw Object.assign(new Error("CODEX_NOT_FOUND: Chưa tìm thấy Codex CLI. Cài Codex rồi mở lại app."), {
         code: "CODEX_NOT_FOUND",
@@ -302,5 +310,5 @@ export function createCodexCli(read = () => ({}), options = {}) {
     }
   }
 
-  return { status, ensureCodexReady, analyzeWithCodexPlan, resolveBinary: () => resolve({ platform }) };
+  return { status, peek, ensureCodexReady, analyzeWithCodexPlan, resolveBinary: () => resolve({ platform }) };
 }

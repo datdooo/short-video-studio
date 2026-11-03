@@ -20,7 +20,7 @@ import { removeBatchItem } from "./batch-cleanup.mjs";
 import { createBatchProcessor } from "./batch-pipeline.mjs";
 import { createBatchSubmissionQueue } from "./batch-queue.mjs";
 import { createBatchService } from "./batch-service.mjs";
-import { createChatGPTAuth } from "./chatgpt-auth.mjs";
+import { createCodexCli } from "./codex-cli.mjs";
 import { createCommandLifecycle } from "./command-lifecycle.mjs";
 import { createCommandRunner } from "./command-runner.mjs";
 import { createEditorSourceLeases } from "./editor-source-leases.mjs";
@@ -66,13 +66,11 @@ for (const [key, expected] of Object.entries({
   MEDIA_WORKER_DATA_DIR: betaRuntime.dataRoot,
   MEDIA_WORKER_PORT: String(betaRuntime.workerPort),
   PORT: String(betaRuntime.webPort),
-  CHATGPT_KEYCHAIN_SERVICE: betaRuntime.credentialService,
 })) {
   if (process.env[key] !== undefined && process.env[key] !== expected)
     throw Error(`Beta isolation: invalid ${key}; refusing cross-profile access.`);
 }
-const inheritedFontConfig = process.env.FONTCONFIG_FILE,
-  credentialHelper = process.env.CHATGPT_CREDENTIAL_HELPER;
+const inheritedFontConfig = process.env.FONTCONFIG_FILE;
 const isolatedEnvironment = runtimeEnvironment(betaRuntime);
 for (const key of Object.keys(process.env)) if (!(key in isolatedEnvironment)) delete process.env[key];
 Object.assign(process.env, isolatedEnvironment);
@@ -80,14 +78,6 @@ if (inheritedFontConfig) {
   if (path.resolve(inheritedFontConfig) !== path.join(betaRuntime.dataRoot, "fontconfig.xml"))
     throw Error("Beta fontconfig must be app-local.");
   process.env.FONTCONFIG_FILE = inheritedFontConfig;
-}
-if (credentialHelper) {
-  if (
-    process.platform !== "win32" ||
-    path.resolve(credentialHelper) !== path.resolve(projectRoot, "../runtime/bin/chatgpt-credential-store.exe")
-  )
-    throw Error("Beta credential helper must be bundled.");
-  process.env.CHATGPT_CREDENTIAL_HELPER = credentialHelper;
 }
 await prepareRuntimeDirectories(betaRuntime);
 const dataRoot = betaRuntime.dataRoot;
@@ -210,19 +200,9 @@ const mediaLibrary = createLibraryService(dataRoot, () => ({
   sourcesRoot,
 }));
 
-const {
-  activeChatGPTCredentials,
-  chatGPTRegistrationPath,
-  chatGPTResource,
-  chatGPTStore,
-  deleteChatGPTCredentials,
-  exchangeChatGPTCode,
-  listChatGPTModels,
-  pendingChatGPTAuth,
-  publicChatGPTSession,
-  readChatGPTCredentials,
-  startChatGPTAuthorization,
-} = createChatGPTAuth(() => ({ betaRuntime, dataRoot, host, port }));
+// ChatGPT Auto runs through the user's own Codex CLI (installed and signed in outside the app).
+const codex = createCodexCli(() => ({ tmp: path.join(betaRuntime.supportRoot, "tmp") }));
+const { analyzeWithCodexPlan, ensureCodexReady, peek: codexPeek, status: codexStatus } = codex;
 
 const ffmpeg = resolveBinary("FFMPEG_PATH", "ffmpeg", ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]);
 const ffprobe = resolveBinary("FFPROBE_PATH", "ffprobe", ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"]);
@@ -274,12 +254,11 @@ const {
   resolveEditingProvider,
   verifySourceTeasers,
 } = createAnalysisService(() => ({
-  activeChatGPTCredentials,
+  analyzeWithCodexPlan,
   batches,
-  chatGPTResource,
   dataRoot,
+  ensureCodexReady,
   jobs,
-  listChatGPTModels,
   localSignals,
   selectTeasers,
   sourceContexts,
@@ -370,10 +349,12 @@ const analyzeSource = (source, body, signal) =>
 
 await mkdir(sourcesRoot, { recursive: true });
 const dispatchRoutes = createWorkerRoutes({
+  codexPeek,
+  codexStatus,
+  ensureCodexReady,
   FOREGROUND_SCALE,
   MUSIC_CATALOG,
   PLAYBACK_RATE,
-  activeChatGPTCredentials,
   analyzeSource,
   analyzeWithChatGPTPlan,
   assertId,
@@ -383,16 +364,12 @@ const dispatchRoutes = createWorkerRoutes({
   batches,
   cancelBatch,
   cancelRender,
-  chatGPTRegistrationPath,
-  chatGPTStore,
   corsHeaders,
   createManualDownload,
   dataRoot,
-  deleteChatGPTCredentials,
   editorSourceLeases,
   effectiveCaptionTrack,
   effectiveCutPlan,
-  exchangeChatGPTCode,
   exportBusy,
   fetchYouTubeTranscript,
   ffmpeg,
@@ -401,7 +378,6 @@ const dispatchRoutes = createWorkerRoutes({
   importUpload,
   importYouTube,
   jobs,
-  listChatGPTModels,
   loadSource,
   manualDownloadError,
   manualDownloadKey,
@@ -414,14 +390,11 @@ const dispatchRoutes = createWorkerRoutes({
   musicPreview,
   musicSpeech,
   parseCustomTeaser,
-  pendingChatGPTAuth,
   persistBatchHistory,
   planTeasers,
   preferredVideoEncoder,
   pruneManualDownloads,
-  publicChatGPTSession,
   publicSource,
-  readChatGPTCredentials,
   readJson,
   removeBatchItem,
   renderContrast,
@@ -439,7 +412,6 @@ const dispatchRoutes = createWorkerRoutes({
   smartCutPlan,
   snapshotPlanVisualStyle,
   speech,
-  startChatGPTAuthorization,
   startRender,
   transcriptValue,
   validatePlan,
@@ -460,7 +432,6 @@ installFatalHandlers({
   shutdown: () => commandLifecycle.stop({
     onStart() {
       for (const controller of [...batchControllers.values(), ...renderControllers.values()]) controller.abort();
-      pendingChatGPTAuth.cancelAll();
       server.close();
       server.closeAllConnections();
     },
@@ -475,8 +446,7 @@ for (const name of ["SIGTERM", "SIGINT"]) {
       .stop({
         onStart() {
           for (const controller of [...batchControllers.values(), ...renderControllers.values()]) controller.abort();
-          pendingChatGPTAuth.cancelAll();
-          server.close();
+              server.close();
           server.closeAllConnections();
         },
         onStopped: () => persistBatchHistory({ strict: true }),

@@ -403,8 +403,8 @@ export function StudioView({
           providerLabel={
             provider === "chatgpt"
               ? chatGPTSession?.sharing
-                ? "ChatGPT kết nối"
-                : "ChatGPT · cần đăng nhập"
+                ? "Codex sẵn sàng"
+                : "Codex · cần cài/đăng nhập"
               : isWebAi
                 ? `${webAiName} · web`
                 : provider === "mock"

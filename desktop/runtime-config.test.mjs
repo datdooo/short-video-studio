@@ -38,7 +38,7 @@ test("Beta environment removes inherited credentials, DEV paths and production p
   assert.equal(env.PORT, "5373"); assert.equal(env.MEDIA_WORKER_PORT, "8987");
   assert.equal(env.MEDIA_WORKER_DISABLE_LEGACY, "1"); assert.equal(env.MEDIA_WORKER_DATA_DIR, runtime.dataRoot);
   assert.equal(resolveWorkerOrigin(env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN), "http://127.0.0.1:8987");
-  assert.equal(env.CHATGPT_KEYCHAIN_SERVICE, "ShortCut Studio Beta ChatGPT");
+  assert.equal(env.CHATGPT_KEYCHAIN_SERVICE, undefined);
   assert.ok(env.HOME.includes("ShortCut Studio Beta")); assert.ok(env.TMPDIR.includes("ShortCut Studio Beta"));
   for (const key of ["OPENAI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "YOUTUBE_COOKIES_FILE", "YOUTUBE_COOKIES_FROM_BROWSER", "MEDIA_WORKER_LEGACY_DATA_DIR", "FONTCONFIG_FILE", "NODE_OPTIONS"]) assert.equal(env[key], undefined, key);
 });

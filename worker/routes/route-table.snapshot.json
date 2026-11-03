@@ -10,38 +10,13 @@
     "matchers": ""
   },
   {
-    "order": 2,
-    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/auth/callback\"",
-    "matchers": ""
-  },
-  {
     "order": 3,
     "condition": "requestUrl.pathname.startsWith(\"/api/gemini/\")",
     "matchers": ""
   },
   {
     "order": 4,
-    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/chatgpt/session\"",
-    "matchers": ""
-  },
-  {
-    "order": 5,
-    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/chatgpt/auth/start\"",
-    "matchers": ""
-  },
-  {
-    "order": 6,
-    "condition": "requestUrl.pathname === \"/api/chatgpt/auth/status\" && [\"GET\", \"DELETE\"].includes(request.method)",
-    "matchers": ""
-  },
-  {
-    "order": 7,
-    "condition": "request.method === \"DELETE\" && requestUrl.pathname === \"/api/chatgpt/session\"",
-    "matchers": ""
-  },
-  {
-    "order": 8,
-    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/chatgpt/models\"",
+    "condition": "request.method === \"GET\" && [\"/api/codex/status\", \"/api/chatgpt/session\"].includes(requestUrl.pathname)",
     "matchers": ""
   },
   {

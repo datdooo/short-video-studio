@@ -22,7 +22,7 @@ try {
   await page.route("https://**", (route) => { violations.push(route.request().url()); return route.abort(); });
   await page.route("http://127.0.0.1:8887/**", async (route) => {
     const url = new URL(route.request().url()); let body = {}, status = 200;
-    if (url.pathname === "/health") body = { ok: true, readyForYouTube: true, chatGPTAuthAvailable: false, tools: { ffmpeg: "QA", ffprobe: "QA", ytDlp: "QA" }, render: { contrast: 1.04, saturation: 1.06 } };
+    if (url.pathname === "/health") body = { ok: true, readyForYouTube: true, codex: null, tools: { ffmpeg: "QA", ffprobe: "QA", ytDlp: "QA" }, render: { contrast: 1.04, saturation: 1.06 } };
     else if (url.pathname === "/api/chatgpt/session") body = { available: false, connected: false };
     else if (url.pathname === "/api/editor-renders") body = { jobs: accepted };
     else if (url.pathname === "/api/batches") body = { batches: [] };

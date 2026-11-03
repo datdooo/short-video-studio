@@ -6,6 +6,6 @@ export function windowsEnvironment(resources,current){
  const escape=v=>v.replaceAll('\\','/').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;');
  const fontXml=`<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "urn:fontconfig:fonts.dtd"><fontconfig><dir>${escape(p.join(appRoot,'public'))}</dir><dir>${escape(p.join(current.SystemRoot||'C:\\Windows','Fonts'))}</dir><cachedir>${escape(p.join(dataRoot,'cache','fontconfig'))}</cachedir></fontconfig>`;
  const env=runtimeEnvironment(runtime,current);for(const key of Object.keys(env))if(key.toLowerCase()==='path')delete env[key];
- Object.assign(env,{PATH:`${bin};${current.PATH||current.Path||''}`,NODE_ENV:'production',FFMPEG_PATH:p.join(bin,'ffmpeg.exe'),FFPROBE_PATH:p.join(bin,'ffprobe.exe'),WHISPER_PATH:p.join(bin,'whisper-cli.exe'),YT_DLP_PATH:p.join(bin,'yt-dlp.exe'),CHATGPT_CREDENTIAL_HELPER:p.join(bin,'chatgpt-credential-store.exe'),FONTCONFIG_FILE:fontConfig});
+ Object.assign(env,{PATH:`${bin};${current.PATH||current.Path||''}`,NODE_ENV:'production',FFMPEG_PATH:p.join(bin,'ffmpeg.exe'),FFPROBE_PATH:p.join(bin,'ffprobe.exe'),WHISPER_PATH:p.join(bin,'whisper-cli.exe'),YT_DLP_PATH:p.join(bin,'yt-dlp.exe'),FONTCONFIG_FILE:fontConfig});
  return{runtime,appRoot,dataRoot,fontConfig,fontXml,env};
 }

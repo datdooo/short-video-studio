@@ -9,7 +9,7 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
       if(item.deleted)continue;
       if(signal.aborted){if(!item.jobId)item.state='cancelled';continue;}
       const settings=item.settings||_body;
-      if(authBlocked&&settings.provider==='chatgpt'){item.state='paused';item.error='Cần kết nối lại ChatGPT rồi chủ động tiếp tục mục này.';item.errorCode='auth-required';await persist();continue;}
+      if(authBlocked&&settings.provider==='chatgpt'){item.state='paused';item.error='Codex chưa sẵn sàng (cài Codex hoặc chạy codex login) rồi chủ động tiếp tục mục này.';item.errorCode='auth-required';await persist();continue;}
       try{
         item.startedAt=new Date().toISOString();delete item.sourceProgress;
         if(item.errorCode==='auth-required')delete item.errorCode; // Explicit resume has passed the pause guard.

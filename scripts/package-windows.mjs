@@ -213,7 +213,6 @@ const goRoot = path.join(cache, `${goVersion.version}-${process.platform}-${proc
 if (!existsSync(path.join(goRoot, 'go/bin/go'))) { await mkdir(goRoot, { recursive: true }); run('/usr/bin/tar', ['-xzf', goArchive, '-C', goRoot]); }
 const go = path.join(goRoot, 'go/bin/go');
 const goEnv = { ...process.env, GOTOOLCHAIN: 'local', GO111MODULE: 'off', CGO_ENABLED: '0', GOOS: 'windows', GOARCH: 'amd64', GOCACHE: path.join(cache, 'go-cache'), GOPATH:path.join(cache,'go-path'), GOMODCACHE:path.join(cache,'go-modules') };
-run(go, ['build', '-trimpath', '-ldflags=-s -w', '-o', path.join(bin, 'chatgpt-credential-store.exe'), 'desktop/CredentialStore_windows.go'], { env: goEnv });
 
 // Refuse a cross-platform package with any Mach-O binaries copied from this Mac.
 const manifest = [];
@@ -272,8 +271,8 @@ Desktop/Start Menu shortcuts and Windows Apps uninstall entry are created.
 Close Beta normally before updating/uninstalling; installer does not kill jobs.
 One previous installed executable/receipt is retained for rollback on update.
 Media/history/cache/runtime: %LOCALAPPDATA%\\ShortCut Studio Beta
-App services: 127.0.0.1:5373 / :8987. OAuth callback :8987/auth/callback.
-Credentials: Beta-only CurrentUser DPAPI; sign in separately. DEV/production data is not imported.
+App services: 127.0.0.1:5373 / :8987.
+ChatGPT Auto uses the Codex CLI you install and sign in to separately (codex login); the app stores no ChatGPT credentials. DEV/production data is not imported.
 Uninstall removes program/shortcuts/registration and keeps user data/credentials.
 Whisper models are NOT bundled or downloaded by packaging.
 Bundled Node/FFmpeg/ffprobe/yt-dlp/Whisper CLI/Sharp/VAD and DLLs are x64 Windows binaries.

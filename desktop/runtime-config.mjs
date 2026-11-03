@@ -14,8 +14,7 @@ export function resolveRuntime({ profile = "beta", home = homedir(), platform = 
   const supportRoot = suppliedSupportRoot || (platform === 'win32' ? p.join(localAppData, identity.name) : p.join(home, "Library", "Application Support", identity.name));
   if (!p.isAbsolute(supportRoot) || p.basename(supportRoot) !== identity.name) throw new Error('Invalid Beta support root.');
   return { ...identity, profile, platform, isolated: true, supportRoot, dataRoot: p.join(supportRoot, 'media'),
-    webOrigin: `http://127.0.0.1:${identity.webPort}`, workerOrigin: `http://127.0.0.1:${identity.workerPort}`,
-    credentialService: `${identity.name} ChatGPT` };
+    webOrigin: `http://127.0.0.1:${identity.webPort}`, workerOrigin: `http://127.0.0.1:${identity.workerPort}` };
 }
 
 // One environment boundary for source development and the packaged macOS app.
@@ -39,7 +38,6 @@ export function runtimeEnvironment(runtime, inherited = process.env) {
       TEMP: p.join(runtime.supportRoot, "tmp"), TMP: p.join(runtime.supportRoot, "tmp"),
       ...(runtime.platform === "win32" ? { USERPROFILE: p.join(runtime.supportRoot, "home"), APPDATA: p.join(runtime.supportRoot, "home", "AppData", "Roaming"), LOCALAPPDATA: p.join(runtime.supportRoot, "home", "AppData", "Local") } : {}),
       MEDIA_WORKER_DISABLE_LEGACY: "1",
-      CHATGPT_KEYCHAIN_SERVICE: runtime.credentialService,
     });
   }
   return {
