@@ -56,7 +56,7 @@ export function usePlanTiming(state: State) {
       base = effectiveCutPlan(base);
       // Legacy AI plans get an in-memory restore checkpoint from their actual
       // effective main ranges, never an outer start/end window.
-      const effective = captureAiMainRanges({ ...plan, ...base });
+      const effective = captureAiMainRanges(base);
       return { parts: effective.parts, analysis: effective.analysis, error: "" };
     } catch (caught) {
       return {

@@ -1846,10 +1846,9 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 .studio-main-range-row {
-  grid-template-columns: var(--timeline-index-size) minmax(0, var(--timeline-timecode-width)) minmax(
-      0,
-      var(--timeline-timecode-width)
-    ) minmax(6rem, max-content);
+  grid-template-columns:
+    var(--timeline-index-size) minmax(0, var(--timeline-timecode-width)) minmax(0, var(--timeline-timecode-width))
+    minmax(6rem, max-content);
   column-gap: var(--timeline-column-gap);
 }
 .studio-main-range-row input {
@@ -3002,6 +3001,7 @@ textarea {
 .studio-preview-stage[data-review-visible="true"][data-review-compact="true"] {
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
   align-items: stretch;
   overflow: auto;
   overscroll-behavior: contain;
@@ -3909,5 +3909,30 @@ textarea {
   .studio-render-disabled-reason {
     flex-basis: 100%;
     max-width: none;
+  }
+}
+
+/* Keep each source timecode whole when the candidate card is narrow. */
+@container (max-width: 440px) {
+  .prototype-shell .studio-teaser-option {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: start;
+  }
+  .studio-teaser-option-index {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+  .studio-teaser-option-copy {
+    grid-column: 2;
+  }
+  .studio-teaser-option-copy > span {
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  .studio-teaser-option-status {
+    grid-column: 2;
+    justify-content: flex-start;
+    min-width: 0;
   }
 }

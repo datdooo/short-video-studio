@@ -213,7 +213,7 @@ export function TimelineView({ model }: { model: Props }) {
                 }
                 onClick={() => travelCutHistory("undo")}
               >
-                Undo
+                Hoàn tác
               </button>
               <button
                 type="button"
@@ -226,7 +226,7 @@ export function TimelineView({ model }: { model: Props }) {
                 }
                 onClick={() => travelCutHistory("redo")}
               >
-                Redo
+                Làm lại
               </button>
             </div>
           </div>

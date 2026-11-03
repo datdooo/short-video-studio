@@ -1,3 +1,4 @@
+"use client";
 import { useEditPlan } from "@/components/editor/use-edit-plan";
 import { type AiDiagnostics } from "@/lib/ai-progress";
 import { type RenderJob, type WorkerSource } from "@/lib/api/worker-client";
@@ -7,7 +8,6 @@ import type { Controls } from "@/lib/editor-session";
 import type { Caption } from "@/lib/subtitles.mjs";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
-("use client");
 type State = {
   sourceRevision: number;
   cutHistory: ReturnType<typeof useEditPlan>["cutHistory"];
@@ -63,7 +63,6 @@ export function useCutHistoryControls(state: State) {
     setMainDraftErrors,
     setRenderJob,
     setTeaserDraftErrors,
-    sourceSelectionEpoch,
     stopWorkspacePlayback,
     subtitleCues,
     supplementalPrompt,
@@ -179,7 +178,7 @@ export function useCutHistoryControls(state: State) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [workspaceRef]);
   return {
     cutHistoryScope,
 

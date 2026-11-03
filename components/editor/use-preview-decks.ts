@@ -180,6 +180,7 @@ export function usePreviewDecks(state: State) {
     playbackSegments,
     previewVideoUrl,
     partDuration,
+    workspaceRef,
     activeDeckSlotRef,
     deckVideosRef,
     decksRef,

@@ -169,7 +169,7 @@ export function BatchView({ model }: { model: Props }) {
                 checked={subtitleSettings.enabled}
                 onChange={(event) => setSubtitleSettings((current) => ({ ...current, enabled: event.target.checked }))}
               />{" "}
-              Auto Subtitle cho lượt chạy mới · dùng style ở tab chỉnh từng video
+              Phụ đề tự động cho lượt chạy mới · dùng style ở tab chỉnh từng video
             </label>
           </details>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
@@ -380,7 +380,7 @@ export function BatchView({ model }: { model: Props }) {
                             </p>
                             <CopyButton
                               text={`${item.plan!.originalTitle} | ${part.title} (${part.id}/${item.plan!.parts.length})\n\n${part.hashtags.join(" ")}`}
-                              ariaLabel={`Copy title và hashtag Part ${part.id} trong hàng loạt`}
+                              ariaLabel={`Sao chép tiêu đề và hashtag Part ${part.id} trong hàng loạt`}
                               className="mt-2"
                             />
                           </div>
@@ -424,7 +424,7 @@ export function BatchView({ model }: { model: Props }) {
           )}
         </section>
         <aside
-          aria-label="Preview hàng loạt"
+          aria-label="Xem trước hàng loạt"
           className="studio-batch-preview rounded-2xl border border-white/10 bg-[#111216] p-4"
         >
           <p className="eyebrow">PREVIEW RENDER</p>
@@ -434,7 +434,7 @@ export function BatchView({ model }: { model: Props }) {
                 ref={batchPreviewRef}
                 key={batchPreviewOutput.url}
                 src={`${WORKER_ORIGIN}${batchPreviewOutput.url}?preview=1`}
-                aria-label={`Preview Part ${batchPreviewOutput.part}`}
+                aria-label={`Xem trước Part ${batchPreviewOutput.part}`}
                 controls
                 playsInline
                 preload="metadata"

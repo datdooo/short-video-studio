@@ -1,6 +1,6 @@
+"use client";
 import type { RefObject } from "react";
 import { useEffect, useLayoutEffect, useRef } from "react";
-("use client");
 type State = { saveSession: (onlyIfChanged?: boolean) => boolean; unsavedSession: RefObject<boolean> };
 export function useSessionExitSave(state: State) {
   const { saveSession, unsavedSession } = state;

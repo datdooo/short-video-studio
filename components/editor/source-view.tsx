@@ -210,6 +210,14 @@ export function SourceView({ model }: { model: Props }) {
     youtubeState,
   } = model;
 
+  const txtDisabledReason = !preparedSource
+    ? "Chuẩn bị nguồn trước khi tải TXT."
+    : !workerHealth?.ok
+      ? "Chờ worker kết nối để tải TXT."
+      : effectiveTiming.error ||
+        (isAnalyzing || isPreparingSource || Object.values(teaserOperations).some((operation) => operation.running)
+          ? "Chờ hoặc dừng tác vụ đang xử lý trước khi tải TXT."
+          : "");
   return (
     <>
       <Tabs
@@ -252,7 +260,7 @@ export function SourceView({ model }: { model: Props }) {
         <TabsContent value="local" className="pt-3">
           <label className="flex h-[84px] cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-white/12 bg-white/[.02] text-sm text-zinc-400 transition hover:border-[#ff4d2e]/40 hover:bg-[#ff4d2e]/5 hover:text-white">
             <Upload className="size-4" />
-            <span className="max-w-[220px] truncate">{localFileName || "Choose MP4, MOV or WebM"}</span>
+            <span className="max-w-[220px] truncate">{localFileName || "Chọn MP4, MOV hoặc WebM"}</span>
             <input
               aria-label="Chọn video từ máy"
               className="sr-only"
@@ -411,10 +419,16 @@ export function SourceView({ model }: { model: Props }) {
                   !preparedSource ||
                   Boolean(effectiveTiming.error)
                 }
+                aria-describedby={txtDisabledReason ? "web-txt-disabled-reason" : undefined}
                 aria-busy={webAiPhase === "prompt"}
               >
                 {webAiPhase === "prompt" ? <Loader2 className="animate-spin" /> : <Download />}Tải TXT
               </Button>
+              {txtDisabledReason && (
+                <p id="web-txt-disabled-reason" className="studio-muted text-xs">
+                  {txtDisabledReason}
+                </p>
+              )}
               {txtDownloadTask?.revision === webFlowRevision && (
                 <TaskProgress
                   compact
@@ -590,10 +604,10 @@ export function SourceView({ model }: { model: Props }) {
         >
           <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
             <TabsTrigger value="ai" className="rounded-lg text-xs">
-              <Sparkles /> AI plan
+              <Sparkles /> Cắt bằng AI
             </TabsTrigger>
             <TabsTrigger value="manual" className="rounded-lg text-xs">
-              <Scissors /> Manual cut
+              <Scissors /> Cắt thủ công
             </TabsTrigger>
           </TabsList>
 

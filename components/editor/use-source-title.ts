@@ -39,7 +39,8 @@ export function useSourceTitle(state: State) {
     }
     const controller = new AbortController(),
       epoch = sourceSelectionEpoch.current;
-    sourceRequests.current.add(controller);
+    const requests = sourceRequests.current;
+    requests.add(controller);
     const timer = window.setTimeout(async () => {
       if (controller.signal.aborted || epoch !== sourceSelectionEpoch.current) return;
       setYoutubeState("loading");
@@ -64,7 +65,7 @@ export function useSourceTitle(state: State) {
     return () => {
       window.clearTimeout(timer);
       controller.abort();
-      sourceRequests.current.delete(controller);
+      requests.delete(controller);
     };
   }, [
     sessionReady,

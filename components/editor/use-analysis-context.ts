@@ -1,3 +1,4 @@
+"use client";
 import { type WorkerSource } from "@/lib/api/worker-client";
 import type { AiProvider, EditPlan } from "@/lib/edit-plan";
 import type { Caption } from "@/lib/subtitles.mjs";
@@ -5,7 +6,6 @@ import { assertTeaserContexts } from "@/lib/teaser-context.mjs";
 import { teaserReadiness } from "@/lib/teaser-hooks.mjs";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-("use client");
 type State = {
   sourceRevision: number;
   activeAnalysis: RefObject<AbortController | null>;
@@ -37,7 +37,6 @@ export function useAnalysisContext(state: State) {
     previewPlan,
     provider,
     setAnalysisNotice,
-    sourceSelectionEpoch,
     subtitleCues,
     supplementalPrompt,
     transcript,
@@ -46,7 +45,7 @@ export function useAnalysisContext(state: State) {
   const basicTeaserIssues = useMemo(
     () =>
       teaserReadiness(
-        previewPlan,
+        { parts: previewPlan.parts },
         preparedSource?.duration || previewDuration || Infinity,
         previewPlan.captionCues?.cues || subtitleCues,
         preparedSource?.id,
@@ -179,7 +178,7 @@ export function useAnalysisContext(state: State) {
     for (const [id, request] of activeTeaserRequests.current)
       if (request.identity !== latestPartHookIdentities.current[id])
         request.controller.abort(new Error("Nguồn, main hoặc yêu cầu đã đổi; đã dừng lượt teaser cũ."));
-  }, [hookIdentity, partHookIdentityKey]);
+  }, [hookIdentity, partHookIdentityKey, activeAnalysis, activeTeaserRequests, invalidateAnalysis, setAnalysisNotice]);
   return {
     basicTeaserIssues,
     freshnessState,

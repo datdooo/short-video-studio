@@ -60,19 +60,29 @@ export function useSubtitleRequests(state: State) {
     subtitleSourceRef,
     workerHealth,
   } = state;
+  const preparedSourceId = preparedSource?.id;
   useEffect(() => {
-    if (restoringSource.current && !preparedSource) return;
-    subtitleSourceRef.current = preparedSource?.id;
+    if (restoringSource.current && !preparedSourceId) return;
+    subtitleSourceRef.current = preparedSourceId;
     subtitleRequestSerialRef.current += 1;
     subtitleAutoKeyRef.current = "";
-    const sourceId = preparedSource?.id;
+    const sourceId = preparedSourceId;
     queueMicrotask(() => {
       if (subtitleSourceRef.current !== sourceId) return;
       setSubtitleBusy(false);
       setSubtitleNotice("");
       setSourceCaptions((current) => (current?.sourceId === sourceId ? current : null));
     });
-  }, [preparedSource?.id, restoringSource]);
+  }, [
+    preparedSourceId,
+    restoringSource,
+    subtitleSourceRef,
+    subtitleRequestSerialRef,
+    subtitleAutoKeyRef,
+    setSubtitleBusy,
+    setSubtitleNotice,
+    setSourceCaptions,
+  ]);
   const loadSubtitles = useCallback(
     async (install = false, regenerate = false) => {
       const source = preparedSource;
@@ -144,6 +154,14 @@ export function useSubtitleRequests(state: State) {
       setInterruptedTasks,
       sourceRequests,
       sourceSelectionEpoch,
+      setSourceCaptions,
+      setSubtitleBusy,
+      setSubtitleNotice,
+      setSubtitleStartedAt,
+      subtitleAutoKeyRef,
+      subtitleControllerRef,
+      subtitleRequestSerialRef,
+      subtitleSourceRef,
     ],
   );
   useEffect(() => {
@@ -171,6 +189,7 @@ export function useSubtitleRequests(state: State) {
     sourceCaptions?.sourceId,
     subtitleBusy,
     loadSubtitles,
+    subtitleAutoKeyRef,
   ]);
   useEffect(() => {
     if (!workerHealth?.ok || !subtitleSettings.enabled) return;
@@ -197,6 +216,6 @@ export function useSubtitleRequests(state: State) {
       disposed = true;
       window.clearInterval(timer);
     };
-  }, [workerHealth?.ok, subtitleSettings.enabled, subtitleBusy]);
+  }, [workerHealth?.ok, subtitleSettings.enabled, subtitleBusy, setSpeechModel]);
   return { loadSubtitles };
 }

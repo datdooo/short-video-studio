@@ -98,6 +98,8 @@ export function useManualEditTool(state: State) {
     setEditMode,
     setHasEditPlan,
     setSourceTitle,
+    setActivePartIndex,
+    setError,
   ]);
   return {};
 }

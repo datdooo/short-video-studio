@@ -46,7 +46,8 @@ export function useSourceTranscript(state: State) {
       epoch = sourceSelectionEpoch.current,
       revision = transcriptRevision.current;
     transcriptRequestRef.current = controller;
-    sourceRequests.current.add(controller);
+    const requests = sourceRequests.current;
+    requests.add(controller);
     const timer = window.setTimeout(async () => {
       if (
         controller.signal.aborted ||
@@ -91,7 +92,7 @@ export function useSourceTranscript(state: State) {
     return () => {
       window.clearTimeout(timer);
       controller.abort();
-      sourceRequests.current.delete(controller);
+      requests.delete(controller);
       if (transcriptRequestRef.current === controller) transcriptRequestRef.current = null;
     };
   }, [

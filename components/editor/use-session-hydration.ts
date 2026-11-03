@@ -56,6 +56,7 @@ export function useSessionHydration(state: State) {
     setSessionReady(true);
   }, [
     draftWriteBlockedRef,
+    restoreEditorDraft,
     hydratedRef,
     setBatchId,
     setPreservedDrafts,

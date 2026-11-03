@@ -7,13 +7,13 @@ import { cn } from "@/lib/utils";
 
 export function CopyButton({
   text,
-  label = "Copy title + hashtag",
+  label = "Sao chép tiêu đề + hashtag",
   ariaLabel,
   className,
   disabled = false,
   onCopied,
   onError,
-  errorMessage = "Trình duyệt chưa cho copy. Có thể chọn văn bản và copy bằng tay.",
+  errorMessage = "Chưa sao chép được. Chọn văn bản để sao chép bằng tay.",
 }: {
   text: string;
   label?: string;
@@ -90,11 +90,11 @@ export function CopyButton({
           </span>
           <span aria-live="polite">
             {status === "done"
-              ? "Đã copy!"
+              ? "Đã sao chép"
               : status === "pending"
-                ? "Đang copy…"
+                ? "Đang sao chép…"
                 : status === "error"
-                  ? "Thử copy lại"
+                  ? "Sao chép lại"
                   : label}
           </span>
         </span>

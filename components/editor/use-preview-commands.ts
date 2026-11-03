@@ -169,6 +169,7 @@ export function usePreviewCommands(state: State) {
       previewVideoRef,
       setPreviewCurrentTime,
       setPreviewError,
+      workspaceRef,
     ],
   );
   useEffect(() => {

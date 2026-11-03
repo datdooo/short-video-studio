@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Download, Loader2, Square, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +37,12 @@ export function ManualVideoDownload({
   variantKey?: string;
   disabled?: boolean;
 }) {
+  const reasonId = useId();
+  const disabledReason = !sourceId
+    ? "Chuẩn bị nguồn trước khi tải video."
+    : disabled
+      ? "Chờ tác vụ hiện tại hoàn tất để tải video."
+      : "";
   const active = useRef<AbortController | null>(null);
   const identity = JSON.stringify([worker, sourceId]);
   const [storedTask, setTask] = useState<{ identity: string; progress: ManualVideoProgress; startedAt: number } | null>(
@@ -120,6 +126,7 @@ export function ManualVideoDownload({
           className="studio-video-download-main"
           onClick={() => void start()}
           disabled={disabled || running || !sourceId}
+          aria-describedby={disabledReason ? reasonId : undefined}
           aria-busy={running}
           title="Tải đúng video nguồn ở bước chuẩn bị, không nén hoặc tải lại"
         >
@@ -133,6 +140,7 @@ export function ManualVideoDownload({
               size="action"
               disabled={disabled || running || !sourceId}
               className="studio-video-download-menu"
+              aria-describedby={disabledReason ? reasonId : undefined}
               aria-label="Chọn bản video để tải"
             >
               <ChevronDown />
@@ -146,6 +154,11 @@ export function ManualVideoDownload({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {disabledReason && (
+        <p id={reasonId} className="studio-muted text-xs">
+          {disabledReason}
+        </p>
+      )}
       {value && (
         <>
           <TaskProgress

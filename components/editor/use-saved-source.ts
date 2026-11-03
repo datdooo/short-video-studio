@@ -32,7 +32,8 @@ export function useSavedSource(state: State) {
     if (!sessionReady || !retainedSourceId || preparedSource?.id === retainedSourceId || !workerHealth?.ok) return;
     const controller = new AbortController(),
       epoch = sourceSelectionEpoch.current;
-    sourceRequests.current.add(controller);
+    const requests = sourceRequests.current;
+    requests.add(controller);
     void workerFetch(`/api/sources/${retainedSourceId}`, { cache: "no-store", signal: controller.signal })
       .then(async (r) => {
         const data = (await r.json()) as { source?: WorkerSource; error?: string };
@@ -56,10 +57,10 @@ export function useSavedSource(state: State) {
             "Source đã lưu chưa khả dụng hoặc đã mất. Bản nháp vẫn được giữ; kết nối lại worker hoặc chủ động chuẩn bị/chọn lại nguồn.",
           );
       })
-      .finally(() => sourceRequests.current.delete(controller));
+      .finally(() => requests.delete(controller));
     return () => {
       controller.abort();
-      sourceRequests.current.delete(controller);
+      requests.delete(controller);
     };
   }, [
     sessionReady,

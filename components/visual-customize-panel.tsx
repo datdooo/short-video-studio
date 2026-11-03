@@ -1,5 +1,6 @@
 "use client";
 
+import { UI_STRINGS } from "@/lib/ui-strings";
 import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { VisualStyle } from "@/lib/visual-style/types";
@@ -23,25 +24,25 @@ export function VisualCustomizePanel({
 }) {
   const filter = getFilterPreset(style.filter.presetId || "current");
   const rows: { id: Control; label: string; value: string }[] = [
-    { id: "text", label: "Text Style", value: getTextPreset(style.textPresetId || "current").label },
-    { id: "font", label: "Font", value: getFontDefinition(style.originalTitle.font).label },
+    { id: "text", label: UI_STRINGS.textStyle, value: getTextPreset(style.textPresetId || "current").label },
+    { id: "font", label: UI_STRINGS.font, value: getFontDefinition(style.originalTitle.font).label },
     {
       id: "filter",
-      label: "Filter",
+      label: "Bộ lọc",
       value: filter.label + (style.filter.presetId ? ` · ${Math.round((style.filter.intensity ?? 1) * 100)}%` : ""),
     },
-    { id: "background", label: "Background", value: getBackgroundPreset(style.background.presetId || "current").label },
+    { id: "background", label: "Nền", value: getBackgroundPreset(style.background.presetId || "current").label },
     {
       id: "overlay",
-      label: "Overlay",
+      label: "Lớp phủ",
       value: style.overlays.length
         ? style.overlays
             .map((overlay) => ("presetId" in overlay ? getOverlayPreset(overlay.presetId).label : "Custom"))
             .join(" + ")
         : "None",
     },
-    { id: "animation", label: "Text Animation", value: getTitleAnimation(style.titleAnimation).label },
-    { id: "transition", label: "Cut Transition", value: getCutTransition(style.cutTransition).label },
+    { id: "animation", label: UI_STRINGS.textAnimation, value: getTitleAnimation(style.titleAnimation).label },
+    { id: "transition", label: "Chuyển cảnh", value: getCutTransition(style.cutTransition).label },
   ];
   return (
     <details
@@ -49,7 +50,7 @@ export function VisualCustomizePanel({
       className="studio-disclosure visual-customize mt-5 min-w-0 rounded-2xl border border-white/10 bg-white/[.025]"
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-        Customize
+        {UI_STRINGS.customize}
         <ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform" />
       </summary>
       <div className="divide-y divide-white/8 border-t border-white/8 px-3">

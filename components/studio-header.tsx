@@ -70,7 +70,7 @@ export function StudioHeader({
           className={workerReady ? "studio-connected" : "studio-warning"}
         >
           {workerReady ? <Cloud size={13} /> : <CloudOff size={13} />}
-          <span>{workerReady ? "Worker OK" : "Offline"}</span>
+          <span>{workerReady ? "Worker sẵn sàng" : "Mất kết nối"}</span>
         </span>
         <span
           className={providerReady ? "studio-connected" : "studio-warning"}

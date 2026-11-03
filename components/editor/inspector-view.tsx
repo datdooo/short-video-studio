@@ -152,7 +152,7 @@ export function InspectorView({ model }: { model: Props }) {
 
           <details className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <summary className="cursor-pointer text-sm font-semibold">
-              Auto Subtitle · {subtitleSettings.enabled ? "Bật" : "Tắt"}
+              Phụ đề tự động · {subtitleSettings.enabled ? "Bật" : "Tắt"}
             </summary>
             <label className="mt-3 flex items-center gap-2 text-xs">
               <input

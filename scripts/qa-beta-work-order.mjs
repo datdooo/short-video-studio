@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const {chromium}=await import(process.env.QA_PLAYWRIGHT_MODULE||'/private/tmp/marketing-slide-tools/node_modules/playwright/index.mjs');
 const root=path.resolve('.isolation-verification/work-order-complete/ui');await mkdir(root,{recursive:true});
 const browser=await chromium.launch({channel:'chrome',headless:true});
-const results=[],errors=[],blocked=[],fonts=[];
+const results=[],errors=[],blocked=[],fonts=[];let storageMode='empty',releaseStorage;const states=[];
 try{
  const context=await browser.newContext();
  await context.route('**/*',async route=>{
@@ -15,7 +15,7 @@ try{
    let json={};
    if(u.pathname==='/health')json={ok:true,readyForYouTube:true,tools:{},render:{}};
    else if(u.pathname==='/api/chatgpt/session')json={session:{available:false,connected:false,sharing:false}};
-   else if(u.pathname==='/api/storage')json={library:{storages:[],originals:[],parts:[],trash:[],warnings:[],totals:{originals:0,parts:0,trash:0}}};
+   else if(u.pathname==='/api/storage'){if(storageMode==='pending'){await new Promise(resolve=>releaseStorage=resolve);return route.fulfill({status:503,json:{error:'Lỗi giả lập — không đọc được kho, dữ liệu được giữ.'},headers:{'Access-Control-Allow-Origin':'*'}});}json={library:{storages:[],originals:[],parts:[],trash:[],warnings:[],totals:{originals:0,parts:0,trash:0}}};}
    else if(u.pathname==='/api/editor-renders')json={jobs:[]};
    else if(u.pathname==='/api/batches')json={batches:[]};
    else if(u.pathname==='/api/music')json={assets:[]};
@@ -46,6 +46,7 @@ try{
    results.push({width,height,workspace:name,overflow});
   }
  }
+ for(const[width,height]of[[1440,900],[1280,720],[1024,768],[768,1024],[390,844]]){await page.setViewportSize({width,height});await page.getByRole('navigation',{name:'Chế độ làm việc'}).getByRole('button',{name:'Kho',exact:true}).click();storageMode='pending';releaseStorage=undefined;await page.getByRole('button',{name:'Làm mới',exact:true}).click();while(!releaseStorage)await new Promise(r=>setTimeout(r,10));await page.screenshot({path:path.join(root,`${width}-${height}-Kho-loading.png`),fullPage:true});states.push({width,height,state:'loading',disabled:await page.getByRole('button',{name:'Làm mới',exact:true}).isDisabled()});releaseStorage();await page.getByText('Lỗi giả lập — không đọc được kho, dữ liệu được giữ.',{exact:true}).waitFor();await page.screenshot({path:path.join(root,`${width}-${height}-Kho-error.png`),fullPage:true});states.push({width,height,state:'error',overflow:await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1)});storageMode='empty';await page.getByRole('button',{name:'Làm mới',exact:true}).click();await page.getByText('Lỗi giả lập — không đọc được kho, dữ liệu được giữ.',{exact:true}).waitFor({state:'hidden'});}
  await page.setViewportSize({width:390,height:844});await page.getByRole('navigation',{name:'Chế độ làm việc'}).getByRole('button',{name:'Editor',exact:true}).click();
  await page.getByRole('button',{name:'Thu/mở nguồn',exact:true}).click();
  await assert.doesNotReject(()=>page.getByRole('dialog').waitFor());
@@ -54,6 +55,6 @@ try{
  await page.getByRole('button',{name:'Phím tắt',exact:true}).click();await page.getByRole('dialog').waitFor();await page.screenshot({path:path.join(root,'390-shortcuts.png'),fullPage:true});await page.keyboard.press('Escape');
  assert.equal(await page.getByRole('button',{name:'Phím tắt',exact:true}).evaluate(n=>n===document.activeElement),true);
  await page.emulateMedia({reducedMotion:'reduce',forcedColors:'active'});await page.screenshot({path:path.join(root,'390-forced-colors-reduced-motion.png'),fullPage:true});
- await writeFile(path.join(root,'result.json'),JSON.stringify({results,errors,blocked,initialFonts,fonts,fixture:'empty/offline worker mocked; no real data'},null,2));
- assert.deepEqual(errors,[]);console.log(JSON.stringify({screenshots:results.length+1,errors,overflow:results.filter(r=>r.overflow)}));
+ await writeFile(path.join(root,'result.json'),JSON.stringify({results,states,errors,blocked,initialFonts,fonts,fixture:'empty/offline worker mocked; no real data'},null,2));
+ assert.deepEqual(errors,[]);assert.ok(states.filter(x=>x.state==='loading').every(x=>x.disabled));assert.ok(states.every(x=>!x.overflow));console.log(JSON.stringify({screenshots:results.length+1,errors,overflow:results.filter(r=>r.overflow)}));
 }finally{await browser.close();}
