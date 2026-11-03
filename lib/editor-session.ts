@@ -114,7 +114,7 @@ function serializeEditorSession(data:EditorSession):string{
 export function writeEditorSession(data:EditorSession):string{
  try{
   const json=serializeEditorSession(data);
-  if(json.length*2>SESSION_LIMIT)return'Bản nháp vượt 4 MiB; bản lưu trước vẫn được giữ. Rút gọn transcript/JSON nhập để lưu tiếp.';
+  if(json.length*2>SESSION_LIMIT)return'Bản nháp vượt 4 MiB; bản lưu trước vẫn được giữ. Nội dung TXT, transcript và JSON có thể chiếm nhiều bộ nhớ. Giữ hoặc sao chép dữ liệu hiện tại trước khi đóng; app không tự cắt dữ liệu.';
   localStorage.setItem(SESSION_KEY,json);return'';
  }catch{return'Chưa lưu được bản nháp (bộ nhớ local không khả dụng hoặc đầy); bản lưu trước không bị xóa.';}
 }

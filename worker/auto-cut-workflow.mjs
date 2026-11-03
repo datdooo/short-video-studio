@@ -45,8 +45,9 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
       input??=await mainContent.prepare(source,context,options);
       const externalContext=snapshot?{analysisKey:snapshot.analysisKey,attachments:{sourceVideo:options.webAiVideo}}:buildExternalEditingContext(source,context,options,input,body);
       if(body.analysisKey!==externalContext.analysisKey)throw new Error('Context TXT không khớp dữ liệu kiểm tra; bản nháp được giữ. Tải TXT mới.');
+      // Legacy attached flag binds the download manifest; it is not a user attestation or proof of upload/viewing.
       const attachment=body.attachmentConfirmation;
-      if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Video đính kèm không khớp source/request/context hiện tại.');
+      if(!attachment||attachment.sourceId!==source.id||attachment.requestId!==body.requestId||attachment.analysisKey!==body.analysisKey||attachment.mediaId!==externalContext.attachments.sourceVideo.id||attachment.attached!==true)throw Error('Định danh video không khớp source/request/context hiện tại.');
       if(externalContext.attachments.sourceVideo.sourceKey&&attachment.sourceKey!==externalContext.attachments.sourceVideo.sourceKey)throw Error('Video nguồn đã đổi từ lúc tạo TXT; tải TXT/video mới trước khi nhập JSON.');
       if(attachment.method!==undefined&&attachment.method!=='manual-import')throw Error('Chỉ hỗ trợ nhập kết quả web thủ công.');
       // Manual Apply is the explicit import action, not proof that a website

@@ -52,13 +52,12 @@ added just for external prompts.
 
 ## Long prompts, import and freshness
 
-`splitWebAiPrompt` keeps one prompt <=60,000 characters. Larger prompts become
-ordered <=24,000-character payload blocks plus an offsets/count/character manifest;
-no omitted tail, no file attachment. These are app clipboard bounds, not a promise
-about any provider's context limit. AI is told to wait for every block and then
-reassemble before selecting or returning JSON. UI selects which block to copy;
-no duplicate full prompt/base64 is put in the clipboard. The existing 4MiB draft
-storage cap still applies and reports failure instead of silently truncating.
+`splitWebAiPrompt` retains the entire prompt as one string. The manual workflow
+exports one complete TXT file (or copies the full text), without blocks, manifest,
+character truncation or instructions to send chunks. A large-text warning reports
+size, not a provider context guarantee. Draft storage still has a 4 MiB bound and
+fails safely instead of truncating; redundant prompt/transcript persistence has
+not yet been migrated to worker snapshot references.
 
 Context revision hashes full evidence, main inputs/ranges/locks/caption provenance,
 source fingerprint, current shared rules, provider/request and transport version.
