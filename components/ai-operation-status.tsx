@@ -1,4 +1,6 @@
 "use client";
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { useEffect, useState } from "react";
 import type { AiDiagnostics } from "@/lib/ai-progress";
 const stages: Record<string, string> = {
@@ -72,8 +74,8 @@ export function AiOperationStatus({
         {diagnostics ? `${diagnostics.requestCount} request AI mới` : "Chờ thống kê từ worker"}
       </p>
       {diagnostics && (
-        <details className="min-w-0">
-          <summary className="cursor-pointer studio-muted">Chi tiết lượt AI</summary>
+        <Disclosure className="min-w-0">
+          <DisclosureTrigger className="cursor-pointer studio-muted">Chi tiết lượt AI</DisclosureTrigger>
           <div className="mt-1 space-y-1 break-words">
             {!diagnostics.requests.length && (
               <p className="studio-muted">
@@ -224,7 +226,7 @@ export function AiOperationStatus({
                 </p>
               ))}
           </div>
-        </details>
+        </Disclosure>
       )}
     </div>
   );

@@ -1,4 +1,8 @@
 "use client";
+
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { useSyncExternalStore, type ComponentProps } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { EditorInspector } from "@/components/editor-workspace";
@@ -151,10 +155,10 @@ export function InspectorView({ model }: { model: Props }) {
             controls={visualControls}
           />
 
-          <details className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-            <summary className="cursor-pointer text-sm font-semibold">
+          <Disclosure className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
+            <DisclosureTrigger className="cursor-pointer text-sm font-semibold">
               Phụ đề tự động · {subtitleSettings.enabled ? "Bật" : "Tắt"}
-            </summary>
+            </DisclosureTrigger>
             <label className="mt-3 flex items-center gap-2 text-xs">
               <input
                 aria-label="Bật phụ đề tự động"
@@ -183,7 +187,7 @@ export function InspectorView({ model }: { model: Props }) {
                   <p className="studio-muted text-xs">{preparedSource.captionWarning}</p>
                 )}
                 <div className="grid grid-cols-2 gap-2">
-                  <button
+                  <Button variant="segmented" size="md" data-state={subtitleSettings.source !== "whisper" ? "active" : "inactive"}
                     type="button"
                     aria-pressed={subtitleSettings.source !== "whisper"}
                     disabled={subtitleBusy}
@@ -191,8 +195,8 @@ export function InspectorView({ model }: { model: Props }) {
                     className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source !== "whisper" ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-white/10 text-zinc-400"}`}
                   >
                     Dùng phụ đề YouTube
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="segmented" size="md" data-state={subtitleSettings.source === "whisper" ? "active" : "inactive"}
                     type="button"
                     aria-pressed={subtitleSettings.source === "whisper"}
                     disabled={subtitleBusy}
@@ -200,7 +204,7 @@ export function InspectorView({ model }: { model: Props }) {
                     className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source === "whisper" ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-white/10 text-zinc-400"}`}
                   >
                     Dùng phụ đề Whisper
-                  </button>
+                  </Button>
                 </div>
                 <p className="text-xs leading-5 text-zinc-500">
                   {speechModel?.model || "Whisper small đa ngôn ngữ · 465 MiB"} · xử lý trên máy.{" "}
@@ -213,33 +217,37 @@ export function InspectorView({ model }: { model: Props }) {
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <label>
                     Font
-                    <select
-                      aria-label="Font phụ đề"
+                    <Select
                       value={subtitleSettings.font}
-                      onChange={(event) => setSubtitleSettings((current) => ({ ...current, font: event.target.value }))}
-                      className="studio-input mt-1 w-full"
+                      onValueChange={(value) => setSubtitleSettings((current) => ({ ...current, font: value }))}
                     >
-                      {listFonts().map((font) => (
-                        <option key={font.id} value={font.id}>
-                          {font.label}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger aria-label="Font phụ đề" className="studio-input mt-1 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        {listFonts().map((font) => (
+                          <SelectItem key={font.id} value={font.id}>
+                            {font.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </label>
                   <label>
                     Vị trí
-                    <select
-                      aria-label="Vị trí phụ đề"
+                    <Select
                       value={subtitleSettings.position}
-                      onChange={(event) =>
-                        setSubtitleSettings((current) => ({ ...current, position: event.target.value }))
-                      }
-                      className="studio-input mt-1 w-full"
+                      onValueChange={(value) => setSubtitleSettings((current) => ({ ...current, position: value }))}
                     >
-                      <option value="bottom">Dưới khung video</option>
-                      <option value="center">Giữa khung video</option>
-                      <option value="top">Trên khung video</option>
-                    </select>
+                      <SelectTrigger aria-label="Vị trí phụ đề" className="studio-input mt-1 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        <SelectItem value="bottom">Dưới khung video</SelectItem>
+                        <SelectItem value="center">Giữa khung video</SelectItem>
+                        <SelectItem value="top">Trên khung video</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </label>
                   <label>
                     Cỡ chữ
@@ -303,7 +311,7 @@ export function InspectorView({ model }: { model: Props }) {
                 <Button
                   onClick={() => void loadSubtitles(false, true)}
                   disabled={subtitleBusy || !preparedSource}
-                  variant="outline"
+                  variant="secondary"
                   className="w-full text-xs"
                 >
                   {subtitleBusy && <Loader2 className="animate-spin" />} Tạo lại / lấy phụ đề
@@ -311,7 +319,7 @@ export function InspectorView({ model }: { model: Props }) {
                 <Button
                   onClick={() => void installWhisperModel()}
                   disabled={subtitleBusy || whisperSmallReady || !speechModel || !workerHealth?.ok}
-                  variant="outline"
+                  variant="secondary"
                   className="w-full text-xs"
                 >
                   {whisperSmallReady ? "Whisper small đã tải" : "Tải model Whisper small · 465 MiB"}
@@ -339,15 +347,15 @@ export function InspectorView({ model }: { model: Props }) {
                   )
                 )}
                 {subtitleBusy && subtitleController.current && (
-                  <button type="button" className="studio-ghost" onClick={onCancelSubtitles}>
+                  <Button variant="destructive" size="md" type="button" className="studio-ghost" onClick={onCancelSubtitles}>
                     Dừng lấy phụ đề
-                  </button>
+                  </Button>
                 )}
                 {subtitleCues.length > 0 && (
-                  <details>
-                    <summary className="cursor-pointer text-xs text-zinc-400">
+                  <Disclosure>
+                    <DisclosureTrigger className="cursor-pointer text-xs text-zinc-400">
                       Xem / sửa phụ đề · {subtitleCues.length} câu
-                    </summary>
+                    </DisclosureTrigger>
                     <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
                       {subtitleCues.map((cue, index) => (
                         <label key={index} className="block text-xs text-zinc-500">
@@ -361,11 +369,11 @@ export function InspectorView({ model }: { model: Props }) {
                         </label>
                       ))}
                     </div>
-                  </details>
+                  </Disclosure>
                 )}
               </div>
             )}
-          </details>
+          </Disclosure>
 
           <div className="mt-5">
             <label htmlFor="part-title" className="field-label">

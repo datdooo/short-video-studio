@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
 import { StatusDetails } from "./status-details";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -447,7 +449,7 @@ export function TeaserEditor({
                 <span className="studio-danger">· cần chọn</span>
               ))}
           </h4>
-          <button
+          <Button variant="secondary" size="md"
             type="button"
             role="switch"
             aria-checked={enabled}
@@ -462,7 +464,7 @@ export function TeaserEditor({
             }}
           >
             {enabled ? "Đang bật · Tắt teaser" : "Đang tắt · Bật teaser"}
-          </button>
+          </Button>
         </div>
         <div hidden={!enabled} className="space-y-2">
           <div className="studio-teaser-time-row">
@@ -518,16 +520,16 @@ export function TeaserEditor({
             />
           </label>
           <div className="studio-action-row">
-            <button
+            <Button variant="secondary" size="md"
               type="button"
               disabled={busy || applying || suspended || aiBusy}
               onClick={() => void generate()}
               className="max-w-full rounded border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white"
             >
               {busy ? "Đang chọn teaser…" : "Tạo/chọn lại teaser"}
-            </button>
+            </Button>
             {busy && (
-              <button
+              <Button variant="secondary" size="md"
                 type="button"
                 className="studio-control"
                 onClick={() => {
@@ -538,7 +540,7 @@ export function TeaserEditor({
                 }}
               >
                 Dừng chọn teaser
-              </button>
+              </Button>
             )}
           </div>
         </div>

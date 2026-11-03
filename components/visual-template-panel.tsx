@@ -1,4 +1,7 @@
 "use client";
+
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { Check, ChevronDown } from "lucide-react";
@@ -20,14 +23,15 @@ const regionalSamples: Record<string, string> = {
   "Noto Sans": "Été et découvertes",
   "Roboto Condensed": "Größe entdecken",
 };
+// UI exception sample-card: large visual template swatch keeps its sample geometry.
 export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle; onTemplate: (id: string) => void }) {
   const selected = matchVisualTemplate(style);
   return (
-    <details
+    <Disclosure
       aria-labelledby="visual-template-heading"
       className="studio-disclosure group/template mt-5 rounded-2xl border border-white/15 bg-white/[.04] p-4"
     >
-      <summary
+      <DisclosureTrigger
         id="visual-template-heading"
         className="group flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-webkit-details-marker]:hidden"
       >
@@ -41,14 +45,14 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
           aria-hidden="true"
           className="size-4 shrink-0 transition-transform group-open/template:rotate-180"
         />
-      </summary>
+      </DisclosureTrigger>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {templates.map((template) => {
           const filterId = `studio-template-${template.id}`;
           const sample =
             template.category === "regional" ? regionalSamples[template.fontId] || "Create & Learn" : "Create & Learn";
           return (
-            <button
+            <button data-ui-exception="sample-card"
               key={template.id}
               type="button"
               aria-label={`Visual template: ${template.label}`}
@@ -67,7 +71,7 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
                   <span
                     className="absolute -inset-2"
                     style={{
-                      background: "linear-gradient(135deg,#789b65,#799dab,#c99b72)",
+                      background: "linear-gradient(135deg,var(--sample-green),var(--sample-blue),var(--sample-tan))",
                       opacity: template.style.background.opacity,
                       filter: `${browserFilterStyle(template.style.filter, undefined, filterId)} blur(6px)`,
                     }}
@@ -99,6 +103,6 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
           );
         })}
       </div>
-    </details>
+    </Disclosure>
   );
 }

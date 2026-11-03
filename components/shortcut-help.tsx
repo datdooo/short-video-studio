@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "./ui/button";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogTrigger } from "./ui/dialog";
 export function ShortcutHelp() {
@@ -28,9 +29,9 @@ export function ShortcutHelp() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button type="button" aria-label="Phím tắt" title="Phím tắt · ?">
+        <Button variant="secondary" size="icon" tooltip="Phím tắt · ?" type="button" aria-label="Phím tắt" title="Phím tắt · ?">
           ?
-        </button>
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogTitle>Phím tắt</DialogTitle>

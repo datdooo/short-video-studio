@@ -1,4 +1,8 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+
 import { AiOperationStatus } from "@/components/ai-operation-status";
 import { MainRangesEditor } from "@/components/main-ranges-editor";
 import { TeaserEditor } from "@/components/teaser-editor";
@@ -202,7 +206,7 @@ export function TimelineView({ model }: { model: Props }) {
                 ))}
             </h3>
             <div role="group" aria-label="Lịch sử chỉnh cut">
-              <button
+              <Button variant="secondary" size="md"
                 type="button"
                 className="studio-control"
                 disabled={cutHistoryBlocked || !cutHistory.previous}
@@ -214,8 +218,8 @@ export function TimelineView({ model }: { model: Props }) {
                 onClick={() => travelCutHistory("undo")}
               >
                 Hoàn tác
-              </button>
-              <button
+              </Button>
+              <Button variant="secondary" size="md"
                 type="button"
                 className="studio-control"
                 disabled={cutHistoryBlocked || !cutHistory.next}
@@ -227,7 +231,7 @@ export function TimelineView({ model }: { model: Props }) {
                 onClick={() => travelCutHistory("redo")}
               >
                 Làm lại
-              </button>
+              </Button>
             </div>
           </div>
           {previewPlan.parts.map((part, index) => (
@@ -338,25 +342,30 @@ export function TimelineView({ model }: { model: Props }) {
                     <span className="block font-semibold leading-5">
                       Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span>
                     </span>
-                    <select
-                      aria-label="Transition Hook → Main"
-                      className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal"
+                    <Select
                       value={previewPlan.hookTransition || "legacy"}
-                      onChange={(e) =>
+                      onValueChange={(value) =>
                         setPlan((current) => ({
                           ...current,
-                          hookTransition:
-                            e.target.value === "legacy" ? undefined : (e.target.value as EditPlan["hookTransition"]),
+                          hookTransition: value === "legacy" ? undefined : (value as EditPlan["hookTransition"]),
                         }))
                       }
                     >
-                      <option value="legacy">Theo lựa chọn đã lưu</option>
-                      <option value="vr-light-leak-v2">Warm Light Leak</option>
-                      <option value="rainbow-light-leak">Legacy Rainbow Wash</option>
-                      <option value="dip-black">Dip Black</option>
-                      <option value="flash-white">Flash White</option>
-                      <option value="none">None</option>
-                    </select>
+                      <SelectTrigger
+                        aria-label="Transition Hook → Main"
+                        className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        <SelectItem value="legacy">Theo lựa chọn đã lưu</SelectItem>
+                        <SelectItem value="vr-light-leak-v2">Warm Light Leak</SelectItem>
+                        <SelectItem value="rainbow-light-leak">Legacy Rainbow Wash</SelectItem>
+                        <SelectItem value="dip-black">Dip Black</SelectItem>
+                        <SelectItem value="flash-white">Flash White</SelectItem>
+                        <SelectItem value="none">None</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </label>
                 }
                 onResolve={(input, signal, previousRanges) =>

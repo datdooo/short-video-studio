@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
 import { StatusDetails } from "./status-details";
 import { useId } from "react";
 import type { ReactNode } from "react";
@@ -97,9 +99,9 @@ export function StudioRenderStatus({
         {!!issues.length && hasPlan && !running && (
           <span className="studio-part-fixes">
             {issues.map((issue) => (
-              <button type="button" key={issue.partId} onClick={() => onPart(issue.partId)} title={issue.reason}>
+              <Button variant="secondary" size="md" type="button" key={issue.partId} onClick={() => onPart(issue.partId)} title={issue.reason}>
                 Sửa Part {issue.partId}
-              </button>
+              </Button>
             ))}
           </span>
         )}
@@ -117,17 +119,17 @@ export function StudioRenderStatus({
         ))}
       </div>
       {running && (
-        <button type="button" className="studio-cancel" disabled={cancelling} onClick={onCancel}>
+        <Button variant="destructive" size="md" type="button" className="studio-cancel" disabled={cancelling} onClick={onCancel}>
           <Square size={13} aria-hidden="true" />
           {cancelling ? "Đang dừng…" : "Hủy"}
-        </button>
+        </Button>
       )}
       {!canRender && reason && (
         <span id={reasonId} className="sr-only">
           {reason}
         </span>
       )}
-      <button
+      <Button variant="primary" size="md"
         type="button"
         aria-describedby={!canRender ? reasonId : undefined}
         className="studio-primary studio-render-button"
@@ -142,7 +144,7 @@ export function StudioRenderStatus({
         onClick={onRender}
       >
         Render 2 MP4
-      </button>
+      </Button>
     </>
   );
 }

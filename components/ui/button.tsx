@@ -1,64 +1,59 @@
+"use client";
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 
+import { Tooltip } from "./tooltip";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "studio-button inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition-colors outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
-        outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-        link: "text-primary underline-offset-4 hover:underline",
+        primary: "studio-button-primary",
+        secondary: "studio-button-secondary",
+        ghost: "studio-button-ghost",
+        destructive: "studio-button-destructive",
+        icon: "studio-button-icon",
+        segmented: "studio-button-segmented",
       },
       size: {
-        default: "studio-control h-9 px-3 text-[13px] gap-1.5",
-        xs: "studio-control h-9 px-3 text-[13px] gap-1.5",
-        sm: "studio-control h-9 px-3 text-[13px] gap-1.5",
-        lg: "studio-control studio-control-action h-10 px-3 text-[13px] gap-1.5",
-        action: "studio-control studio-control-action h-10 px-3 text-[13px] gap-1.5",
-        timeline: "studio-control studio-control-compact h-8 px-3 text-[13px] gap-1.5",
-        icon: "studio-control-icon size-8",
-        "icon-xs": "studio-control-icon size-8",
-        "icon-sm": "studio-control-icon size-8",
-        "icon-lg": "studio-control-icon size-8",
+        sm: "studio-button-sm",
+        md: "studio-button-md",
+        lg: "studio-button-lg",
+        icon: "studio-button-size-icon",
       },
     },
-    defaultVariants: {
-      variant: "default",
-      size: "default",
-    },
+    defaultVariants: { variant: "primary", size: "md" },
   },
 );
 
 function Button({
   className,
-  variant = "default",
-  size = "default",
+  variant = "primary",
+  size = "md",
   asChild = false,
+  tooltip,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
+    tooltip?: string;
   }) {
   const Comp = asChild ? Slot.Root : "button";
 
-  return (
+  const button = (
     <Comp
+      {...props}
       data-slot="button"
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
-      {...props}
     />
   );
+  const label = tooltip || (size === "icon" ? props.title || props["aria-label"] : undefined);
+  return label ? <Tooltip label={label}>{button}</Tooltip> : button;
 }
 
 export { Button, buttonVariants };

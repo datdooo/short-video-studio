@@ -1,4 +1,8 @@
 "use client";
+import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
+
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
 
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { Check, Play, Pause, RotateCcw, Film } from "lucide-react";
@@ -17,6 +21,7 @@ type PlaybackControl = { pause: () => void };
 const choiceId = (h: Selected) => JSON.stringify([h.selection, h.inputKey, h.start, h.end, h.candidateId || ""]);
 const seconds = (n: number) => `${Math.max(0, n).toFixed(1)}s`;
 const MAX_CHOICES = 24;
+// UI exceptions candidate-card / media-hit-area: multiline choice card and full video tap surfaces keep their geometry.
 export function choicesOf(part: EditPart, captionTrack?: CaptionTrack): Choice[] {
   const h = part.teaser;
   if (h?.status !== "selected") return [];
@@ -185,7 +190,7 @@ export function TeaserCandidateReview({
               {choices.map((choice, index) => {
                 const t = choice.part.teaser as Selected;
                 return (
-                  <button
+                  <button data-ui-exception="candidate-card"
                     type="button"
                     key={choice.id}
                     className="studio-teaser-option"
@@ -218,8 +223,8 @@ export function TeaserCandidateReview({
             </div>
             <div className="studio-teaser-review-reason">
               <p>{explainInVietnamese(teaser.reason)}</p>
-              <details>
-                <summary>Lời trích và giải thích</summary>
+              <Disclosure>
+                <DisclosureTrigger>Lời trích và giải thích</DisclosureTrigger>
                 {teaser.observed && (
                   <p>
                     <strong>Lời trích / quan sát:</strong> {explainInVietnamese(teaser.observed)}
@@ -262,12 +267,12 @@ export function TeaserCandidateReview({
                 <p>
                   {teaser.provider} / {teaser.model}
                 </p>
-              </details>
+              </Disclosure>
             </div>
           </div>
           <footer className="studio-teaser-review-footer">
             <span title="Phát video và tiếng nguồn; không render style hoặc trộn nhạc lại">Video nguồn · 1×</span>
-            <button
+            <Button variant="primary" size="md"
               type="button"
               className="studio-primary"
               disabled={suspended || Boolean(used && !hasEdits)}
@@ -283,7 +288,7 @@ export function TeaserCandidateReview({
               ) : (
                 "Áp dụng teaser"
               )}
-            </button>
+            </Button>
           </footer>
         </>
       ) : (
@@ -601,7 +606,7 @@ function RangePlayer({
             onEnded={pause}
           />
         ) : (
-          <button
+          <button data-ui-exception="media-hit-area"
             type="button"
             className="studio-teaser-player-start"
             disabled={suspended || !sourceUrl}
@@ -612,7 +617,7 @@ function RangePlayer({
           </button>
         )}
         {loaded && !playing && !buffering && (
-          <button
+          <Tooltip label="Phát thử ứng viên"><button data-ui-exception="media-hit-area"
             type="button"
             className="studio-teaser-player-overlay"
             aria-label="Phát thử ứng viên"
@@ -620,11 +625,11 @@ function RangePlayer({
             onClick={toggle}
           >
             <Play size={22} />
-          </button>
+          </button></Tooltip>
         )}
       </div>
       <div className="studio-teaser-player-controls">
-        <button
+        <Button variant="icon" size="icon"
           type="button"
           className="studio-control-icon"
           disabled={suspended || !sourceUrl}
@@ -632,8 +637,8 @@ function RangePlayer({
           onClick={toggle}
         >
           {playing || buffering ? <Pause size={16} /> : <Play size={16} />}
-        </button>
-        <button
+        </Button>
+        <Button variant="icon" size="icon"
           type="button"
           className="studio-control-icon"
           aria-label="Về đầu ứng viên"
@@ -641,7 +646,7 @@ function RangePlayer({
           onClick={() => seek(0)}
         >
           <RotateCcw size={16} />
-        </button>
+        </Button>
         <input
           type="range"
           min={0}

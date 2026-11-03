@@ -1,4 +1,8 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { Fragment, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -141,7 +145,7 @@ export function MainRangesEditor({
               ))}
               <div className="studio-main-range-actions flex items-center justify-start gap-1">
                 {onSeek && (
-                  <button
+                  <Button variant="ghost" size="md"
                     type="button"
                     disabled={invalid}
                     className="studio-ghost"
@@ -149,9 +153,9 @@ export function MainRangesEditor({
                     onClick={() => onSeek(i)}
                   >
                     Xem
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button variant="destructive" size="icon"
                   type="button"
                   aria-label={`Xóa đoạn ${i + 1} Part ${part.id}`}
                   title="Xóa đoạn"
@@ -160,21 +164,21 @@ export function MainRangesEditor({
                   onClick={() => edit(rows.filter((_, j) => j !== i))}
                 >
                   <X size={16} aria-hidden="true" />
-                </button>
+                </Button>
               </div>
             </div>
           </Fragment>
         ))}
         <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-          <button
+          <Button variant="secondary" size="md"
             type="button"
             disabled={rows.length >= MAX_MAIN_RANGES}
             className="rounded border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
             onClick={() => edit([...rows, { start: "", end: "", timecode: true }])}
           >
             + Thêm đoạn
-          </button>
-          <button
+          </Button>
+          <Button variant="secondary" size="md"
             type="button"
             disabled={!part.aiMainRanges}
             title={!part.aiMainRanges ? "Chưa có bản cắt AI để khôi phục." : undefined}
@@ -187,7 +191,7 @@ export function MainRangesEditor({
             }}
           >
             Dùng lại bản AI
-          </button>
+          </Button>
         </div>
       </div>
       {active &&
@@ -196,8 +200,8 @@ export function MainRangesEditor({
         createPortal(
           <div className="studio-timeline-notice" role="status">
             <span>Part {part.id} · Mốc Main chưa hợp lệ.</span>
-            <details>
-              <summary>Chi tiết</summary>
+            <Disclosure>
+              <DisclosureTrigger>Chi tiết</DisclosureTrigger>
               {checked.error && <p>{checked.error}</p>}
               {checked.errors.map((message, i) =>
                 message ? (
@@ -206,7 +210,7 @@ export function MainRangesEditor({
                   </p>
                 ) : null,
               )}
-            </details>
+            </Disclosure>
           </div>,
           statusTarget,
         )}

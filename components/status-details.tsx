@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
 import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
@@ -14,10 +16,10 @@ export function StatusDetails({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button type="button" className={`studio-status-details-trigger ${className}`}>
+        <Button variant="secondary" size="md" type="button" className={`studio-status-details-trigger ${className}`}>
           {label}
           <ChevronDown size={14} aria-hidden="true" />
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent
         side="top"

@@ -1,5 +1,7 @@
 "use client";
 
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } from "@/components/ui/select";
+
 import { Check } from "lucide-react";
 import { listFonts, fontFamilyForStyle } from "@/lib/visual-style/fonts.mjs";
 import { listTextPresets } from "@/lib/visual-style/text-presets.mjs";
@@ -15,6 +17,7 @@ const samples: Record<string, string> = {
   "fr-clean": "Été",
   "de-clean": "Größe",
 };
+// UI exception sample-card: large typography swatch keeps its sample geometry.
 export function TextStylePanel({ style, onPreset }: { style: VisualStyle; onPreset: (id: string) => void }) {
   const selected = style.textPresetId || "current";
   return (
@@ -27,7 +30,7 @@ export function TextStylePanel({ style, onPreset }: { style: VisualStyle; onPres
       </h3>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {presets.map((preset) => (
-          <button
+          <button data-ui-exception="sample-card"
             key={preset.id}
             type="button"
             aria-label={`Text style: ${preset.label}`}
@@ -38,7 +41,7 @@ export function TextStylePanel({ style, onPreset }: { style: VisualStyle; onPres
           >
             <span
               aria-hidden="true"
-              className="flex min-h-10 items-center justify-center overflow-hidden rounded-lg bg-[#191b21] px-1 text-center text-lg leading-tight"
+              className="flex min-h-10 items-center justify-center overflow-hidden rounded-lg bg-(--sample-type-background) px-1 text-center text-lg leading-tight"
               style={textPreviewCss(preset.originalTitle, samples[preset.id] || "Aa", 0.25)}
             >
               {samples[preset.id] || "Aa"}
@@ -59,34 +62,35 @@ export function TextFontSelector({ style, onFont }: { style: VisualStyle; onFont
       <label htmlFor="text-font" className="sr-only">
         Font
       </label>
-      <select
-        id="text-font"
-        value={style.originalTitle.font}
-        onChange={(event) => onFont(event.target.value)}
-        className="studio-input mt-1 w-full text-sm"
-      >
-        {["Recommended", "Japanese", "Korean"].map((group) => (
-          <optgroup key={group} label={group}>
-            {fonts
-              .filter((font) => font.group === group)
-              .map((font) => (
-                <option
-                  key={font.id}
-                  value={font.id}
-                  style={{
-                    fontFamily: fontFamilyForStyle(
-                      font.id,
-                      font.group === "Japanese" ? "トマト" : font.group === "Korean" ? "토마토" : "Aa",
-                      { browser: true },
-                    ),
-                  }}
-                >
-                  {font.label}
-                </option>
-              ))}
-          </optgroup>
-        ))}
-      </select>
+      <Select value={style.originalTitle.font} onValueChange={(value) => onFont(value)}>
+        <SelectTrigger id="text-font" className="studio-input mt-1 w-full text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          {["Recommended", "Japanese", "Korean"].map((group) => (
+            <SelectGroup key={group}>
+              <SelectLabel>{group}</SelectLabel>
+              {fonts
+                .filter((font) => font.group === group)
+                .map((font) => (
+                  <SelectItem
+                    key={font.id}
+                    value={font.id}
+                    style={{
+                      fontFamily: fontFamilyForStyle(
+                        font.id,
+                        font.group === "Japanese" ? "トマト" : font.group === "Korean" ? "토마토" : "Aa",
+                        { browser: true },
+                      ),
+                    }}
+                  >
+                    {font.label}
+                  </SelectItem>
+                ))}
+            </SelectGroup>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

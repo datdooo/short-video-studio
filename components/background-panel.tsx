@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { backgroundCss, listBackgroundPresets, type Background } from "@/lib/visual-style/backgrounds.mjs";
 
 const presets = listBackgroundPresets();
+// UI exception sample-card: large visual background swatch keeps its sample geometry.
 export function BackgroundPanel({ background, onPreset }: { background: Background; onPreset: (id: string) => void }) {
   const selected = background.presetId || "current";
   return (
@@ -16,7 +17,7 @@ export function BackgroundPanel({ background, onPreset }: { background: Backgrou
       </h3>
       <div className="mt-3 grid grid-cols-3 gap-2">
         {presets.map((preset) => (
-          <button
+          <button data-ui-exception="sample-card"
             key={preset.id}
             type="button"
             aria-label={`Background: ${preset.label}`}
@@ -33,7 +34,7 @@ export function BackgroundPanel({ background, onPreset }: { background: Backgrou
                 <span
                   className="absolute -inset-2"
                   style={{
-                    background: "linear-gradient(135deg,#789b65,#799dab,#c99b72)",
+                    background: "linear-gradient(135deg,var(--sample-green),var(--sample-blue),var(--sample-tan))",
                     filter: "blur(6px)",
                     opacity: preset.background.opacity,
                   }}

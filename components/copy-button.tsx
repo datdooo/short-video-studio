@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
 import { toast } from "./confirmation-provider";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -65,7 +67,7 @@ export function CopyButton({
   }
   return (
     <span className="inline-flex max-w-full flex-col items-start gap-2">
-      <button
+      <Button variant="secondary" size="md"
         type="button"
         aria-label={ariaLabel || label}
         disabled={disabled || status === "pending"}
@@ -98,7 +100,7 @@ export function CopyButton({
                   : label}
           </span>
         </span>
-      </button>
+      </Button>
       {status === "error" && (
         <span role="alert" className="text-xs leading-5 text-red-300">
           {errorMessage}

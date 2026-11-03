@@ -28,7 +28,7 @@ export function SourceOptionsSection({
       <Button
         id={`${id}-trigger`}
         type="button"
-        variant="outline"
+        variant="secondary"
         className="studio-source-disclosure-trigger"
         aria-expanded={expanded}
         aria-controls={`${id}-content`}

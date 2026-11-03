@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
 import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { useEffect, useRef, useState } from "react";
@@ -15,6 +17,7 @@ const retiredLayouts = [
   ["shortcut-prototype-center-v1", "preview-area:timeline-area"],
 ];
 
+// UI exception drawer-backdrop: full drawer dismissal surface, outside the keyboard tab order.
 export function EditorWorkspace({
   source,
   preview,
@@ -163,7 +166,7 @@ export function EditorWorkspace({
     <div className="editor-workspace">
       <div className="studio-fixed-columns" data-source-open={sourceOpen} data-inspector-open={inspectorOpen}>
         {narrow && drawer && visible && (
-          <button
+          <button data-ui-exception="drawer-backdrop"
             type="button"
             tabIndex={-1}
             className="studio-drawer-backdrop"
@@ -185,9 +188,9 @@ export function EditorWorkspace({
         >
           <div className="studio-drawer-heading">
             <strong id="studio-source-drawer-title">Nguồn và AI</strong>
-            <button ref={sourceClose} type="button" aria-label="Đóng nguồn" onClick={closeDrawer}>
+            <Button variant="icon" size="icon" ref={sourceClose} type="button" aria-label="Đóng nguồn" onClick={closeDrawer}>
               <X size={16} />
-            </button>
+            </Button>
           </div>
           <EditorSourcePanel>{source}</EditorSourcePanel>
         </div>
@@ -206,9 +209,9 @@ export function EditorWorkspace({
         >
           <div className="studio-drawer-heading">
             <strong id="studio-inspector-drawer-title">Chỉnh sửa</strong>
-            <button ref={inspectorClose} type="button" aria-label={UI_STRINGS.closeInspector} onClick={closeDrawer}>
+            <Button variant="icon" size="icon" ref={inspectorClose} type="button" aria-label={UI_STRINGS.closeInspector} onClick={closeDrawer}>
               <X size={16} />
-            </button>
+            </Button>
           </div>
           <div className="studio-inspector-scroll">{inspector}</div>
         </div>
@@ -216,7 +219,7 @@ export function EditorWorkspace({
       <EditorStatusBar
         controls={
           <>
-            <button
+            <Button variant="icon" size="icon"
               ref={sourceToggle}
               type="button"
               aria-controls="studio-source-column"
@@ -226,8 +229,8 @@ export function EditorWorkspace({
               onClick={() => toggle("source")}
             >
               <PanelLeft size={16} />
-            </button>
-            <button
+            </Button>
+            <Button variant="icon" size="icon"
               ref={inspectorToggle}
               type="button"
               aria-controls="studio-inspector-column"
@@ -237,7 +240,7 @@ export function EditorWorkspace({
               onClick={() => toggle("inspector")}
             >
               <PanelRight size={16} />
-            </button>
+            </Button>
           </>
         }
       >

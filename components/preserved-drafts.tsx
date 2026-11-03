@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "./ui/button";
 import { useRef, useState } from "react";
 import { Files, Trash2 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
@@ -32,7 +33,7 @@ export function PreservedDrafts({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
+        <Button variant="secondary" size="sm"
           type="button"
           className="studio-session-drafts"
           disabled={disabled || busy}
@@ -42,7 +43,7 @@ export function PreservedDrafts({
           <Files size={14} aria-hidden="true" />
           Bản nháp
           {drafts.length > 0 && <span className="studio-draft-count">{drafts.length}</span>}
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent
         side="bottom"
@@ -59,10 +60,10 @@ export function PreservedDrafts({
             {drafts.map((draft) => (
               <li key={draft.key}>
                 <span title={draft.label}>{draft.label}</span>
-                <button type="button" disabled={busy} onClick={() => void act(draft.key, false)}>
+                <Button variant="secondary" type="button" disabled={busy} onClick={() => void act(draft.key, false)}>
                   Mở
-                </button>
-                <button
+                </Button>
+                <Button variant="destructive"
                   type="button"
                   disabled={busy}
                   aria-label={`Xóa bản nháp ${draft.label}`}
@@ -70,7 +71,7 @@ export function PreservedDrafts({
                 >
                   <Trash2 size={14} aria-hidden="true" />
                   Xóa
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

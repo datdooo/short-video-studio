@@ -1,4 +1,6 @@
 "use client";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+
 import { listTitleAnimations, normalizeTitleAnimation } from "@/lib/visual-style/animations.mjs";
 import type { TitleAnimationId } from "@/lib/visual-style/animations.mjs";
 const animations = listTitleAnimations();
@@ -14,18 +16,21 @@ export function TextAnimationPanel({
       <label htmlFor="title-animation" className="text-xs font-semibold text-zinc-300">
         Text animation
       </label>
-      <select
-        id="title-animation"
+      <Select
         value={normalizeTitleAnimation(value)}
-        onChange={(event) => onChange(normalizeTitleAnimation(event.target.value))}
-        className="studio-input mt-1 w-full text-sm"
+        onValueChange={(value) => onChange(normalizeTitleAnimation(value))}
       >
-        {animations.map(({ id, label }) => (
-          <option key={id} value={id}>
-            {label}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger id="title-animation" className="studio-input mt-1 w-full text-sm">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          {animations.map(({ id, label }) => (
+            <SelectItem key={id} value={id}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

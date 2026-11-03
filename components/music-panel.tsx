@@ -1,4 +1,9 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } from "@/components/ui/select";
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { UI_STRINGS } from "@/lib/ui-strings";
 import { TaskProgress } from "./task-progress";
 import { uploadJson, type UploadMetric } from "@/lib/upload-json";
@@ -554,11 +559,11 @@ export function MusicPanel(props: Props) {
     );
   return (
     <>
-      <details className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-        <summary className="cursor-pointer text-sm font-semibold">
+      <Disclosure className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
+        <DisclosureTrigger className="cursor-pointer text-sm font-semibold">
           Nhạc nền · {settings.enabled ? "Bật" : "Tắt"}
           {settings.enabled && !selectedAsset ? " · chưa có file được chọn" : ""}
-        </summary>
+        </DisclosureTrigger>
         <div className="mt-3 space-y-3 text-xs">
           <label className="flex items-center gap-2">
             <input
@@ -612,17 +617,17 @@ export function MusicPanel(props: Props) {
             />
           )}
           {previewStatus === "error" && (
-            <button
+            <Button variant="secondary" size="md"
               type="button"
               disabled={props.suspended || !effective.enabled || !effective.assetId || !sourceId || !props.previewReady}
               onClick={() => setPreviewAttempt((value) => value + 1)}
               className="rounded border border-white/15 px-3 py-2"
             >
               Chuẩn bị lại nhạc
-            </button>
+            </Button>
           )}
           {previewStatus === "blocked" && (
-            <button
+            <Button variant="secondary" size="md"
               type="button"
               disabled={props.suspended}
               onClick={() => {
@@ -634,7 +639,7 @@ export function MusicPanel(props: Props) {
               className="rounded border border-white/15 px-3 py-2"
             >
               Phát nhạc trong preview
-            </button>
+            </Button>
           )}
           <label className="block">
             Tìm nhạc đã cài
@@ -647,68 +652,76 @@ export function MusicPanel(props: Props) {
           </label>
           <label className="block">
             Mood
-            <select
-              aria-label="Lọc mood nhạc"
-              className="studio-input mt-1 w-full"
-              value={moodFilter}
-              onChange={(e) => setMoodFilter(e.target.value)}
-            >
-              <option value="all">Tất cả ({assets.length} đã cài)</option>
-              {[...new Set(orderedAssets.map((a) => a.mood || "Nhạc cục bộ"))].map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+            <Select value={moodFilter} onValueChange={(value) => setMoodFilter(value)}>
+              <SelectTrigger aria-label="Lọc mood nhạc" className="studio-input mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="all">Tất cả ({assets.length} đã cài)</SelectItem>
+                {[...new Set(orderedAssets.map((a) => a.mood || "Nhạc cục bộ"))].map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
           <label className="block">
             Nhạc chung cho hai part
-            <select
-              aria-label="Nhạc nền"
-              className="studio-input mt-1 w-full"
-              value={settings.assetId || ""}
-              onChange={(e) => {
+            <Select
+              value={settings.assetId || "__studio_empty__"}
+              onValueChange={(selected) => {
+                const value = selected === "__studio_empty__" ? "" : selected;
                 stopAudition();
-                props.onChange({ ...settings, assetId: e.target.value || undefined });
+                props.onChange({ ...settings, assetId: value || undefined });
               }}
             >
-              <option value="">Chọn nhạc đã import</option>
-              {[...new Set(filtered.map((a) => a.mood || "Nhạc cục bộ"))].map((mood) => (
-                <optgroup key={mood} label={mood}>
-                  {filtered
-                    .filter((a) => (a.mood || "Nhạc cục bộ") === mood)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.title} · đã cài{a.artist ? ` — ${a.artist}` : ""}
-                      </option>
-                    ))}
-                </optgroup>
-              ))}
-            </select>
+              <SelectTrigger aria-label="Nhạc nền" className="studio-input mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="__studio_empty__">Chọn nhạc đã import</SelectItem>
+                {[...new Set(filtered.map((a) => a.mood || "Nhạc cục bộ"))].map((mood) => (
+                  <SelectGroup key={mood}>
+                    <SelectLabel>{mood}</SelectLabel>
+                    {filtered
+                      .filter((a) => (a.mood || "Nhạc cục bộ") === mood)
+                      .map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.title} · đã cài{a.artist ? ` — ${a.artist}` : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectGroup>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
           <label className="block">
             Riêng Part {props.part.id}
-            <select
-              aria-label="Nhạc riêng part"
-              className="studio-input mt-1 w-full"
+            <Select
               value={
                 settings.overrides?.[props.part.id] === null ? "none" : settings.overrides?.[props.part.id] || "inherit"
               }
-              onChange={(e) => {
+              onValueChange={(value) => {
                 const overrides = { ...settings.overrides };
-                if (e.target.value === "inherit") delete overrides[props.part.id];
-                else overrides[props.part.id] = e.target.value === "none" ? null : e.target.value;
+                if (value === "inherit") delete overrides[props.part.id];
+                else overrides[props.part.id] = value === "none" ? null : value;
                 props.onChange({ ...settings, overrides });
               }}
             >
-              <option value="inherit">Dùng nhạc chung</option>
-              <option value="none">Không nhạc ở part này</option>
-              {orderedAssets.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.title}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger aria-label="Nhạc riêng part" className="studio-input mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="inherit">Dùng nhạc chung</SelectItem>
+                <SelectItem value="none">Không nhạc ở part này</SelectItem>
+                {orderedAssets.map((a) => (
+                  <SelectItem key={a.id} value={a.id}>
+                    {a.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
           <label className="block">
             Âm lượng nhạc: {settings.volume}%
@@ -750,29 +763,35 @@ export function MusicPanel(props: Props) {
           )}
           <label className="block">
             Nguồn file sẽ import
-            <select
-              aria-label="Nguồn nhạc import"
-              className="studio-input mt-1 w-full"
-              value={catalogId}
-              onChange={(e) => setCatalogId(e.target.value)}
+            <Select
+              value={catalogId || "__studio_empty__"}
+              onValueChange={(selected) => {
+                const value = selected === "__studio_empty__" ? "" : selected;
+                setCatalogId(value);
+              }}
             >
-              <option value="">File riêng · quyền sử dụng do bạn xác nhận</option>
-              {MUSIC_CATALOG.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.mood} · {t.title} — {t.artist}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger aria-label="Nguồn nhạc import" className="studio-input mt-1 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper">
+                <SelectItem value="__studio_empty__">File riêng · quyền sử dụng do bạn xác nhận</SelectItem>
+                {MUSIC_CATALOG.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.mood} · {t.title} — {t.artist}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </label>
           <div className="studio-action-row">
-            <button
+            <Button variant="secondary" size="md"
               type="button"
               disabled={props.suspended || !effective.assetId}
               onClick={listen}
               className="rounded border border-white/15 px-3 py-2 disabled:opacity-40"
             >
               {auditionId ? "Dừng nghe thử" : "Nghe thử nhạc"}
-            </button>
+            </Button>
             <label className="cursor-pointer rounded border border-white/15 px-3 py-2">
               {busy ? "Đang import…" : "Import nhạc cục bộ"}
               <input
@@ -787,7 +806,7 @@ export function MusicPanel(props: Props) {
                 }}
               />
             </label>
-            <button
+            <Button variant="secondary" size="md"
               type="button"
               disabled={refreshing || busy}
               onClick={() => {
@@ -796,10 +815,10 @@ export function MusicPanel(props: Props) {
               }}
             >
               {refreshing ? "Đang đọc nhạc…" : "Làm mới"}
-            </button>
+            </Button>
           </div>
-          <details>
-            <summary className="cursor-pointer">Gợi ý Mixkit theo mục đích · link chính thức</summary>
+          <Disclosure>
+            <DisclosureTrigger className="cursor-pointer">Gợi ý Mixkit theo mục đích · link chính thức</DisclosureTrigger>
             <p className="mt-2 text-zinc-500">Link tham khảo · chưa xác minh không lời/quyền dùng từng bài.</p>
             {[...new Set(MUSIC_CATALOG.filter((t) => !("downloadUrl" in t)).map((t) => t.mood))].map((mood) => (
               <div key={mood} className="mt-3">
@@ -825,14 +844,14 @@ export function MusicPanel(props: Props) {
             >
               Giấy phép Mixkit
             </a>
-          </details>
+          </Disclosure>
           {error && (
             <p role="alert" className="text-amber-300">
               {error}
             </p>
           )}
         </div>
-      </details>
+      </Disclosure>
     </>
   );
 }

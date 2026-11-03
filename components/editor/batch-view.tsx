@@ -1,4 +1,7 @@
 "use client";
+
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { BatchProgress } from "@/components/batch-progress";
 import { CopyButton } from "@/components/copy-button";
 import { RenderProgress } from "@/components/render-progress";
@@ -123,7 +126,7 @@ export function BatchView({ model }: { model: Props }) {
               </SelectContent>
             </Select>
             <Badge
-              variant="outline"
+              variant="secondary"
               className={provider === "chatgpt" && chatGPTSession?.sharing ? "text-emerald-300" : "text-zinc-400"}
             >
               {isWebAi
@@ -144,14 +147,14 @@ export function BatchView({ model }: { model: Props }) {
             {isWebAi && (
               <p className="w-full text-xs leading-5 text-amber-200/80">
                 {webAiName} cần import từng video.{" "}
-                <button type="button" onClick={() => changeWorkspace("editor")} className="underline">
+                <Button variant="secondary" size="md" type="button" onClick={() => changeWorkspace("editor")} className="underline">
                   Mở Editor
-                </button>
+                </Button>
               </p>
             )}
           </div>
-          <details className="studio-batch-options mt-3 rounded-xl border border-white/8 p-3">
-            <summary>Yêu cầu và cấu hình lượt mới</summary>
+          <Disclosure className="studio-batch-options mt-3 rounded-xl border border-white/8 p-3">
+            <DisclosureTrigger>Yêu cầu và cấu hình lượt mới</DisclosureTrigger>
             <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">
               Yêu cầu bổ sung (không bắt buộc)
             </label>
@@ -171,7 +174,7 @@ export function BatchView({ model }: { model: Props }) {
               />{" "}
               Phụ đề tự động cho lượt chạy mới · dùng style ở tab chỉnh từng video
             </label>
-          </details>
+          </Disclosure>
           <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
             <label htmlFor="batch-urls" className="field-label">
               Link video (tối đa 20, mỗi dòng một link) ·{" "}
@@ -185,7 +188,7 @@ export function BatchView({ model }: { model: Props }) {
               className="studio-textarea mt-2 min-h-[100px] text-xs leading-6"
             />
             <Button
-              size="action"
+              size="md"
               onClick={() => void startBatch()}
               disabled={
                 !["chatgpt", "gemini", "muse", "chatgpt-web"].includes(provider) ||
@@ -195,7 +198,7 @@ export function BatchView({ model }: { model: Props }) {
                 !workerHealth?.ok ||
                 (provider === "chatgpt" && !chatGPTSession?.sharing)
               }
-              className="mt-3 w-full rounded-xl bg-[#ff4d2e] text-white hover:bg-[#ff6247]"
+              className="mt-3 w-full rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {isStartingBatch ? <Loader2 className="animate-spin" /> : <Film />}{" "}
               {isStartingBatch
@@ -207,7 +210,7 @@ export function BatchView({ model }: { model: Props }) {
                     : "Chạy hàng đợi tự động"}
             </Button>
             <Button
-              variant="outline"
+              variant="destructive"
               onClick={() => void stopBatch()}
               disabled={!batch || batch.finished || isStoppingBatch || isStartingBatch}
               className="mt-2 w-full rounded-xl border-red-400/30 bg-red-400/5 text-red-300 hover:bg-red-400/10"
@@ -256,7 +259,7 @@ export function BatchView({ model }: { model: Props }) {
                             {index + 1}. {item.title || item.url}
                           </p>
                           <Button
-                            variant="outline"
+                            variant="destructive"
                             size="sm"
                             onClick={() => void deleteBatchVideo(group, item)}
                             disabled={
@@ -341,7 +344,7 @@ export function BatchView({ model }: { model: Props }) {
                         <div className="mt-2 flex flex-wrap gap-2">
                           {item.sourceId && (
                             <Button
-                              variant="outline"
+                              variant="secondary"
                               size="sm"
                               onClick={() => void openBatchItem(group, item)}
                               className="h-8 text-xs"
@@ -353,7 +356,7 @@ export function BatchView({ model }: { model: Props }) {
                           )}
                           {["error", "cancelled", "paused", "render-ready"].includes(item.state) && (
                             <Button
-                              variant="outline"
+                              variant="secondary"
                               size="sm"
                               onClick={() => void resumeBatchItem(group, item)}
                               disabled={
@@ -388,7 +391,7 @@ export function BatchView({ model }: { model: Props }) {
                         {item.job?.outputs.map((output) => (
                           <div key={output.part} className="mt-2 flex flex-wrap gap-2">
                             <Button
-                              variant="outline"
+                              variant="secondary"
                               size="sm"
                               onClick={() => {
                                 setSelectedBatchPreviewKey(`${group.id}:${item.id}:${output.part}`);
@@ -425,7 +428,7 @@ export function BatchView({ model }: { model: Props }) {
         </section>
         <aside
           aria-label="Xem trước hàng loạt"
-          className="studio-batch-preview rounded-2xl border border-white/10 bg-[#111216] p-4"
+          className="studio-batch-preview rounded-2xl border border-white/10 bg-card p-4"
         >
           <p className="eyebrow">PREVIEW RENDER</p>
           {batchPreviewOutput ? (
@@ -443,7 +446,7 @@ export function BatchView({ model }: { model: Props }) {
                 className="mx-auto mt-3 aspect-[9/16] w-full max-w-[200px] rounded-xl bg-black object-contain"
               />
               <p className="mt-3 break-words text-xs font-semibold leading-5">{batchPreviewOutput.title}</p>
-              <p className="mt-1 break-all text-xs text-[#ff806a]">
+              <p className="mt-1 break-all text-xs text-accent-foreground">
                 Part {batchPreviewOutput.part} · {batchPreviewOutput.filename}
               </p>
               {batchPreviewError && <p className="mt-2 text-xs leading-5 text-red-300">{batchPreviewError}</p>}

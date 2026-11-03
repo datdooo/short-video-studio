@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "@/components/ui/button";
 
 import { Download, Loader2, Square, Trash2 } from "lucide-react";
 import type { EditPlan } from "@/lib/edit-plan";
@@ -73,7 +74,7 @@ export function EditorRenderList({
           <span className="text-xs text-zinc-400">
             {jobs.filter((job) => ["queued", "rendering"].includes(job.state)).length} tác vụ đang chạy / chờ
           </span>
-          <button
+          <Button variant="destructive" size="md"
             type="button"
             onClick={onDeleteAll}
             disabled={deletingAll || deleting.length > 0 || stopping.length > 0 || !completedRenderJobs(jobs).length}
@@ -82,7 +83,7 @@ export function EditorRenderList({
           >
             {deletingAll ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
             {deletingAll ? "Đang xoá…" : "Xoá tất cả"}
-          </button>
+          </Button>
         </div>
       </div>
       {error && (
@@ -116,7 +117,7 @@ export function EditorRenderList({
                 </div>
                 <div className="studio-action-row flex shrink-0 flex-wrap justify-end gap-2">
                   {(active || cancelling) && (
-                    <button
+                    <Button variant="destructive" size="md"
                       type="button"
                       aria-label={`Huỷ render ${(job.planSummary || job.plan)?.originalTitle || job.id}`}
                       onClick={() => onStop(job)}
@@ -125,9 +126,9 @@ export function EditorRenderList({
                     >
                       {cancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />}{" "}
                       {cancelling ? "Đang huỷ…" : "Huỷ render"}
-                    </button>
+                    </Button>
                   )}
-                  <button
+                  <Button variant="destructive" size="md"
                     type="button"
                     aria-label={`Xoá render ${(job.planSummary || job.plan)?.originalTitle || job.id}`}
                     title={
@@ -141,7 +142,7 @@ export function EditorRenderList({
                   >
                     {removing ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}{" "}
                     {removing ? "Đang xoá…" : "Xoá"}
-                  </button>
+                  </Button>
                 </div>
               </div>
               <RenderProgress job={{ ...job, stopping: cancelling }} />

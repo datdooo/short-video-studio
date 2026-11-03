@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
 import { useSyncExternalStore } from "react";
 import { UI_STRINGS } from "@/lib/ui-strings";
 import { ForegroundTransition } from "@/components/cut-transition-panel";
@@ -186,12 +188,11 @@ export function PreviewView({ model }: { model: Props }) {
   const previewEffectTime = previewToExportTime(previewCurrentTime);
   const previewCaption = previewCaptions.find(cue => previewCurrentTime * PREVIEW_RATE >= cue.start && previewCurrentTime * PREVIEW_RATE < cue.end);
   const titleShineStyle = {
-    maskImage: "linear-gradient(to right, transparent, #000 50%, transparent)",
+    maskImage: "linear-gradient(to right, transparent, var(--sample-black) 50%, transparent)",
     maskRepeat: "no-repeat",
     maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`,
     maskPosition: `${(((CANVAS_WIDTH - TITLE_SHINE_WIDTH) * (previewEffectTime % TITLE_SHINE_SECONDS)) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0`,
   };
-
 
   return (
     <>
@@ -205,7 +206,7 @@ export function PreviewView({ model }: { model: Props }) {
               teaserDraftErrors[part.id]?.sourceKey === mainEditorSourceKey &&
               teaserDraftErrors[part.id]?.message;
           return (
-            <button
+            <Button variant="segmented" size="md" data-state={activePartIndex === index ? "active" : "inactive"}
               type="button"
               key={part.id}
               aria-pressed={activePartIndex === index}
@@ -228,7 +229,7 @@ export function PreviewView({ model }: { model: Props }) {
                   !
                 </span>
               )}
-            </button>
+            </Button>
           );
         })}
         {hasEditPlan && (
@@ -264,7 +265,7 @@ export function PreviewView({ model }: { model: Props }) {
                   }
                 />
               ) : (
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,#6c3422,transparent_28%),linear-gradient(145deg,#101114_10%,#292024_48%,#0d0e11_80%)]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_60%_46%,var(--placeholder-glow),transparent_28%),linear-gradient(145deg,var(--placeholder-top)_10%,var(--placeholder-middle)_48%,var(--placeholder-bottom)_80%)]" />
               )}
               {previewVisualStyle.background.mode !== "source-blur" && (
                 <div
@@ -366,26 +367,26 @@ export function PreviewView({ model }: { model: Props }) {
                   height={foregroundSourceHeight}
                 />
                 {previewVideoUrl && !isPreviewPlaying && (
-                  <button
+                  <Button variant="icon" size="icon" tooltip={`${isPreviewPlaying ? UI_STRINGS.pausePreview : UI_STRINGS.playPreview} · Space`}
                     type="button"
                     onClick={() => void togglePreview()}
                     aria-label={UI_STRINGS.playPreview}
-                    style={{ zIndex: transitionWindows.length ? 30 : undefined }}
+                    style={{ zIndex: transitionWindows.length ? "var(--layer-media-play)" : undefined }}
                     className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"
                   >
                     <Play className="ml-0.5 size-5 fill-white" />
-                  </button>
+                  </Button>
                 )}
               </div>
               <SceneOverlays overlays={previewVisualStyle.overlays} />
               {hasEditPlan && (
                 <div
                   data-title-animation={previewVisualStyle.titleAnimation || "none"}
-                  className="pointer-events-none absolute inset-0 z-10"
+                  className="pointer-events-none absolute inset-0 z-(--layer-media-text)"
                   style={titleAnimationPreviewCss(previewVisualStyle.titleAnimation, previewEffectTime, previewScale)}
                 >
                   <div
-                    className="absolute inset-x-[8.35%] z-10 flex items-end justify-center text-center"
+                    className="absolute inset-x-[8.35%] z-(--layer-media-text) flex items-end justify-center text-center"
                     style={{
                       top: TITLE_LAYOUT.original.top * previewScale,
                       height: (TITLE_LAYOUT.original.bottom - TITLE_LAYOUT.original.top) * previewScale,
@@ -414,7 +415,7 @@ export function PreviewView({ model }: { model: Props }) {
                     </p>
                   </div>
                   <div
-                    className="absolute inset-x-[8.35%] z-10 flex items-start justify-center text-center"
+                    className="absolute inset-x-[8.35%] z-(--layer-media-text) flex items-start justify-center text-center"
                     style={{
                       top: TITLE_LAYOUT.part.top * previewScale,
                       height: (TITLE_LAYOUT.part.bottom - TITLE_LAYOUT.part.top) * previewScale,
@@ -442,7 +443,7 @@ export function PreviewView({ model }: { model: Props }) {
                     </p>
                   </div>
                   <div
-                    className="absolute inset-x-0 z-10 text-center"
+                    className="absolute inset-x-0 z-(--layer-media-text) text-center"
                     style={{ top: 1804 * previewScale, lineHeight: 1 }}
                   >
                     <span
@@ -469,7 +470,7 @@ export function PreviewView({ model }: { model: Props }) {
               )}
               {hasEditPlan && previewVisualStyle.subtitle.enabled && previewCaption && (
                 <div
-                  className="pointer-events-none absolute inset-x-[10%] z-20 text-center"
+                  className="pointer-events-none absolute inset-x-[10%] z-(--layer-media-caption) text-center"
                   style={{
                     bottom: `${((1920 - subtitleY(previewVisualStyle.subtitle, preparedSource?.height || sourceSize.height)) / 1920) * 100}%`,
                   }}
@@ -502,7 +503,7 @@ export function PreviewView({ model }: { model: Props }) {
             </span>
           </div>
           <div className="preview-controls w-full max-w-[520px]">
-            <button
+            <Button variant="icon" size="icon"
               type="button"
               aria-label="Tua lùi 5 giây"
               title="← · Lùi 5 giây"
@@ -510,8 +511,8 @@ export function PreviewView({ model }: { model: Props }) {
               onClick={() => seekPreview(Math.max(0, previewClock.timeRef.current - 5))}
             >
               <ArrowLeft className="size-3" />
-            </button>
-            <button
+            </Button>
+            <Button variant="icon" size="icon" tooltip={`${isPreviewPlaying ? UI_STRINGS.pausePreview : UI_STRINGS.playPreview} · Space`}
               type="button"
               onClick={() => void togglePreview()}
               disabled={!previewVideoUrl}
@@ -522,8 +523,8 @@ export function PreviewView({ model }: { model: Props }) {
               ) : (
                 <Play className="ml-0.5 size-4 fill-current" />
               )}
-            </button>
-            <button
+            </Button>
+            <Button variant="icon" size="icon"
               type="button"
               aria-label="Tua tới 5 giây"
               title="→ · Tới 5 giây"
@@ -531,7 +532,7 @@ export function PreviewView({ model }: { model: Props }) {
               onClick={() => seekPreview(Math.min(timelineDuration, previewClock.timeRef.current + 5))}
             >
               <ArrowRight className="size-3" />
-            </button>
+            </Button>
             <span>{formatTime(previewCurrentTime)}</span>
             <input
               className="preview-seek"

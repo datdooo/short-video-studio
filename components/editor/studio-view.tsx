@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "@/components/ui/button";
+
 import { PreservedDrafts } from "@/components/preserved-drafts";
 import { EditorDraftContext } from "@/components/editor-draft-context";
 import { EditorWorkspace } from "@/components/editor-workspace";
@@ -444,19 +446,19 @@ export function StudioView({
               </span>
             )}
             {retainedSourceId && !preparedSource && (
-              <button type="button" onClick={() => setSourceRestoreVersion((v) => v + 1)}>
+              <Button variant="secondary" size="md" type="button" onClick={() => setSourceRestoreVersion((v) => v + 1)}>
                 Nối lại source
-              </button>
+              </Button>
             )}
             {restoreBlocked && (
-              <button
+              <Button variant="secondary" size="md"
                 type="button"
                 onClick={() => {
                   if (preserveCurrentDraft()) setSessionNotice("Đã giữ nguyên bản gốc. Bấm Lưu để lưu phiên hiện tại.");
                 }}
               >
                 Giữ bản gốc
-              </button>
+              </Button>
             )}
           </div>
         )}

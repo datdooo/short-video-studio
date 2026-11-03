@@ -66,10 +66,10 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
           <AlertDialogTitle>{request?.title || "Xác nhận thao tác"}</AlertDialogTitle>
           <AlertDialogDescription className="whitespace-pre-line">{request?.message}</AlertDialogDescription>
           <AlertDialogFooter>
-            <Button type="button" variant="outline" onClick={() => finish("cancel")}>
+            <Button type="button" variant="secondary" onClick={() => finish("cancel")}>
               {request?.save ? "Ở lại" : "Hủy"}
             </Button>
-            <Button type="button" variant={request?.save ? "outline" : "default"} onClick={() => finish("confirm")}>
+            <Button type="button" variant={request?.save ? "secondary" : "destructive"} onClick={() => finish("confirm")}>
               {request?.confirmLabel || (request?.save ? "Bỏ phần chưa lưu" : "Xác nhận")}
             </Button>
             {request?.save && (

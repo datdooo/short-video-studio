@@ -1,4 +1,6 @@
 "use client";
+import { Button } from "./ui/button";
+import { StatusChip } from "./ui/status-chip";
 import Image from "next/image";
 import { ShortcutHelp } from "./shortcut-help";
 import { BETA_RELEASE } from "../desktop/beta-release.mjs";
@@ -56,7 +58,8 @@ export function StudioHeader({
       </strong>
       <nav aria-label="Chế độ làm việc" className="studio-workspaces">
         {tabs.map((tab) => (
-          <button
+          <Button variant="segmented"
+            data-state={workspace === tab.id ? "active" : "inactive"}
             type="button"
             key={tab.id}
             aria-current={workspace === tab.id ? "page" : undefined}
@@ -64,26 +67,28 @@ export function StudioHeader({
           >
             {tab.icon}
             {tab.label}
-          </button>
+          </Button>
         ))}
       </nav>
       <div className="studio-header-status">
-        <span
+        <StatusChip
+          tone={workerReady ? "success" : "warning"}
           role="status"
           title={workerReady ? "Media worker đang kết nối" : "Media worker chưa kết nối"}
           className={workerReady ? "studio-connected" : "studio-warning"}
         >
           {workerReady ? <Cloud size={13} /> : <CloudOff size={13} />}
           <span>{workerReady ? "Worker sẵn sàng" : "Mất kết nối"}</span>
-        </span>
-        <span
+        </StatusChip>
+        <StatusChip
+          tone={providerReady ? "success" : "warning"}
           className={`studio-provider-status ${providerReady ? "studio-connected" : "studio-warning"}`}
           title="Trạng thái cấu hình/đăng nhập; không đồng nghĩa đã kiểm chứng inference."
         >
           {providerLabel}
-        </span>
+        </StatusChip>
         {drafts}
-        <button
+        <Button variant="secondary" size="sm"
           type="button"
           className="studio-session-save"
           data-unsaved={saveState === "dirty" || saveState === "error"}
@@ -101,31 +106,30 @@ export function StudioHeader({
           }
         >
           <Save size={13} aria-hidden="true" />
-          {saveState === "saved" ? "Đã lưu" : saveState === "saving" ? "Đang lưu…" : "Lưu"}
-        </button>
+          {saveState === "saved" ? <StatusChip tone="success">Đã lưu</StatusChip> : saveState === "saving" ? "Đang lưu…" : "Lưu"}
+        </Button>
         <Popover open={confirmNew} onOpenChange={setConfirmNew}>
           <PopoverTrigger asChild>
-            <button type="button" disabled={!ready}>
+            <Button variant="secondary" size="sm" type="button" disabled={!ready}>
               Phiên mới
-            </button>
+            </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="studio-new-session-popover">
             <p className="font-semibold">Tạo phiên mới?</p>
             <p className="mt-2 text-xs">Bỏ bản nháp đang chỉnh. Giữ video nguồn, nhạc, MP4 đã xuất và job worker.</p>
             <div className="studio-action-row mt-3 flex justify-end gap-2">
-              <button type="button" className="studio-ghost" onClick={() => setConfirmNew(false)}>
+              <Button variant="secondary" type="button" className="studio-ghost" onClick={() => setConfirmNew(false)}>
                 Hủy
-              </button>
-              <button
+              </Button>
+              <Button variant="destructive"
                 type="button"
-                className="studio-primary"
                 onClick={() => {
                   setConfirmNew(false);
                   onNewSession();
                 }}
               >
                 Bỏ nháp & tạo mới
-              </button>
+              </Button>
             </div>
           </PopoverContent>
         </Popover>

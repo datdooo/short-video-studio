@@ -1,4 +1,6 @@
 "use client";
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { useEffect, useId, useRef, useState } from "react";
 import { Download, Loader2, Square, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -121,8 +123,8 @@ export function ManualVideoDownload({
       <div className="studio-video-download-split">
         <Button
           type="button"
-          variant="outline"
-          size="action"
+          variant="secondary"
+          size="md"
           className="studio-video-download-main"
           onClick={() => void start()}
           disabled={disabled || running || !sourceId}
@@ -136,8 +138,8 @@ export function ManualVideoDownload({
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
-              variant="outline"
-              size="action"
+              variant="icon"
+              size="icon"
               disabled={disabled || running || !sourceId}
               className="studio-video-download-menu"
               aria-describedby={disabledReason ? reasonId : undefined}
@@ -182,10 +184,10 @@ export function ManualVideoDownload({
             </Button>
           )}
           {value.state === "error" && value.error && (
-            <details className="text-xs">
-              <summary>Chi tiết</summary>
+            <Disclosure className="text-xs">
+              <DisclosureTrigger>Chi tiết</DisclosureTrigger>
               <p className="studio-muted break-words">{value.error}</p>
-            </details>
+            </Disclosure>
           )}
         </>
       )}

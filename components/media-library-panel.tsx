@@ -297,11 +297,11 @@ export function MediaLibraryPanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-semibold">
-              <FolderOpen className="size-6 text-[#ff806a]" /> Kho
+              <FolderOpen className="size-6 text-accent-foreground" /> Kho
             </h1>
           </div>
           <Button
-            variant="outline"
+            variant="secondary"
             onClick={() => void refresh()}
             disabled={!ready || loading || working}
             className="border-white/15 bg-white/5"
@@ -373,7 +373,7 @@ export function MediaLibraryPanel({
           </p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <Button
-              variant="outline"
+              variant="secondary"
               onClick={() => setSelected(new Set(available.map((file) => file.id)))}
               disabled={!available.length || working}
               className="border-white/15 bg-white/5"
@@ -382,6 +382,7 @@ export function MediaLibraryPanel({
             </Button>
             {selectedFiles.length > 0 && (
               <Button
+                variant="destructive"
                 onClick={() => void handleStorageAction(tab === "trash" ? "purge" : "move", selectedFiles)}
                 disabled={working}
                 className="bg-red-500/15 text-red-200 hover:bg-red-500/25"
@@ -412,7 +413,7 @@ export function MediaLibraryPanel({
                           return next;
                         })
                       }
-                      className="mt-1 size-4 shrink-0 accent-[#ff4d2e]"
+                      className="mt-1 size-4 shrink-0 accent-primary"
                     />
                     <span className="studio-library-file-icon" aria-hidden="true">
                       <Film size={20} />
@@ -447,7 +448,7 @@ export function MediaLibraryPanel({
                     {tab !== "trash" ? (
                       <>
                         <Button
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           onClick={() => {
                             setPreview(file);
@@ -465,7 +466,7 @@ export function MediaLibraryPanel({
                           <Download className="size-3.5" /> Tải file
                         </a>
                         <Button
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
                           disabled={working || file.busy}
                           onClick={() => void handleStorageAction("move", [file])}
@@ -477,7 +478,7 @@ export function MediaLibraryPanel({
                     ) : (
                       <>
                         <Button
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           disabled={working || file.busy}
                           onClick={() => void handleStorageAction("restore", [file])}
@@ -486,7 +487,7 @@ export function MediaLibraryPanel({
                           <RotateCcw className="size-3.5" /> Khôi phục
                         </Button>
                         <Button
-                          variant="outline"
+                          variant="destructive"
                           size="sm"
                           disabled={working || file.busy}
                           onClick={() => void handleStorageAction("purge", [file])}
@@ -509,7 +510,7 @@ export function MediaLibraryPanel({
                 </p>
               )}
             </div>
-            <aside className="rounded-2xl border border-white/10 bg-[#111216] p-4 lg:sticky lg:top-20">
+            <aside className="rounded-2xl border border-white/10 bg-card p-4 lg:sticky lg:top-20">
               <p className="eyebrow">XEM TRƯỚC FILE</p>
               {preview ? (
                 <>

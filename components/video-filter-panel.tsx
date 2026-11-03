@@ -1,4 +1,5 @@
 "use client";
+
 import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { Check } from "lucide-react";
@@ -9,6 +10,7 @@ import {
   type VideoFilter,
 } from "@/lib/visual-style/filters.mjs";
 
+// UI exception sample-card: large filter swatch keeps its sample geometry.
 export function VideoFilterDefinition({ filter, id }: { filter: VideoFilter; id: string }) {
   if (!filter.presetId) return null;
   return (
@@ -45,7 +47,7 @@ export function VideoFilterPanel({
         {presets.map((preset) => {
           const id = `studio-filter-card-${preset.id}`;
           return (
-            <button
+            <button data-ui-exception="sample-card"
               key={preset.id}
               type="button"
               aria-label={`Video filter: ${preset.label}`}
@@ -60,7 +62,7 @@ export function VideoFilterPanel({
                 className="flex h-9 overflow-hidden rounded-lg"
                 style={{ filter: browserFilterStyle(preset.filter, undefined, id) }}
               >
-                {["#c99b72", "#789b65", "#799dab", "#8a8084"].map((color) => (
+                {["var(--sample-tan)", "var(--sample-green)", "var(--sample-blue)", "var(--sample-gray)"].map((color) => (
                   <span key={color} className="flex-1" style={{ backgroundColor: color }} />
                 ))}
               </span>

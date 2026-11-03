@@ -1,4 +1,7 @@
 "use client";
+
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
+
 import { AiOperationStatus } from "@/components/ai-operation-status";
 import { ManualVideoDownload } from "@/components/manual-video-download";
 import { SourceOptionsSection } from "@/components/source-options-section";
@@ -258,7 +261,7 @@ export function SourceView({ model }: { model: Props }) {
           </div>
         </TabsContent>
         <TabsContent value="local" className="pt-3">
-          <label className="flex h-[84px] cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-white/12 bg-white/[.02] text-sm text-zinc-400 transition hover:border-[#ff4d2e]/40 hover:bg-[#ff4d2e]/5 hover:text-white">
+          <label className="flex h-[84px] cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-white/12 bg-white/[.02] text-sm text-zinc-400 transition hover:border-primary/40 hover:bg-primary/5 hover:text-white">
             <Upload className="size-4" />
             <span className="max-w-[220px] truncate">{localFileName || "Chọn MP4, MOV hoặc WebM"}</span>
             <input
@@ -271,7 +274,7 @@ export function SourceView({ model }: { model: Props }) {
           </label>
         </TabsContent>
       </Tabs>
-      <button
+      <Button variant="primary" size="md"
         type="button"
         onClick={() => void prepareSource()}
         disabled={
@@ -302,7 +305,7 @@ export function SourceView({ model }: { model: Props }) {
             Chuẩn bị nguồn
           </>
         )}
-      </button>
+      </Button>
       {sourceMode === "youtube" && (youtubeState === "loading" || youtubeState === "error") && (
         <p className="text-xs leading-5 text-zinc-600 break-words" role="status">
           {youtubeState === "loading" && "Đang lấy title gốc từ YouTube…"}
@@ -324,7 +327,7 @@ export function SourceView({ model }: { model: Props }) {
                 : undefined
             }
           />
-          <button
+          <Button variant="ghost" size="md"
             type="button"
             className="studio-ghost"
             onClick={() => {
@@ -333,7 +336,7 @@ export function SourceView({ model }: { model: Props }) {
             }}
           >
             Dừng chuẩn bị
-          </button>
+          </Button>
         </>
       )}
       {preparedSource ? (
@@ -409,7 +412,7 @@ export function SourceView({ model }: { model: Props }) {
             <div className="studio-web-download-control">
               <Button
                 type="button"
-                size="action"
+                size="md"
                 onClick={() => void downloadWebAiPrompt()}
                 disabled={
                   isAnalyzing ||
@@ -487,7 +490,7 @@ export function SourceView({ model }: { model: Props }) {
           />
           <Button
             type="button"
-            size="action"
+            size="md"
             onClick={() => void applyWebAiResult()}
             disabled={
               !preparedSource || !webAiPromptIsCurrent || !webAiResult.trim() || isAnalyzing || isPreparingSource
@@ -526,7 +529,7 @@ export function SourceView({ model }: { model: Props }) {
         </section>
       ) : null}
       {!(editMode === "ai" && isWebAi) && (
-        <button
+        <Button variant="primary" size="md"
           type="button"
           className="studio-primary w-full"
           disabled={
@@ -551,11 +554,11 @@ export function SourceView({ model }: { model: Props }) {
               : isWebAi
                 ? `Tạo prompt ${webAiName}`
                 : "Phân tích"}
-        </button>
+        </Button>
       )}
       {isAnalyzing && webAiPhase !== "prompt" && (
         <Button
-          variant="outline"
+          variant="secondary"
           onClick={() => {
             invalidateAnalysis();
             setAnalysisNotice("Đã dừng phân tích; giữ plan hiện tại.");
@@ -618,7 +621,7 @@ export function SourceView({ model }: { model: Props }) {
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
                       <span
-                        className={`size-2 rounded-full ${chatGPTSession?.sharing ? "bg-emerald-400 shadow-[0_0_10px_#34d399]" : "bg-zinc-700"}`}
+                        className={`size-2 rounded-full ${chatGPTSession?.sharing ? "bg-emerald-400 shadow-[0_0_10px_var(--provider-glow)]" : "bg-zinc-700"}`}
                       />
                       {chatGPTSession?.sharing ? "ChatGPT plan connected" : "Connect your ChatGPT plan"}
                     </p>
@@ -629,18 +632,18 @@ export function SourceView({ model }: { model: Props }) {
                     </p>
                   </div>
                   {chatGPTSession?.connected && (
-                    <button
+                    <Button variant="destructive" size="md"
                       type="button"
                       disabled={isChatGPTConnecting || isChatGPTDisconnecting}
                       onClick={() => void disconnectChatGPT()}
                       className="shrink-0 text-xs text-zinc-600 transition hover:text-zinc-300 disabled:opacity-50"
                     >
                       {isChatGPTDisconnecting ? "Đang ngắt…" : "Disconnect"}
-                    </button>
+                    </Button>
                   )}
                 </div>
                 <Button
-                  variant={chatGPTSession?.sharing ? "outline" : "default"}
+                  variant={chatGPTSession?.sharing ? "secondary" : "primary"}
                   onClick={() => void connectChatGPT()}
                   disabled={isChatGPTConnecting || isChatGPTDisconnecting || !workerHealth?.chatGPTAuthAvailable}
                   className={`mt-3 h-10 w-full rounded-xl text-xs font-bold ${chatGPTSession?.sharing ? "border-white/10 bg-white/[.03] text-zinc-200 hover:bg-white/[.07]" : "bg-white text-black hover:bg-zinc-200"}`}
@@ -666,10 +669,10 @@ export function SourceView({ model }: { model: Props }) {
                 )}
               </div>
             )}
-            <details className="rounded-xl border border-white/8 p-3">
-              <summary className="cursor-pointer text-xs font-semibold text-zinc-300">
+            <Disclosure className="rounded-xl border border-white/8 p-3">
+              <DisclosureTrigger className="cursor-pointer text-xs font-semibold text-zinc-300">
                 Transcript · {transcript.length.toLocaleString()} ký tự · xem / sửa
-              </summary>
+              </DisclosureTrigger>
               <div className="mt-3 flex items-center justify-between">
                 <label htmlFor="transcript" className="field-label">
                   Transcript
@@ -684,11 +687,11 @@ export function SourceView({ model }: { model: Props }) {
                 placeholder="00:00 Transcript..."
               />
               <p className="mt-2 text-xs leading-5 text-zinc-500">{transcriptStatus}</p>
-            </details>
+            </Disclosure>
 
             {batchEditing && preparedSource?.id === batchEditing.sourceId && hasEditPlan && (
               <Button
-                variant="outline"
+                variant="secondary"
                 disabled={
                   isAnalyzing || isStartingRender || Boolean(effectiveTiming.error) || Boolean(teaserIssues.length)
                 }
@@ -700,8 +703,8 @@ export function SourceView({ model }: { model: Props }) {
             )}
 
             {previewPlan.analysis && (
-              <details className="rounded-xl border border-white/10 p-3 text-xs">
-                <summary className="cursor-pointer">
+              <Disclosure className="rounded-xl border border-white/10 p-3 text-xs">
+                <DisclosureTrigger className="cursor-pointer">
                   Lý do chọn ·{" "}
                   {previewPlan.analysis.method === "ai"
                     ? "AI"
@@ -709,7 +712,7 @@ export function SourceView({ model }: { model: Props }) {
                       ? "Dự phòng"
                       : "Nhập/đã lưu"}{" "}
                   · {previewPlan.analysis.provider}
-                </summary>
+                </DisclosureTrigger>
                 {previewPlan.analysis.parts.map((p) => (
                   <div key={p.id} className="mt-2">
                     <strong>Part {p.id}</strong>
@@ -734,7 +737,7 @@ export function SourceView({ model }: { model: Props }) {
                     {explainInVietnamese(line, "Thiếu hoặc giới hạn bằng chứng; ghi chú gốc vẫn giữ trong plan.")}
                   </p>
                 ))}
-              </details>
+              </Disclosure>
             )}
           </TabsContent>
 

@@ -1,4 +1,5 @@
 "use client";
+import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
 
 import { UI_STRINGS } from "@/lib/ui-strings";
 import type { ReactNode } from "react";
@@ -45,30 +46,30 @@ export function VisualCustomizePanel({
     { id: "transition", label: "Chuyển cảnh", value: getCutTransition(style.cutTransition).label },
   ];
   return (
-    <details
+    <Disclosure
       data-visual-customize
       className="studio-disclosure visual-customize mt-5 min-w-0 rounded-2xl border border-white/10 bg-white/[.025]"
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+      <DisclosureTrigger className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
         {UI_STRINGS.customize}
         <ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform" />
-      </summary>
+      </DisclosureTrigger>
       <div className="divide-y divide-white/8 border-t border-white/8 px-3">
         {rows
           .filter((row) => !include || include.includes(row.id))
           .map(({ id, label, value }) => (
-            <details key={id} data-customize-row={id} className="min-w-0">
-              <summary className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_16px] items-center gap-3 rounded-lg py-3 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+            <Disclosure key={id} data-customize-row={id} className="min-w-0">
+              <DisclosureTrigger className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_16px] items-center gap-3 rounded-lg py-3 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
                 <span className="font-medium text-zinc-300">{label}</span>
                 <span className="truncate text-right text-zinc-400" title={value}>
                   {value}
                 </span>
                 <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-zinc-500 transition-transform" />
-              </summary>
+              </DisclosureTrigger>
               <div className="visual-customize-options min-w-0 pb-4 pt-1">{controls[id]}</div>
-            </details>
+            </Disclosure>
           ))}
       </div>
-    </details>
+    </Disclosure>
   );
 }

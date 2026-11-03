@@ -1,10 +1,12 @@
 "use client";
+
 import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { Check } from "lucide-react";
 import type { OverlayStyle } from "@/lib/visual-style/types";
 import { activeSceneOverlays, listOverlayPresets, overlayAssetUrl } from "@/lib/visual-style/overlays.mjs";
 const presets = listOverlayPresets();
+// UI exception sample-card: large overlay swatch keeps its sample geometry.
 export function SceneOverlays({ overlays }: { overlays: OverlayStyle[] }) {
   // Legacy reserved descriptors remain non-renderable; they cannot supply URLs.
   const curated = overlays.filter((overlay) => "presetId" in overlay);
@@ -43,7 +45,7 @@ export function OverlayPanel({
       </h3>
       <div className="mt-3 grid grid-cols-3 gap-2">
         {presets.map((preset) => (
-          <button
+          <button data-ui-exception="sample-card"
             key={preset.id}
             type="button"
             aria-label={`Overlay: ${preset.label}`}
