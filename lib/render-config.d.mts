@@ -4,6 +4,8 @@ export const CANVAS_HEIGHT: 1920;
 export const PLAYBACK_RATE: 1.25;
 export const FOREGROUND_SCALE: 1.25;
 export const RENDER_FPS: 30;
+export const BACKGROUND_BLUR: 50;
+export const BACKGROUND_OPACITY: 50;
 export const FOREGROUND_BASE_HEIGHT: 1080;
 export const FOREGROUND_HEIGHT: number;
 export const FOREGROUND_Y: number;

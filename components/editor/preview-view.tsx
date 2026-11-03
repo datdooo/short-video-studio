@@ -1,4 +1,6 @@
 "use client";
+import { useSyncExternalStore } from "react";
+import { UI_STRINGS } from "@/lib/ui-strings";
 import { ForegroundTransition } from "@/components/cut-transition-panel";
 import { SceneOverlays } from "@/components/overlay-panel";
 import { PreviewBackground } from "@/components/preview-background";
@@ -6,9 +8,9 @@ import { VideoFilterDefinition } from "@/components/video-filter-panel";
 import { type WorkerSource } from "@/lib/api/worker-client";
 import type { EditPart, Segment } from "@/lib/edit-plan";
 import { EditPlan, formatTime } from "@/lib/edit-plan";
-import { PREVIEW_RATE } from "@/lib/preview-config.mjs";
+import { PREVIEW_RATE, previewToExportTime } from "@/lib/preview-config.mjs";
 import { locateTimelineTime } from "@/lib/preview-timeline.mjs";
-import { CANVAS_WIDTH, FOREGROUND_HEIGHT, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT } from "@/lib/render-config.mjs";
+import { CANVAS_WIDTH, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, FOREGROUND_HEIGHT, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT } from "@/lib/render-config.mjs";
 import { formatSourceTimecode } from "@/lib/source-timecode.mjs";
 import type { Caption } from "@/lib/subtitles.mjs";
 import { subtitleY } from "@/lib/subtitles.mjs";
@@ -87,9 +89,8 @@ type Props = {
   plan: EditPlan;
   playbackSegments: Segment[];
   preparedSource: WorkerSource | null;
-  previewCaption: Caption | undefined;
-  previewCurrentTime: number;
-  previewEffectTime: number;
+  previewCaptions: Caption[];
+  previewClock: import("@/lib/preview-clock.mjs").PreviewClock;
   previewError: string;
   previewPlan: EditPlan;
   previewPlayingRef: RefObject<boolean>;
@@ -115,7 +116,6 @@ type Props = {
   teaserIssues: { partId: number; reason: string }[];
   timelineDuration: number;
   titleFitInput: { original: string; part: string; originalStyle: TextStyle; partStyle: TextStyle; scale: number };
-  titleShineStyle: { maskImage: string; maskRepeat: string; maskSize: string; maskPosition: string };
   togglePreview: () => Promise<void>;
   transitionWindows: CutTransitionWindow[];
   updatePreviewClock: () => void;
@@ -147,9 +147,8 @@ export function PreviewView({ model }: { model: Props }) {
     plan,
     playbackSegments,
     preparedSource,
-    previewCaption,
-    previewCurrentTime,
-    previewEffectTime,
+    previewCaptions,
+    previewClock,
     previewError,
     previewPlan,
     previewPlayingRef,
@@ -175,7 +174,6 @@ export function PreviewView({ model }: { model: Props }) {
     teaserIssues,
     timelineDuration,
     titleFitInput,
-    titleShineStyle,
     togglePreview,
     transitionWindows,
     updatePreviewClock,
@@ -184,6 +182,16 @@ export function PreviewView({ model }: { model: Props }) {
     workspace,
     workspaceRef,
   } = model;
+  const previewCurrentTime = useSyncExternalStore(previewClock.subscribe, previewClock.getSnapshot, previewClock.getServerSnapshot);
+  const previewEffectTime = previewToExportTime(previewCurrentTime);
+  const previewCaption = previewCaptions.find(cue => previewCurrentTime * PREVIEW_RATE >= cue.start && previewCurrentTime * PREVIEW_RATE < cue.end);
+  const titleShineStyle = {
+    maskImage: "linear-gradient(to right, transparent, #000 50%, transparent)",
+    maskRepeat: "no-repeat",
+    maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`,
+    maskPosition: `${(((CANVAS_WIDTH - TITLE_SHINE_WIDTH) * (previewEffectTime % TITLE_SHINE_SECONDS)) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0`,
+  };
+
 
   return (
     <>
@@ -361,7 +369,7 @@ export function PreviewView({ model }: { model: Props }) {
                   <button
                     type="button"
                     onClick={() => void togglePreview()}
-                    aria-label="Play preview"
+                    aria-label={UI_STRINGS.playPreview}
                     style={{ zIndex: transitionWindows.length ? 30 : undefined }}
                     className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"
                   >
@@ -499,7 +507,7 @@ export function PreviewView({ model }: { model: Props }) {
               aria-label="Tua lùi 5 giây"
               title="← · Lùi 5 giây"
               disabled={!previewVideoUrl}
-              onClick={() => seekPreview(Math.max(0, previewCurrentTime - 5))}
+              onClick={() => seekPreview(Math.max(0, previewClock.timeRef.current - 5))}
             >
               <ArrowLeft className="size-3" />
             </button>
@@ -507,7 +515,7 @@ export function PreviewView({ model }: { model: Props }) {
               type="button"
               onClick={() => void togglePreview()}
               disabled={!previewVideoUrl}
-              aria-label={isPreviewPlaying ? "Pause preview" : "Play preview"}
+              aria-label={isPreviewPlaying ? UI_STRINGS.pausePreview : UI_STRINGS.playPreview}
             >
               {isPreviewPlaying ? (
                 <Pause className="size-4 fill-current" />
@@ -520,7 +528,7 @@ export function PreviewView({ model }: { model: Props }) {
               aria-label="Tua tới 5 giây"
               title="→ · Tới 5 giây"
               disabled={!previewVideoUrl}
-              onClick={() => seekPreview(Math.min(timelineDuration, previewCurrentTime + 5))}
+              onClick={() => seekPreview(Math.min(timelineDuration, previewClock.timeRef.current + 5))}
             >
               <ArrowRight className="size-3" />
             </button>

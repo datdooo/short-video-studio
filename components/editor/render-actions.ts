@@ -179,7 +179,7 @@ export function createRenderActions(read: () => State) {
     if (
       !confirmed &&
       (await confirm({
-        message: `Chuyển các Part của “${job.plan?.originalTitle || "video này"}” vào Thùng rác và xoá khỏi danh sách render?\n\nVideo gốc và bản trong Downloads vẫn được giữ. Có thể khôi phục các Part trong tab Thùng rác.`,
+        message: `Chuyển các Part của “${(job.planSummary || job.plan)?.originalTitle || "video này"}” vào Thùng rác và xoá khỏi danh sách render?\n\nVideo gốc và bản trong Downloads vẫn được giữ. Có thể khôi phục các Part trong tab Thùng rác.`,
       })) !== "confirm"
     )
       return false;

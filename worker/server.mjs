@@ -1,3 +1,4 @@
+import { installFatalHandlers } from "./fatal-errors.mjs";
 import { mkdir, rm } from "node:fs/promises";
 import { createServer } from "node:http";
 import { userInfo } from "node:os";
@@ -175,7 +176,10 @@ const { persistBatchHistory, restoreBatchHistory } = createQueueHistory(() => ({
   jobs,
   probeMedia,
   sourcesRoot,
-}));
+}), {
+  maxHistoryJobs: Number(process.env.SHORTCUT_HISTORY_MAX_JOBS || 0),
+  confirmed: process.env.SHORTCUT_HISTORY_RETENTION_CONFIRMED === "1",
+});
 
 const { batchSnapshot, cancelBatch, prepareBatch } = createBatchService(() => ({
   batchControllers,
@@ -451,6 +455,18 @@ const dispatchRoutes = createWorkerRoutes({
 const server = createServer(
   createRequestHandler({ host, port, requestOrigins, corsHeaders, dispatchRoutes, sendJson }),
 );
+
+installFatalHandlers({
+  shutdown: () => commandLifecycle.stop({
+    onStart() {
+      for (const controller of [...batchControllers.values(), ...renderControllers.values()]) controller.abort();
+      pendingChatGPTAuth.cancelAll();
+      server.close();
+      server.closeAllConnections();
+    },
+    onStopped: () => persistBatchHistory({ strict: true }),
+  }),
+});
 
 for (const name of ["SIGTERM", "SIGINT"]) {
   process.once(name, () => {

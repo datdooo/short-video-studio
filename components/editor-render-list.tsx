@@ -15,6 +15,7 @@ export type EditorRenderJob = {
   outputs: Array<{ part: number; filename: string; size: number; url: string }>;
   error: string | null;
   plan?: EditPlan;
+  planSummary?: import("@/lib/api/worker-client").RenderJob["planSummary"];
   createdAt?: string;
   stopping?: boolean;
   phase?: string | null;
@@ -51,9 +52,9 @@ export function EditorRenderList({
   const visibleJobs = jobs.filter((job) =>
     [
       job.id,
-      job.plan?.originalTitle,
+      (job.planSummary || job.plan)?.originalTitle,
       ...job.outputs.map((output) => output.filename),
-      ...(job.plan?.parts.map((part) => part.title) || []),
+      ...((job.planSummary || job.plan)?.parts.map((part) => part.title) || []),
     ]
       .join(" ")
       .toLocaleLowerCase()
@@ -111,13 +112,13 @@ export function EditorRenderList({
             >
               <div className="studio-render-job-heading flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h3 className="break-words text-sm font-semibold">{job.plan?.originalTitle || "Video đã render"}</h3>
+                  <h3 className="break-words text-sm font-semibold">{(job.planSummary || job.plan)?.originalTitle || "Video đã render"}</h3>
                 </div>
                 <div className="studio-action-row flex shrink-0 flex-wrap justify-end gap-2">
                   {(active || cancelling) && (
                     <button
                       type="button"
-                      aria-label={`Huỷ render ${job.plan?.originalTitle || job.id}`}
+                      aria-label={`Huỷ render ${(job.planSummary || job.plan)?.originalTitle || job.id}`}
                       onClick={() => onStop(job)}
                       disabled={cancelling || removing}
                       className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 active:scale-95 disabled:opacity-50"
@@ -128,7 +129,7 @@ export function EditorRenderList({
                   )}
                   <button
                     type="button"
-                    aria-label={`Xoá render ${job.plan?.originalTitle || job.id}`}
+                    aria-label={`Xoá render ${(job.planSummary || job.plan)?.originalTitle || job.id}`}
                     title={
                       active || cancelling
                         ? "Huỷ render và chờ dừng hẳn trước khi xoá"
@@ -146,8 +147,8 @@ export function EditorRenderList({
               <RenderProgress job={{ ...job, stopping: cancelling }} />
               {job.error && <p className="mt-3 break-words text-xs text-red-300">{job.error}</p>}
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {job.plan?.parts.map((part) => {
-                  const title = `${job.plan!.originalTitle} | ${part.title} (${part.id}/${job.plan!.parts.length})`;
+                {(job.planSummary || job.plan)?.parts.map((part) => {
+                  const title = `${(job.planSummary || job.plan)!.originalTitle} | ${part.title} (${part.id}/${(job.planSummary || job.plan)!.parts.length})`;
                   const hashtags = part.hashtags?.join(" ") || "";
                   const output = job.outputs.find((output) => output.part === part.id);
                   return (
@@ -162,7 +163,7 @@ export function EditorRenderList({
                       <div className="mt-3 flex flex-wrap gap-2">
                         <CopyButton
                           text={`${title}\n\n${hashtags}`}
-                          ariaLabel={`Copy title và hashtag Part ${part.id} của ${job.plan!.originalTitle}`}
+                          ariaLabel={`Copy title và hashtag Part ${part.id} của ${(job.planSummary || job.plan)!.originalTitle}`}
                         />
                         {output && (
                           <a

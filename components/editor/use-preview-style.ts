@@ -1,7 +1,7 @@
 "use client";
 import { WORKER_ORIGIN, type WorkerSource } from "@/lib/api/worker-client";
 import type { EditPart, EditPlan } from "@/lib/edit-plan";
-import { TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundGeometry } from "@/lib/render-config.mjs";
+import { foregroundGeometry } from "@/lib/render-config.mjs";
 import { fitTitlePair } from "@/lib/render-spec";
 import { fontFamilyForStyle } from "@/lib/visual-style/fonts.mjs";
 import { constrainTitlePair, needsMeasuredTitleFit, partOverlayTitle } from "@/lib/visual-style/title-fit.mjs";
@@ -17,7 +17,6 @@ type State = {
   plan: EditPlan;
   preparedSource: WorkerSource | null;
   previewDuration: number;
-  previewEffectTime: number;
   previewVideoRef: RefObject<HTMLVideoElement | null>;
   previewVisualStyle: VisualStyle;
   previewWidth: number;
@@ -35,7 +34,6 @@ export function usePreviewStyle(state: State) {
     plan,
     preparedSource,
     previewDuration,
-    previewEffectTime,
     previewVideoRef,
     previewVisualStyle,
     previewWidth,
@@ -131,12 +129,6 @@ export function usePreviewStyle(state: State) {
   const foregroundSourceWidth = decodedVideo?.videoWidth || preparedSource?.width || sourceSize.width,
     foregroundSourceHeight = decodedVideo?.videoHeight || preparedSource?.height || sourceSize.height;
   const foregroundImage = foregroundGeometry(foregroundSourceWidth, foregroundSourceHeight);
-  const titleShineStyle = {
-    maskImage: "linear-gradient(to right, transparent, #000 50%, transparent)",
-    maskRepeat: "no-repeat",
-    maskSize: `${TITLE_SHINE_WIDTH * previewScale}px 100%`,
-    maskPosition: `${(((1080 - TITLE_SHINE_WIDTH) * (previewEffectTime % TITLE_SHINE_SECONDS)) / TITLE_SHINE_SECONDS - 90) * previewScale}px 0`,
-  };
   const previewSourceEpoch = sourceSelectionEpoch.current;
   const isCurrentPreviewVideo = (video: HTMLVideoElement) =>
     previewSourceEpoch === sourceSelectionEpoch.current && video === previewVideoRef.current;
@@ -156,7 +148,6 @@ export function usePreviewStyle(state: State) {
     foregroundSourceWidth,
     foregroundSourceHeight,
     foregroundImage,
-    titleShineStyle,
     previewSourceEpoch,
     isCurrentPreviewVideo,
   };

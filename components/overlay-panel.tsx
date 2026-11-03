@@ -1,4 +1,5 @@
 "use client";
+import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { Check } from "lucide-react";
 import type { OverlayStyle } from "@/lib/visual-style/types";
@@ -76,7 +77,7 @@ export function OverlayPanel({
       </label>
       <input
         id="overlay-opacity"
-        aria-label="Overlay opacity"
+        aria-label={UI_STRINGS.overlayOpacity}
         type="range"
         min="0"
         max="100"

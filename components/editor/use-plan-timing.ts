@@ -4,7 +4,7 @@ import { type WorkerSource } from "@/lib/api/worker-client";
 import { EditPlan } from "@/lib/edit-plan";
 import { webAiEditorSignature } from "@/lib/editor-identity";
 import { captureAiMainRanges } from "@/lib/main-ranges.mjs";
-import { PREVIEW_RATE, previewToExportTime } from "@/lib/preview-config.mjs";
+import { PREVIEW_RATE } from "@/lib/preview-config.mjs";
 import type { SubtitleStyle } from "@/lib/subtitles.mjs";
 import { effectiveCaptionTrack, partCaptions, type CaptionTrack } from "@/lib/subtitles.mjs";
 import {
@@ -25,7 +25,6 @@ type State = {
   mainDraftErrors: Record<number, { sourceKey: string; key: string; invalid: boolean }>;
   plan: EditPlan;
   preparedSource: WorkerSource | null;
-  previewCurrentTime: number;
   sourceCaptions: CaptionTrack | null;
   sourceMode: "youtube" | "local";
   sourceUrl: string;
@@ -41,7 +40,6 @@ export function usePlanTiming(state: State) {
     mainDraftErrors,
     plan,
     preparedSource,
-    previewCurrentTime,
     sourceCaptions,
     sourceMode,
     sourceUrl,
@@ -128,11 +126,7 @@ export function usePlanTiming(state: State) {
     () => partCaptions(previewPlan.captionCues?.cues || subtitleCues, activePart, previewVisualStyle.subtitle),
     [previewPlan.captionCues, subtitleCues, activePart, previewVisualStyle.subtitle],
   );
-  const previewCaption = previewCaptions.find(
-    (cue) => previewCurrentTime * PREVIEW_RATE >= cue.start && previewCurrentTime * PREVIEW_RATE < cue.end,
-  );
   const partDuration = presentationDuration(activePart) / PREVIEW_RATE;
-  const previewEffectTime = previewToExportTime(previewCurrentTime);
   const mainSignature = webAiEditorSignature(previewPlan, subtitleCues);
   return {
     mainEditorSourceKey,
@@ -149,9 +143,7 @@ export function usePlanTiming(state: State) {
     transitionWindows,
     subtitleCues,
     previewCaptions,
-    previewCaption,
     partDuration,
-    previewEffectTime,
     mainSignature,
   };
 }

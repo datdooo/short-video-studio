@@ -1,4 +1,5 @@
 "use client";
+import { createPreviewClock } from "@/lib/preview-clock.mjs";
 import { createPreviewDecks } from "@/lib/preview-decks.mjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 export function usePreviewPlayback() {
@@ -18,7 +19,10 @@ export function usePreviewPlayback() {
   }, [previewStage]);
   const [previewWidth, setPreviewWidth] = useState(384);
   const [previewDuration, setPreviewDuration] = useState(0);
-  const [previewCurrentTime, setPreviewCurrentTime] = useState(0);
+  const [previewClock] = useState(createPreviewClock);
+  const previewCurrentTimeRef = previewClock.timeRef;
+  const setPreviewCurrentTime = previewClock.setTime;
+  useEffect(() => () => previewClock.dispose(), [previewClock]);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [previewError, setPreviewError] = useState("");
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -99,7 +103,8 @@ export function usePreviewPlayback() {
     setPreviewWidth,
     previewDuration,
     setPreviewDuration,
-    previewCurrentTime,
+    previewClock,
+    previewCurrentTimeRef,
     setPreviewCurrentTime,
     isPreviewPlaying,
     setIsPreviewPlaying,

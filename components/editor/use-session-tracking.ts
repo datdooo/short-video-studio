@@ -1,4 +1,6 @@
 "use client";
+import { registerSessionCheckpoint } from "@/lib/session-checkpoint";
+import { writeEditorSession } from "@/lib/editor-session";
 import type { SaveState } from "@/components/studio-header";
 import { type RenderJob, type WebAiContext, type WorkerSource } from "@/lib/api/worker-client";
 import type { AiProvider } from "@/lib/edit-plan";
@@ -39,7 +41,7 @@ type State = {
   pendingSaveBaseline: RefObject<"saved" | "dirty" | "idle" | null>;
   plan: EditPlan;
   preparedSource: WorkerSource | null;
-  previewCurrentTime: number;
+  previewCurrentTimeRef: RefObject<number>;
   provider: AiProvider;
   renderJob: RenderJob | null;
   restoredJobId: string;
@@ -94,7 +96,7 @@ export function useSessionTracking(state: State) {
     pendingSaveBaseline: pendingSaveBaselineRef,
     plan,
     preparedSource,
-    previewCurrentTime,
+    previewCurrentTimeRef,
     provider,
     renderJob,
     restoredJobId,
@@ -214,15 +216,19 @@ export function useSessionTracking(state: State) {
     ],
   );
   useLayoutEffect(() => {
-    latestSessionRef.current = { ...sessionSnapshot, previewTime: previewCurrentTime };
+    latestSessionRef.current = { ...sessionSnapshot, get previewTime() { return previewCurrentTimeRef.current; } };
     if (!sessionReady) return;
+    registerSessionCheckpoint(() => {
+      if (draftWriteBlockedRef.current || !latestSessionRef.current) return "Bản gốc đang được bảo vệ; chưa ghi đè checkpoint.";
+      return writeEditorSession(latestSessionRef.current);
+    });
     const baseline = pendingSaveBaselineRef.current;
     if (baseline) {
       pendingSaveBaselineRef.current = null;
       unsavedSessionRef.current = baseline === "dirty";
       lastWrittenSessionRef.current =
         baseline === "saved" && !draftWriteBlockedRef.current
-          ? { snapshot: sessionSnapshot, previewTime: previewCurrentTime }
+          ? { snapshot: sessionSnapshot, previewTime: previewCurrentTimeRef.current }
           : null;
       setSaveState(draftWriteBlockedRef.current ? "error" : baseline);
     } else if (observedSessionRef.current !== sessionSnapshot) {
@@ -250,7 +256,7 @@ export function useSessionTracking(state: State) {
     observedSessionRef.current = sessionSnapshot;
   }, [
     sessionSnapshot,
-    previewCurrentTime,
+    previewCurrentTimeRef,
     sessionReady,
     draftWriteBlockedRef,
     lastWrittenSessionRef,

@@ -1,4 +1,5 @@
 "use client";
+import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { Check } from "lucide-react";
 import {
@@ -77,7 +78,7 @@ export function VideoFilterPanel({
       </label>
       <input
         id="video-filter-intensity"
-        aria-label="Video filter intensity"
+        aria-label={UI_STRINGS.filterIntensity}
         type="range"
         min="0"
         max="100"

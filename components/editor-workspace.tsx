@@ -1,4 +1,5 @@
 "use client";
+import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -205,7 +206,7 @@ export function EditorWorkspace({
         >
           <div className="studio-drawer-heading">
             <strong id="studio-inspector-drawer-title">Chỉnh sửa</strong>
-            <button ref={inspectorClose} type="button" aria-label="Đóng Inspector" onClick={closeDrawer}>
+            <button ref={inspectorClose} type="button" aria-label={UI_STRINGS.closeInspector} onClick={closeDrawer}>
               <X size={16} />
             </button>
           </div>
@@ -231,8 +232,8 @@ export function EditorWorkspace({
               type="button"
               aria-controls="studio-inspector-column"
               aria-expanded={inspectorOpen}
-              title="Thu/mở Inspector"
-              aria-label="Thu/mở Inspector"
+              title={UI_STRINGS.toggleInspector}
+              aria-label={UI_STRINGS.toggleInspector}
               onClick={() => toggle("inspector")}
             >
               <PanelRight size={16} />
@@ -255,7 +256,7 @@ export function EditorSourcePanel({ children }: { children: ReactNode }) {
 export function EditorPreviewPanel({ preview, timeline }: { preview: ReactNode; timeline: ReactNode }) {
   return (
     <div className="studio-center-group">
-      <section aria-label="Preview" className="studio-preview-area">
+      <section aria-label={UI_STRINGS.preview} className="studio-preview-area">
         {preview}
       </section>
       <section aria-label="Timeline đang chọn" className="studio-timeline-scroll">
@@ -278,7 +279,7 @@ export function EditorInspector({
   onTab: (value: string) => void;
 }) {
   return (
-    <aside aria-label="Inspector" className="studio-inspector">
+    <aside aria-label={UI_STRINGS.inspector} className="studio-inspector">
       <Tabs value={tab} onValueChange={onTab}>
         <TabsList className="studio-inspector-tabs">
           <TabsTrigger value="appearance">Giao diện</TabsTrigger>

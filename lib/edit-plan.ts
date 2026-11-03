@@ -1,6 +1,6 @@
 import {CONTENT_LANGUAGE_SCHEMA,CONTENT_LANGUAGE_INSTRUCTIONS,assertContentLanguage,normalizeLanguageCode} from './content-language.mjs';
 import {MAIN_EDITING_CRITERIA,MAIN_RANGE_REASON_DESCRIPTION,mainInstruction} from './main-instructions.mjs';
-import { PLAYBACK_RATE, FOREGROUND_SCALE, timelineDuration, isStillSegment } from "./render-config.mjs";
+import { CANVAS_WIDTH, CANVAS_HEIGHT, BACKGROUND_BLUR, BACKGROUND_OPACITY, PLAYBACK_RATE, FOREGROUND_SCALE, timelineDuration, isStillSegment } from "./render-config.mjs";
 import { resolvePlanVisualStyle } from "./visual-style/normalize.mjs";
 import type { VisualStyle } from "./visual-style/types";
 import type { CaptionTrack } from "./subtitles.mjs";
@@ -55,13 +55,13 @@ export type EditPlan = {
   providerUsed: PlanSource;
   parts: EditPart[];
   render: {
-    width: 1080;
-    height: 1920;
-    speed: 1.25;
-    foregroundScale?: 1.25;
+    width: typeof CANVAS_WIDTH;
+    height: typeof CANVAS_HEIGHT;
+    speed: typeof PLAYBACK_RATE;
+    foregroundScale?: typeof FOREGROUND_SCALE;
     preservePitch: true;
-    backgroundBlur: 50;
-    backgroundOpacity: 50;
+    backgroundBlur: typeof BACKGROUND_BLUR;
+    backgroundOpacity: typeof BACKGROUND_OPACITY;
   };
 };
 
@@ -76,13 +76,13 @@ export type AnalyzeRequest = {
 };
 
 export const RENDER_PRESET = {
-  width: 1080,
-  height: 1920,
+  width: CANVAS_WIDTH,
+  height: CANVAS_HEIGHT,
   speed: PLAYBACK_RATE,
   foregroundScale: FOREGROUND_SCALE,
   preservePitch: true,
-  backgroundBlur: 50,
-  backgroundOpacity: 50,
+  backgroundBlur: BACKGROUND_BLUR,
+  backgroundOpacity: BACKGROUND_OPACITY,
 } as const;
 
 export function durationOf(part: EditPart) {

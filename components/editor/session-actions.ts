@@ -1,4 +1,6 @@
 "use client";
+import { UI_STRINGS } from "@/lib/ui-strings";
+import { hasSessionContent } from "@/lib/session-content";
 import { toast, useConfirm } from "@/components/confirmation-provider";
 import { useEditPlan } from "@/components/editor/use-edit-plan";
 import type { SaveState } from "@/components/studio-header";
@@ -267,6 +269,10 @@ export function createSessionActions(read: () => State) {
       setSaveState("error");
       return false;
     }
+    if (!hasSessionContent(latestSession.current)) {
+      setSessionNotice(UI_STRINGS.emptySession);
+      return true;
+    }
     const written = lastWrittenSession.current;
     if (
       onlyIfChanged &&
@@ -316,6 +322,7 @@ export function createSessionActions(read: () => State) {
       setSaveError("Phiên chưa khôi phục xong; chưa thay bản nháp.");
       return false;
     }
+    if (!draftWriteBlocked.current && !hasSessionContent(latestSession.current)) return true;
     const result = preserveEditorSession(latestSession.current, { preserveBlockedRaw: draftWriteBlocked.current });
     if (result.error) {
       setSaveState("error");

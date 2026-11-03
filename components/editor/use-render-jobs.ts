@@ -1,5 +1,6 @@
 "use client";
 import { workerFetch, type RenderJob } from "@/lib/api/worker-client";
+import { retainEqualJobs } from "@/lib/render-job-summary.mjs";
 import { useEffect, useRef, useState } from "react";
 export function useRenderJobs() {
   const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
@@ -19,13 +20,15 @@ export function useRenderJobs() {
   useEffect(() => {
     let active = true;
     let pending = false;
+    let timer: number;
+    let delay = 5_000;
     const controller = new AbortController();
     const poll = async () => {
       if (pending || document.visibilityState === "hidden") return;
       pending = true;
       const epoch = editorMutationEpoch.current;
       try {
-        const response = await workerFetch(`/api/editor-renders`, { cache: "no-store", signal: controller.signal });
+        const response = await workerFetch(`/api/editor-renders?compact=1`, { cache: "no-store", signal: controller.signal });
         const data = (await response.json()) as { jobs?: RenderJob[]; error?: string };
         if (!response.ok || !data.jobs) throw new Error(data.error || "Không đọc được danh sách render.");
         if (active && epoch === editorMutationEpoch.current) {
@@ -35,8 +38,9 @@ export function useRenderJobs() {
               ...job,
               outputs: job.outputs.filter((output) => !removedMediaUrls.current.has(output.url)),
             }));
-          setEditorRenderJobs(jobs);
-          setRenderJob((current) => (current ? jobs.find((job) => job.id === current.id) || current : null));
+          delay = jobs.some((job) => job.state === "queued" || job.state === "rendering") ? 1_200 : 5_000;
+          setEditorRenderJobs((current) => retainEqualJobs(current, jobs));
+          setRenderJob((current) => (current ? (() => { const next = jobs.find((job) => job.id === current.id); return next ? retainEqualJobs(current, next) : current; })() : null));
           setEditorRenderPollError("");
         }
       } catch (caughtError) {
@@ -46,19 +50,20 @@ export function useRenderJobs() {
           );
       } finally {
         pending = false;
+        if (active) timer = window.setTimeout(poll, delay);
       }
     };
     void poll();
-    const timer = window.setInterval(poll, 1_200);
+
     const onVisible = () => {
-      if (document.visibilityState !== "hidden") void poll();
+      if (document.visibilityState !== "hidden") { window.clearTimeout(timer); void poll(); }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
       controller.abort();
       document.removeEventListener("visibilitychange", onVisible);
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
   }, []);
   return {

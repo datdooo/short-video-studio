@@ -13,3 +13,11 @@ test('storage preflight refuses known oversized download and source identity/loc
  await assert.rejects(createSourceReuse({...options,isLocked:()=>true}).get(url),/busy/);
  await assert.rejects(createSourceReuse({...options,load:async()=>({kind:'youtube',sourceUrl:'https://youtu.be/abcdefghijk'})}).get(url),/identity mismatch/);
 });
+test('complete index hit does not parse unrelated broken source records; missing identity falls back',async t=>{
+ const f=await root(t);const source={id,kind:'youtube',sourceUrl:url,createdAt:'2026-11-03'};
+ await writeFile(path.join(f.dir,'youtube-source-index.json'),JSON.stringify({version:2,complete:true,entries:[['BaW_jenozKc',{sourceId:id,at:source.createdAt}]],sources:[id]}));
+ // No sourcesRoot exists during the hit: only the indexed load is necessary.
+ await rm(f.sourcesRoot,{recursive:true});
+ const reuse=createSourceReuse({sourcesRoot:f.sourcesRoot,load:async candidate=>{assert.equal(candidate,id);return source;},download:()=>assert.fail('no download'),metadata:()=>assert.fail('no extraction')});
+ assert.equal((await reuse.get(url)).id,id);
+});

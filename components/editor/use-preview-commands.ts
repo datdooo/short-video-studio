@@ -18,7 +18,7 @@ type State = {
   musicPlaybackControl: RefObject<{ play: () => void; pause: () => void } | null>;
   playbackIntentEpoch: RefObject<number>;
   playbackSegments: Segment[];
-  previewCurrentTime: number;
+  previewCurrentTimeRef: RefObject<number>;
   previewEpoch: RefObject<number>;
   previewPlayingRef: RefObject<boolean>;
   previewSegmentIndex: RefObject<number>;
@@ -45,7 +45,7 @@ export function usePreviewCommands(state: State) {
     musicPlaybackControl,
     playbackIntentEpoch: playbackIntentEpochRef,
     playbackSegments,
-    previewCurrentTime,
+    previewCurrentTimeRef,
     previewEpoch,
     previewPlayingRef,
     previewSegmentIndex: previewSegmentIndexRef,
@@ -230,11 +230,11 @@ export function usePreviewCommands(state: State) {
         return;
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
-      seekPreview(Math.max(0, Math.min(timelineDuration, previewCurrentTime + (event.key === "ArrowRight" ? 5 : -5))));
+      seekPreview(Math.max(0, Math.min(timelineDuration, previewCurrentTimeRef.current + (event.key === "ArrowRight" ? 5 : -5))));
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [workspace, previewVideoUrl, timelineDuration, previewCurrentTime, seekPreview, togglePreview]);
+  }, [workspace, previewVideoUrl, timelineDuration, previewCurrentTimeRef, seekPreview, togglePreview]);
   function updatePreviewClock() {
     const video = previewVideoRef.current;
     if (!video) return;

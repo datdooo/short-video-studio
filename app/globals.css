@@ -51,9 +51,9 @@
     "Studio UI Jakarta", "Studio Inter", "Studio Noto Sans", ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", sans-serif;
   --ui-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --ui-text-body: 13px;
+  --ui-text-body: 14px;
   --ui-text-caption: 12px;
-  --ui-text-meta: 11px;
+  --ui-text-meta: 12px;
   --ui-text-section: 14px;
   --ui-text-heading: 20px;
   --ui-icon-size: 16px;
@@ -275,7 +275,7 @@ textarea {
 }
 .preview-seek {
   width: 100%;
-  height: 18px;
+  height: 24px;
   accent-color: #ff4d2e;
   cursor: pointer;
 }
@@ -1063,6 +1063,7 @@ textarea {
     width: min(300px, calc(100% - 24px));
   }
   .studio-side-panel:not([data-drawer-open="true"]) {
+    display: none;
     visibility: hidden;
     pointer-events: none;
   }
@@ -4044,4 +4045,9 @@ textarea {
 .studio-preserved-drafts button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Keep slider hit areas accessible without changing the preview canvas. */
+.prototype-shell input[type="range"] {
+  min-height: 24px;
 }

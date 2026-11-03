@@ -1,4 +1,5 @@
 "use client";
+import { UI_STRINGS } from "@/lib/ui-strings";
 import { TaskProgress } from "./task-progress";
 import { uploadJson, type UploadMetric } from "@/lib/upload-json";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -37,6 +38,7 @@ type Props = {
   part: EditPart;
   duration: number;
   time: number;
+  timeRef?: RefObject<number>;
   playing: boolean;
   video: RefObject<HTMLVideoElement | null>;
   onChange: (v: MusicSettings) => void;
@@ -114,7 +116,7 @@ export function MusicPanel(props: Props) {
           key: musicSource.current,
           expectedKey: expectedMixKey.current,
           playing: !p.suspended && p.playing,
-          time: p.time,
+          time: p.timeRef?.current ?? p.time,
           duration: p.duration,
         };
       },
@@ -378,7 +380,7 @@ export function MusicPanel(props: Props) {
             music.current = element;
             const p = latest.current;
             musicSource.current = previewKey;
-            element.currentTime = Math.max(0, Math.min(p.time, element.duration));
+            element.currentTime = Math.max(0, Math.min(p.timeRef?.current ?? p.time, element.duration));
             playback.current?.ready();
           };
           element.onerror = () => {
@@ -579,7 +581,7 @@ export function MusicPanel(props: Props) {
                     : !selectedAsset
                       ? "Không tìm thấy file nhạc đã chọn trong thư viện."
                       : props.autoPrepare === false
-                        ? "Bấm Play preview để chuẩn bị nhạc."
+                        ? UI_STRINGS.prepareMusic
                         : previewStatus === "preparing"
                           ? "Đang chuẩn bị audio mix cho part hiện tại…"
                           : previewStatus === "blocked"

@@ -1,3 +1,4 @@
+import { compactRenderSnapshot } from "../../lib/render-job-summary.mjs";
 // Extracted route bodies retain their original order and response contracts.
 export function createSourcesRoutes({
   analyzeSource,
@@ -668,7 +669,11 @@ export function createSourcesRoutes({
             jobs: [...jobs.values()]
               .filter((job) => job.origin === "editor" && !job.deleted)
               .reverse()
-              .map(renderSnapshot),
+              .map((job) => {
+                const snapshot = renderSnapshot(job);
+                if (requestUrl.searchParams.get("compact") !== "1") return snapshot;
+                return compactRenderSnapshot(snapshot);
+              }),
           });
           return;
         }

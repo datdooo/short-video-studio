@@ -1,3 +1,4 @@
+import { CANVAS_WIDTH, CANVAS_HEIGHT, BACKGROUND_BLUR, BACKGROUND_OPACITY, PLAYBACK_RATE } from "./render-config.mjs";
 import type {EditPlan,EditPart,Segment} from './edit-plan';
 import type {CaptionTrack} from './subtitles.mjs';
 import type {Teaser} from './teaser-hooks.mjs';
@@ -19,7 +20,7 @@ export function planResult(value:Record<string,unknown>):{plan?:EditPlan}{
  if(value.plan===undefined)return{};
  const p=value.plan;
  if(!record(p)||typeof p.originalTitle!=='string'||typeof p.language!=='string'||!['mock','chatgpt','chatgpt-web','gemini','muse','openai','qwen','manual','deterministic'].some(v=>v===p.providerUsed)||!Array.isArray(p.parts)||p.parts.length!==2||!p.parts.every(part)||!record(p.render))throw Error('Kết quả phân tích thiếu cấu trúc plan hợp lệ.');
- const r=p.render;if(r.width!==1080||r.height!==1920||r.speed!==1.25||r.preservePitch!==true||r.backgroundBlur!==50||r.backgroundOpacity!==50)throw Error('Kết quả phân tích sai cấu hình render.');
+ const r=p.render;if(r.width!==CANVAS_WIDTH||r.height!==CANVAS_HEIGHT||r.speed!==PLAYBACK_RATE||r.preservePitch!==true||r.backgroundBlur!==BACKGROUND_BLUR||r.backgroundOpacity!==BACKGROUND_OPACITY)throw Error('Kết quả phân tích sai cấu hình render.');
  if(p.captionCues!==undefined&&!captions(p.captionCues))throw Error('Kết quả phân tích sai dữ liệu phụ đề.');
  if(p.analysis!==undefined&&(!record(p.analysis)||typeof p.analysis.method!=='string'||p.analysis.fallbackReason!==undefined&&typeof p.analysis.fallbackReason!=='string'))throw Error('Kết quả phân tích sai metadata.');
  // Decode shape only. A preserved stale teaser must remain editable; semantic,
@@ -29,7 +30,7 @@ export function planResult(value:Record<string,unknown>):{plan?:EditPlan}{
  return {plan:p};
 }
 function isPlan(p:unknown):p is EditPlan{
- return record(p)&&typeof p.originalTitle==='string'&&typeof p.language==='string'&&typeof p.providerUsed==='string'&&Array.isArray(p.parts)&&p.parts.every(part)&&record(p.render)&&p.render.width===1080&&p.render.height===1920&&p.render.speed===1.25&&p.render.preservePitch===true&&p.render.backgroundBlur===50&&p.render.backgroundOpacity===50;
+ return record(p)&&typeof p.originalTitle==='string'&&typeof p.language==='string'&&typeof p.providerUsed==='string'&&Array.isArray(p.parts)&&p.parts.every(part)&&record(p.render)&&p.render.width===CANVAS_WIDTH&&p.render.height===CANVAS_HEIGHT&&p.render.speed===PLAYBACK_RATE&&p.render.preservePitch===true&&p.render.backgroundBlur===BACKGROUND_BLUR&&p.render.backgroundOpacity===BACKGROUND_OPACITY;
 }
 export type WebOperationContext=Record<string,unknown>&{analysisKey:string;captionTrack?:CaptionTrack;attachments?:{sourceVideo:{id:string;filename:string;bytes:number|null;duration:number;sourceKey?:string;variantKey?:string}}};
 export function contextResult(value:Record<string,unknown>):{context?:WebOperationContext}{

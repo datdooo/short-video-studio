@@ -1,4 +1,5 @@
 "use client";
+import { UI_STRINGS } from "@/lib/ui-strings";
 
 import { Check, ChevronDown } from "lucide-react";
 import type { VisualStyle } from "@/lib/visual-style/types";
@@ -32,7 +33,7 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
       >
         <span className="min-w-0 break-words">
           Visual Template ·{" "}
-          <span role="status" aria-label="Visual template status">
+          <span role="status" aria-label={UI_STRINGS.templateStatus}>
             {templates.find((template) => template.id === selected)?.label ?? "Custom"}
           </span>
         </span>

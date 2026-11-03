@@ -1,10 +1,11 @@
+import { encodeHistory, decodeHistory } from "./history-snapshot.mjs";
 import { randomUUID } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { restoreBatchPreparation } from "./batch-queue.mjs";
 import { createHistoryPersistence } from "./history-persistence.mjs";
 /** One worker-owned domain; shared services are read at operation entry. */
-export function createQueueHistory(read) {
+export function createQueueHistory(read, retention = {}) {
   const { dataRoot } = read();
   const batchHistoryPath = path.join(dataRoot, "batch-history.json");
 
@@ -13,16 +14,17 @@ export function createQueueHistory(read) {
   function persistBatchHistory({ strict = false, immediate = false } = {}) {
     const { batches, jobs } = read();
 
-    const snapshot = JSON.stringify({
-      batches: [...batches.values()],
-      jobs: [...jobs.values()].filter(
+    const snapshot = JSON.stringify(encodeHistory(
+      [...batches.values()],
+       [...jobs.values()].filter(
         (job) =>
           job.origin === "editor" ||
           [...batches.values()].some((batch) =>
             batch.items.some((item) => !item.deleted && (item.jobId === job.id || item.submissionId === job.id)),
           ),
       ),
-    });
+      retention,
+    ));
     const write = historyPersistence.save(snapshot, { strict: strict || immediate });
     return strict
       ? write
@@ -33,7 +35,7 @@ export function createQueueHistory(read) {
     const { batches, jobs } = read();
 
     try {
-      const history = JSON.parse(await readFile(batchHistoryPath, "utf8"));
+      const history = decodeHistory(JSON.parse(await readFile(batchHistoryPath, "utf8")));
       let normalized = false;
       for (const job of history.jobs || []) {
         if (!["done", "error", "cancelled"].includes(job.state)) {
@@ -65,7 +67,18 @@ export function createQueueHistory(read) {
     // outputs for download/delete, without touching media or claiming to recover AI plans.
     const recoveredItems = [];
     let directories;
+    const indexedSources = new Map();
     try {
+      try {
+        const saved = JSON.parse(await readFile(path.join(dataRoot, "youtube-source-index.json"), "utf8"));
+        if (saved?.version === 2 && Array.isArray(saved.records)) {
+          for (const source of saved.records) {
+            if (/^[a-f0-9-]{16,64}$/i.test(source?.id) && source.kind === "youtube" && typeof source.title === "string" && typeof source.sourceUrl === "string") indexedSources.set(source.id, source);
+          }
+        }
+      } catch { /* Missing/legacy/corrupt index: read individual source records. */ }
+      // Directory names are cheap to list. Keep discovering unindexed legacy outputs,
+      // including folders whose original media is no longer reusable.
       directories = await readdir(sourcesRoot, { withFileTypes: true });
     } catch {
       return;
@@ -74,7 +87,7 @@ export function createQueueHistory(read) {
       if (!directory.isDirectory() || !/^[a-f0-9-]{16,64}$/i.test(directory.name)) continue;
       const sourceDirectory = path.join(sourcesRoot, directory.name);
       try {
-        const source = JSON.parse(await readFile(path.join(sourceDirectory, "source.json"), "utf8"));
+        const source = indexedSources.get(directory.name) || JSON.parse(await readFile(path.join(sourceDirectory, "source.json"), "utf8"));
         if (source.kind !== "youtube") continue;
         for (const jobId of await readdir(path.join(sourceDirectory, "outputs"))) {
           if (!/^[a-f0-9-]{16,64}$/i.test(jobId)) continue;

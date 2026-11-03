@@ -1,4 +1,5 @@
 "use client";
+import { useSyncExternalStore, type ComponentProps } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { EditorInspector } from "@/components/editor-workspace";
 import { MusicPanel } from "@/components/music-panel";
@@ -35,7 +36,7 @@ type Props = {
   plan: EditPlan;
   preparedSource: WorkerSource | null;
   previewBuffering: boolean;
-  previewCurrentTime: number;
+  previewClock: import("@/lib/preview-clock.mjs").PreviewClock;
   previewPlan: EditPlan;
   previewVideoRef: RefObject<HTMLVideoElement | null>;
   previewVisualStyle: VisualStyle;
@@ -93,7 +94,7 @@ export function InspectorView({ model }: { model: Props }) {
     plan,
     preparedSource,
     previewBuffering,
-    previewCurrentTime,
+    previewClock,
     previewPlan,
     previewVideoRef,
     previewVisualStyle,
@@ -416,7 +417,8 @@ export function InspectorView({ model }: { model: Props }) {
       }
       music={
         <>
-          <MusicPanel
+          <ClockMusicPanel
+            clock={previewClock}
             suspended={workspace !== "editor"}
             autoPrepare={sessionReady && (!restorePassive || musicIntent)}
             previewReady={hasEditPlan}
@@ -428,7 +430,6 @@ export function InspectorView({ model }: { model: Props }) {
             source={preparedSource}
             part={activePart}
             duration={timelineDuration}
-            time={previewCurrentTime}
             playing={workspace === "editor" && isPreviewPlaying && !previewBuffering}
             video={previewVideoRef}
             onChange={(music) => {
@@ -442,4 +443,9 @@ export function InspectorView({ model }: { model: Props }) {
       }
     />
   );
+}
+
+function ClockMusicPanel({ clock, ...props }: Omit<ComponentProps<typeof MusicPanel>, "time"> & { clock: import("@/lib/preview-clock.mjs").PreviewClock }) {
+  const time = useSyncExternalStore(clock.subscribe, clock.getSnapshot, clock.getServerSnapshot);
+  return <MusicPanel {...props} time={time} timeRef={clock.timeRef} />;
 }

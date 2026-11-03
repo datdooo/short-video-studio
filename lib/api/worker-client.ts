@@ -201,6 +201,7 @@ export type RenderJob = {
   outputs: Array<{ part: number; filename: string; size: number; url: string }>;
   error: string | null;
   plan?: EditPlan;
+  planSummary?: Pick<EditPlan, "originalTitle"> & { parts: Pick<EditPlan["parts"][number], "id" | "title" | "hashtags">[] };
   createdAt?: string;
   stopping?: boolean;
   phase?: string | null;
@@ -246,6 +247,7 @@ export type BatchJob = {
     };
     error: string | null;
     plan?: EditPlan;
+  planSummary?: Pick<EditPlan, "originalTitle"> & { parts: Pick<EditPlan["parts"][number], "id" | "title" | "hashtags">[] };
     job?: RenderJob;
   }>;
 };

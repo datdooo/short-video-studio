@@ -140,8 +140,7 @@ type Props = {
   preparedSource: WorkerSource | null;
   preserveCurrentDraft: () => boolean;
   preservedDrafts: { key: string; label: string }[];
-  previewCaption: Caption | undefined;
-  previewEffectTime: number;
+  previewCaptions: Caption[];
   previewPlan: EditPlan;
   previewScale: number;
   previewSourceEpoch: number;
@@ -211,7 +210,6 @@ type Props = {
   timelineDuration: number;
   timelineStatusTarget: HTMLDivElement | null;
   titleFitInput: { original: string; part: string; originalStyle: TextStyle; partStyle: TextStyle; scale: number };
-  titleShineStyle: { maskImage: string; maskRepeat: string; maskSize: string; maskPosition: string };
   togglePreview: () => Promise<void>;
   transitionWindows: CutTransitionWindow[];
   travelCutHistory: (direction: "undo" | "redo") => void;
@@ -312,8 +310,7 @@ export function StudioView({
   preparedSource,
   preserveCurrentDraft,
   preservedDrafts,
-  previewCaption,
-  previewEffectTime,
+  previewCaptions,
   previewPlan,
   previewScale,
   previewSourceEpoch,
@@ -366,7 +363,6 @@ export function StudioView({
   timelineDuration,
   timelineStatusTarget,
   titleFitInput,
-  titleShineStyle,
   togglePreview,
   transitionWindows,
   travelCutHistory,
@@ -557,8 +553,7 @@ export function StudioView({
                   overlayPartTitle,
                   partTitleFit,
                   playbackSegments,
-                  previewCaption,
-                  previewEffectTime,
+                  previewCaptions,
                   previewPlan,
                   previewScale,
                   previewSourceEpoch,
@@ -570,7 +565,6 @@ export function StudioView({
                   teaserIssues,
                   timelineDuration,
                   titleFitInput,
-                  titleShineStyle,
                   togglePreview,
                   transitionWindows,
                   updatePreviewClock,
