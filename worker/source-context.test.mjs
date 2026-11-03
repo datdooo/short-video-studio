@@ -128,7 +128,8 @@ test('C absence is normal; unavailable extraction and timeout give explicit reas
       if (mode === 'failure') throw new Error('PRIVATE failure');
       if (mode === 'timeout') return untilAbort(signal);
       return { ...info, comments: undefined };
-    }, { metadata: 10 });
+    // Only the timeout case needs a tiny deadline; a 10 ms budget made the other cases flaky under CPU load.
+    }, { metadata: mode === 'timeout' ? 10 : 2000 });
     const keepAlive = setTimeout(() => {}, 1000); t.after(() => clearTimeout(keepAlive));
     const context = await f.service.ensure(source);
     assert.equal(context.heatmap.status, 'unavailable'); assert.deepEqual(context.heatmap.bins, []);

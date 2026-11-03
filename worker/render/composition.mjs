@@ -22,10 +22,11 @@ import { styledTextSvg } from "../../lib/visual-style/text-render.mjs";
 import { constrainTitlePair, needsMeasuredTitleFit, partOverlayTitle } from "../../lib/visual-style/title-fit.mjs";
 import { cutTransitionFilters } from "../cut-transition.mjs";
 import { EXPORT_METADATA_ARGS } from "../export-metadata.mjs";
-import { RENDER_FILTER_COMPLEX_THREADS } from "../media-resources.mjs";
+import { RENDER_FILTER_COMPLEX_THREADS, RENDER_INPUT_THREADS } from "../media-resources.mjs";
 import { musicMixFilters } from "../music-audio.mjs";
 import { prepareRangeInput } from "../range-input.mjs";
 import { titleAnimationFilters } from "../title-animation.mjs";
+import { overlaySourceFilter, shineSweepFilters } from "./shine-filter.mjs";
 /** One worker-owned domain; shared services are read at operation entry. */
 export function createRenderComposition(read) {
   const hardwareDecodeCodecs = new Set(["h264", "hevc", "prores"]);
@@ -409,18 +410,18 @@ export function createRenderComposition(read) {
         }) || ["[mainUnlit]null[main]"]),
         `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[layout]`,
         ...(animationFilters || [
-          `[${overlayInput}:v]${staticInputFilter}format=rgba[titlecard]`,
+          overlaySourceFilter({ input: overlayInput, label: "titlecard", rgb: rgbFilter, loop: staticInputFilter }),
           `[layout][titlecard]overlay=0:0:shortest=1${overlayFormat}[baseTitles]`,
           ...(needsShineInput
             ? [
-                `[${shineInput}:v]${staticInputFilter}format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
+                ...shineSweepFilters({ input: shineInput, x: shineX, staticInputFilter }),
                 `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1${overlayFormat}[titled]`,
               ]
             : [`[baseTitles]null[titled]`]),
         ]),
         ...(subtitlesPath
           ? [
-              `[${subtitleInput}:v]fps=30,format=rgba[subcard]`,
+              rgbFilter ? `[${subtitleInput}:v]fps=30,format=rgba[subcard]` : `[${subtitleInput}:v]format=yuva420p,fps=30[subcard]`,
               `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`,
             ]
           : []),
@@ -562,6 +563,7 @@ export function createRenderComposition(read) {
       const renderOptions = {
         signal,
         filterComplexThreads: RENDER_FILTER_COMPLEX_THREADS,
+        inputThreads: RENDER_INPUT_THREADS,
         onStdout(chunk) {
           progressBuffer += chunk;
           const lines = progressBuffer.split(/\r?\n/);

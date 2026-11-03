@@ -1,5 +1,6 @@
 import { normalizeTitleAnimation, TITLE_ANIMATION_SECONDS, TITLE_SLIDE_PIXELS, TITLE_POP_START_SCALE } from "../lib/visual-style/animations.mjs";
 import { PLAYBACK_RATE, TITLE_SHINE_WIDTH, TITLE_SHINE_SECONDS } from "../lib/render-config.mjs";
+import { shineSweepFilters } from "./render/shine-filter.mjs";
 
 // clockRate describes the caller's video clock. All expressions are trusted
 // constants, selected only by the bounded registry ID. Each part has its own graph.
@@ -15,7 +16,7 @@ export function titleAnimationFilters({ id, titleInput, shineInput, sceneInput, 
   return [
     ...(sceneInput !== undefined ? [`[${sceneInput}:v]${staticInputFilter}format=rgba[staticScene]`, `[layout][staticScene]overlay=0:0:shortest=1${overlayFormat}[animationLayout]`] : []),
     `[${titleInput}:v]${staticInputFilter}format=rgba[titlecard]`,
-    `[${shineInput}:v]${staticInputFilter}format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
+    ...shineSweepFilters({ input: shineInput, x: shineX, staticInputFilter }),
     `[titlecard][shine]overlay=x='${shineX}':y=0:shortest=1:format=rgb[titleGroup]`,
     `[titleGroup]format=rgba,${motion}fade=t=in:st=0:d=${duration}:alpha=1[animatedTitles]`,
     `[${sceneInput !== undefined ? "animationLayout" : "layout"}][animatedTitles]overlay=x='(W-w)/2':y='${y}':shortest=1:eval=frame${overlayFormat}[titled]`,

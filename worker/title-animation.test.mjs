@@ -15,7 +15,8 @@ test("entrances use speed-adjusted duration, share shine transform, and keep sce
     assert.match(graph, /\[titlecard\]\[shine\]overlay/);
     assert.match(graph, /\[layout\]\[staticScene\]overlay/);
     assert.match(graph, /\[animationLayout\]\[animatedTitles\]overlay/);
-    assert.doesNotMatch(graph, /subtitle|cuta|setpts/);
+    assert.doesNotMatch(graph.replace("setpts=N/(30*TB)[shineRamp]", ""), /subtitle|cuta|setpts/);
+    assert.doesNotMatch(graph, /geq=r=/, "no per-frame four-plane geq");
     assert.equal(/eval=frame:flags=bilinear/.test(graph), id === "pop-in");
     assert.equal(graph.includes("+20*(1-min(t/0.625,1))"), id === "slide-up");
     assert.deepEqual(titleAnimationFilters({ ...options, id, sceneInput: 5 }), filters, "Each part independently starts at zero");

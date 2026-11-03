@@ -55,7 +55,7 @@ export function createCommandRunner(read) {
           options.onStart?.();
           return runCommand(
             binary,
-            binary === ffmpeg ? balancedFfmpegArgs(args, { filterComplexThreads: options.filterComplexThreads }) : args,
+            binary === ffmpeg ? balancedFfmpegArgs(args, { filterComplexThreads: options.filterComplexThreads, inputThreads: options.inputThreads }) : args,
             { ...options, signal, lowerPriority: true },
           );
         },
