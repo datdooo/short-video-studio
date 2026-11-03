@@ -353,7 +353,7 @@ export function TimelineView({ model }: { model: Props }) {
                     >
                       <SelectTrigger
                         aria-label="Transition Hook → Main"
-                        className="studio-input block w-full min-w-0 max-w-full border px-2 pr-7 text-xs leading-normal"
+                        className="studio-input flex w-full min-w-0 max-w-full border px-2 text-xs leading-normal"
                       >
                         <SelectValue />
                       </SelectTrigger>

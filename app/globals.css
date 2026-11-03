@@ -886,6 +886,13 @@ textarea {
   border: 0;
   background: transparent;
 }
+.studio-other-part-status {
+  margin-inline-start: 8px;
+  font-size: 12px;
+  color: var(--warning);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .studio-timeline-scroll h3 {
   font-size: 12px;
 }
@@ -1268,7 +1275,7 @@ textarea {
 }
 .studio-teaser-time-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(135px, 180px);
+  grid-template-columns: minmax(min-content, 1fr) minmax(135px, 180px);
   gap: 8px;
   align-items: end;
 }
@@ -1873,13 +1880,17 @@ textarea {
   gap: var(--control-gap);
   padding-left: var(--control-padding);
   padding-right: var(--control-padding);
-  white-space: normal;
+  display: flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   text-align: left;
 }
 .prototype-shell [data-slot="select-value"] {
+  display: block;
   -webkit-line-clamp: unset;
-  overflow: visible;
-  text-overflow: clip;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .prototype-shell :is([data-slot="tabs-trigger"], .studio-workspaces button) {
   height: var(--control-height);
@@ -1905,7 +1916,7 @@ textarea {
 }
 .studio-main-range-row {
   grid-template-columns:
-    var(--timeline-index-size) minmax(0, var(--timeline-timecode-width)) minmax(0, var(--timeline-timecode-width))
+    var(--timeline-index-size) minmax(min-content, var(--timeline-timecode-width)) minmax(min-content, var(--timeline-timecode-width))
     minmax(6rem, max-content);
   column-gap: var(--timeline-column-gap);
 }
@@ -1913,7 +1924,7 @@ textarea {
   width: 100%;
 }
 .studio-teaser-time-row > div:first-child {
-  grid-template-columns: repeat(2, minmax(0, var(--timeline-timecode-width)));
+  grid-template-columns: repeat(2, minmax(min-content, var(--timeline-timecode-width)));
   column-gap: var(--timeline-column-gap);
 }
 .prototype-shell .preview-controls {
@@ -1921,7 +1932,7 @@ textarea {
 }
 @container (max-width:380px) {
   .studio-main-range-row {
-    grid-template-columns: var(--timeline-index-size) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: var(--timeline-index-size) minmax(min-content, 1fr) minmax(min-content, 1fr);
   }
   .studio-main-range-row > div:last-of-type {
     grid-column: 2 / 4;
@@ -2053,7 +2064,7 @@ textarea {
     .studio-batch-workspace,
     .studio-library-workspace
   )
-  :is(.text-xs, .text-sm, [class~="text-[12px]"], [class~="text-[13px]"]):not(summary):not([data-slot="select-trigger"]):not([data-slot="select-item"]) {
+  :is(.text-xs, .text-sm, [class~="text-[12px]"], [class~="text-[13px]"]):not(summary):not(input):not(textarea):not(.studio-button):not([data-slot="select-trigger"]):not([data-slot="select-item"]) {
   font-size: var(--ui-text-body);
 }
 .prototype-shell
@@ -2064,7 +2075,7 @@ textarea {
     .studio-batch-workspace,
     .studio-library-workspace
   )
-  :is([class~="text-[9px]"], [class~="text-[10px]"], [class~="text-[11px]"]):not(summary) {
+  :is([class~="text-[9px]"], [class~="text-[10px]"], [class~="text-[11px]"]):not(summary):not(input):not(textarea):not(.studio-button) {
   font-size: var(--ui-text-caption);
 }
 .prototype-shell
@@ -2155,7 +2166,7 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 .prototype-shell .studio-timeline-scroll input.studio-input {
-  font-size: var(--ui-text-caption);
+  font-size: var(--control-font-size);
 }
 .prototype-shell .studio-transcript {
   line-height: 1.6;
@@ -2329,7 +2340,7 @@ textarea {
   resize: vertical;
   overscroll-behavior: contain;
   font-family: var(--ui-font-mono);
-  font-size: 12px;
+  font-size: var(--control-font-size);
   line-height: 1.5;
 }
 .prototype-shell .studio-source-provider [data-slot="select-trigger"] {
@@ -2494,13 +2505,11 @@ textarea {
   font-weight: 600;
 }
 .prototype-shell
-  :is(.studio-input, [data-slot="input"], [data-slot="select-trigger"], select):not([type="checkbox"]):not(
-    [type="range"]
-  ):not([type="file"]) {
-  font-size: var(--ui-text-body);
+  :is(input, textarea, .studio-input, .studio-textarea, [data-slot="input"], [data-slot="textarea"], [data-slot="select-trigger"], select) {
+  font-size: var(--control-font-size);
 }
 .prototype-shell .studio-timeline-scroll input.studio-input {
-  font-size: var(--ui-text-caption);
+  font-size: var(--control-font-size);
 }
 
 /* Small alignment fixes across the existing workspaces. These classes group
@@ -2662,9 +2671,13 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 .prototype-shell [data-slot="select-trigger"] {
-  height: auto;
+  height: var(--control-height);
   min-height: var(--control-height);
-  padding-block: 7px;
+  padding-block: 0;
+}
+.prototype-shell [data-slot="select-trigger"][data-size="sm"] {
+  height: var(--control-compact-height);
+  min-height: var(--control-compact-height);
 }
 .prototype-shell [data-slot="select-trigger"] > [data-slot="select-value"] {
   min-width: 0;
@@ -4294,4 +4307,12 @@ textarea {
 [data-slot="select-content"] [data-slot="select-item"],
 .prototype-shell .studio-inspector-body [data-ui-exception="sample-card"] > span:last-child {
   font-size: var(--control-font-size);
+}
+
+/* Timecodes reserve eleven monospace characters plus padding and borders. */
+.prototype-shell :is(.studio-main-range-row, .studio-teaser-time-row) input.studio-input {
+  min-width: calc(11ch + 14px);
+}
+.prototype-shell .studio-teaser-time-row > div:first-child > label {
+  min-width: min-content;
 }
