@@ -190,7 +190,7 @@ export function createAnalysisService(read) {
       version: local.version,
       timeUnit: local.timeUnit,
       sourceKey: local.sourceKey,
-      sampledRanges: local.sampledRanges,
+      sampledRanges: local.visual.sampledRanges,
       cacheKey: local.cacheKey,
     };
     context.audioSignals = {
@@ -198,7 +198,7 @@ export function createAnalysisService(read) {
       version: local.version,
       timeUnit: local.timeUnit,
       sourceKey: local.sourceKey,
-      sampledRanges: local.sampledRanges,
+      sampledRanges: local.audio.sampledRanges,
       cacheKey: local.cacheKey,
     };
     try {

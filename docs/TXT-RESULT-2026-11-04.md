@@ -38,6 +38,13 @@ TXT trung vị giảm ~17% dù đã thêm cutPoints, timeMap, hướng dẫn và
 
 ## 5. Giới hạn và việc nên làm tiếp
 - Các số đo là **kích thước và cấu trúc**; chưa chứng minh AI chọn tốt hơn. Cần so sánh thủ công: `scripts/make-paired-txt.mjs` sinh cặp TXT cho cùng một nguồn.
-- Khoảng trống chất lượng lớn nhất: tín hiệu âm thanh/hình chỉ phủ ~25% nguồn. Phủ toàn bộ âm thanh (loudness/im lặng) rất rẻ với ffmpeg và sẽ làm `timeMap` và `cutPoints` (cờ Q) có giá trị thật; đây là việc riêng vì chạm lớp local-signals dùng chung với Auto.
+- Khoảng trống chất lượng lớn nhất lúc đo: tín hiệu âm thanh/hình chỉ phủ ~25% nguồn. **Đã xử lý phần âm thanh** (xem mục dưới); tín hiệu hình vẫn lấy mẫu theo cửa sổ 60 giây.
+
+## 6. Cập nhật: âm thanh phủ toàn bộ nguồn (local signals v2)
+- Một lượt ffmpeg trên toàn bộ âm thanh (đo ~95–120 lần thời gian thực: video 902 giây mất 9,5 giây) thay cho 3 cửa sổ 60 giây; một giá trị mỗi 1 giây (tới 30 phút), thưa dần để không quá 1.800 giá trị.
+- Schema `ffmpeg-local-v2`: mỗi kênh có `sampledRanges` riêng; kết quả v1 trong cache bị loại và tính lại khi cần.
+- Kiểm chứng trên nguồn thật bằng ffmpeg thật: nguồn 665 giây phủ 100% âm thanh (666 giá trị), nguồn 902 giây phủ 100% (903 giá trị, 573 đoạn im lặng); kênh hình vẫn 9–13% do cửa sổ 60 giây và ngân sách 60 giây.
+- Ảnh hưởng tới Auto: điểm âm thanh của ứng viên (trọng số 0,05) giờ có dữ liệu ở mọi đoạn, không chỉ 25%.
+- Việc còn lại: phủ toàn bộ kênh hình (ví dụ chỉ dùng khung chính) vì giải mã hình là phần tốn kém.
 - Mọi nguồn trong mẫu là YouTube; chưa kiểm nguồn từ máy.
 - `currentParts` chưa có trong số đo vì snapshot không lưu plan hiện tại.
