@@ -4,7 +4,7 @@ import { Download, Loader2, Square, Trash2 } from "lucide-react";
 import type { EditPlan } from "@/lib/edit-plan";
 import { RenderProgress } from "./render-progress";
 import { CopyButton } from "@/components/copy-button";
-import { completedRenderJobs } from '@/lib/render-delete.mjs';
+import { completedRenderJobs } from "@/lib/render-delete.mjs";
 
 export type EditorRenderJob = {
   id: string;
@@ -16,10 +16,25 @@ export type EditorRenderJob = {
   error: string | null;
   plan?: EditPlan;
   createdAt?: string;
-  stopping?: boolean;phase?:string|null;startedAt?:string;attempt?:number;
+  stopping?: boolean;
+  phase?: string | null;
+  startedAt?: string;
+  attempt?: number;
 };
 
-export function EditorRenderList({ query = "", jobs, stopping, deleting, deletingAll, error, notice, origin, onStop, onDelete, onDeleteAll }: {
+export function EditorRenderList({
+  query = "",
+  jobs,
+  stopping,
+  deleting,
+  deletingAll,
+  error,
+  notice,
+  origin,
+  onStop,
+  onDelete,
+  onDeleteAll,
+}: {
   query?: string;
   jobs: EditorRenderJob[];
   stopping: string[];
@@ -33,55 +48,140 @@ export function EditorRenderList({ query = "", jobs, stopping, deleting, deletin
   onDeleteAll: () => void;
 }) {
   const filter = query.trim().toLocaleLowerCase();
-  const visibleJobs = jobs.filter((job) => [job.id, job.plan?.originalTitle, ...job.outputs.map((output) => output.filename), ...(job.plan?.parts.map((part) => part.title) || [])].join(" ").toLocaleLowerCase().includes(filter));
-  return <section className="studio-render-list border border-border bg-card rounded-xl p-5 lg:p-6" aria-label="Danh sách render từng video">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-base font-semibold">Danh sách render <span className="text-zinc-500">· {jobs.length}</span></h2>
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-zinc-400">{jobs.filter((job) => ["queued", "rendering"].includes(job.state)).length} tác vụ đang chạy / chờ</span>
-        <button type="button" onClick={onDeleteAll} disabled={deletingAll || deleting.length > 0 || stopping.length > 0 || !completedRenderJobs(jobs).length} title="Chuyển tất cả render đã kết thúc vào Thùng rác; giữ video gốc và tác vụ đang chạy" className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 hover:bg-red-400/10 disabled:opacity-40">{deletingAll ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}{deletingAll ? 'Đang xoá…' : 'Xoá tất cả'}</button>
+  const visibleJobs = jobs.filter((job) =>
+    [
+      job.id,
+      job.plan?.originalTitle,
+      ...job.outputs.map((output) => output.filename),
+      ...(job.plan?.parts.map((part) => part.title) || []),
+    ]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(filter),
+  );
+  return (
+    <section
+      className="studio-render-list border border-border bg-card rounded-xl p-5 lg:p-6"
+      aria-label="Danh sách render từng video"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">
+          Danh sách render <span className="text-zinc-500">· {jobs.length}</span>
+        </h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs text-zinc-400">
+            {jobs.filter((job) => ["queued", "rendering"].includes(job.state)).length} tác vụ đang chạy / chờ
+          </span>
+          <button
+            type="button"
+            onClick={onDeleteAll}
+            disabled={deletingAll || deleting.length > 0 || stopping.length > 0 || !completedRenderJobs(jobs).length}
+            title="Chuyển tất cả render đã kết thúc vào Thùng rác; giữ video gốc và tác vụ đang chạy"
+            className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 hover:bg-red-400/10 disabled:opacity-40"
+          >
+            {deletingAll ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+            {deletingAll ? "Đang xoá…" : "Xoá tất cả"}
+          </button>
+        </div>
       </div>
-    </div>
-    {error && <p role="alert" className="mt-3 text-xs text-red-300">{error}</p>}
-    {notice && <p role="status" className="mt-3 text-xs text-emerald-300">{notice}</p>}
-    {!jobs.length && <p className="mt-4 text-sm text-zinc-500">Chưa có tác vụ render.</p>}
-    {!!jobs.length && !visibleJobs.length && <p className="studio-empty-state mt-4 text-sm text-muted-foreground">Không có tác vụ khớp tìm kiếm.</p>}
-    <div className="studio-render-job-list mt-4 max-h-[640px] space-y-4 overflow-y-auto overscroll-contain pr-1">
-      {visibleJobs.map((job) => {
-        const active = ["queued", "rendering"].includes(job.state);
-        const cancelling = stopping.includes(job.id) || Boolean(job.stopping);
-        const removing = deleting.includes(job.id) || deletingAll;
-        return <article data-render-state={job.state} key={job.id} className="rounded-xl border border-white/10 bg-white/[.025] p-4">
-          <div className="studio-render-job-heading flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="break-words text-sm font-semibold">{job.plan?.originalTitle || "Video đã render"}</h3>
-
-            </div>
-            <div className="studio-action-row flex shrink-0 flex-wrap justify-end gap-2">
-              {(active || cancelling) && <button type="button" aria-label={`Huỷ render ${job.plan?.originalTitle || job.id}`} onClick={() => onStop(job)} disabled={cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 active:scale-95 disabled:opacity-50">{cancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />} {cancelling ? "Đang huỷ…" : "Huỷ render"}</button>}
-              <button type="button" aria-label={`Xoá render ${job.plan?.originalTitle || job.id}`} title={active || cancelling ? "Huỷ render và chờ dừng hẳn trước khi xoá" : "Chuyển các part vào Thùng rác; giữ video gốc"} onClick={() => onDelete(job)} disabled={active || cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-300 active:scale-95 disabled:opacity-40">{removing ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />} {removing ? "Đang xoá…" : "Xoá"}</button>
-            </div>
-          </div>
-          <RenderProgress job={{...job,stopping:cancelling}}/>
-          {job.error && <p className="mt-3 break-words text-xs text-red-300">{job.error}</p>}
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {job.plan?.parts.map((part) => {
-              const title = `${job.plan!.originalTitle} | ${part.title} (${part.id}/${job.plan!.parts.length})`;
-              const hashtags = part.hashtags?.join(" ") || "";
-              const output = job.outputs.find((output) => output.part === part.id);
-              return <div key={part.id} className="min-w-0 rounded-lg bg-black/20 p-3">
-                <p className="text-xs font-semibold tracking-wider text-zinc-500">TITLE SAU CÙNG · PART {part.id}</p>
-                <p className="mt-2 select-text break-words text-sm leading-6 text-zinc-200">{title}</p>
-                <p className="mt-2 select-text text-xs leading-6 text-zinc-400 [overflow-wrap:anywhere]">{hashtags || "Chưa có hashtag (chỉnh tay)."}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <CopyButton text={`${title}\n\n${hashtags}`} ariaLabel={`Copy title và hashtag Part ${part.id} của ${job.plan!.originalTitle}`} />
-                  {output && <a href={`${origin}${output.url}`} className="studio-control studio-download flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"><Download className="size-3" /> Tải Part {part.id} · {(output.size / 1024 / 1024).toFixed(1)} MB</a>}
+      {error && (
+        <p role="alert" className="mt-3 text-xs text-red-300">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="mt-3 text-xs text-emerald-300">
+          {notice}
+        </p>
+      )}
+      {!jobs.length && <p className="mt-4 text-sm text-zinc-500">Chưa có tác vụ render.</p>}
+      {!!jobs.length && !visibleJobs.length && (
+        <p className="studio-empty-state mt-4 text-sm text-muted-foreground">Không có tác vụ khớp tìm kiếm.</p>
+      )}
+      <div className="studio-render-job-list mt-4 max-h-[640px] space-y-4 overflow-y-auto overscroll-contain pr-1">
+        {visibleJobs.map((job) => {
+          const active = ["queued", "rendering"].includes(job.state);
+          const cancelling = stopping.includes(job.id) || Boolean(job.stopping);
+          const removing = deleting.includes(job.id) || deletingAll;
+          return (
+            <article
+              data-render-state={job.state}
+              key={job.id}
+              className="rounded-xl border border-white/10 bg-white/[.025] p-4"
+            >
+              <div className="studio-render-job-heading flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="break-words text-sm font-semibold">{job.plan?.originalTitle || "Video đã render"}</h3>
                 </div>
-              </div>;
-            })}
-          </div>
-        </article>;
-      })}
-    </div>
-  </section>;
+                <div className="studio-action-row flex shrink-0 flex-wrap justify-end gap-2">
+                  {(active || cancelling) && (
+                    <button
+                      type="button"
+                      aria-label={`Huỷ render ${job.plan?.originalTitle || job.id}`}
+                      onClick={() => onStop(job)}
+                      disabled={cancelling || removing}
+                      className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 active:scale-95 disabled:opacity-50"
+                    >
+                      {cancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />}{" "}
+                      {cancelling ? "Đang huỷ…" : "Huỷ render"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Xoá render ${job.plan?.originalTitle || job.id}`}
+                    title={
+                      active || cancelling
+                        ? "Huỷ render và chờ dừng hẳn trước khi xoá"
+                        : "Chuyển các part vào Thùng rác; giữ video gốc"
+                    }
+                    onClick={() => onDelete(job)}
+                    disabled={active || cancelling || removing}
+                    className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-300 active:scale-95 disabled:opacity-40"
+                  >
+                    {removing ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />}{" "}
+                    {removing ? "Đang xoá…" : "Xoá"}
+                  </button>
+                </div>
+              </div>
+              <RenderProgress job={{ ...job, stopping: cancelling }} />
+              {job.error && <p className="mt-3 break-words text-xs text-red-300">{job.error}</p>}
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {job.plan?.parts.map((part) => {
+                  const title = `${job.plan!.originalTitle} | ${part.title} (${part.id}/${job.plan!.parts.length})`;
+                  const hashtags = part.hashtags?.join(" ") || "";
+                  const output = job.outputs.find((output) => output.part === part.id);
+                  return (
+                    <div key={part.id} className="min-w-0 rounded-lg bg-black/20 p-3">
+                      <p className="text-xs font-semibold tracking-wider text-zinc-500">
+                        TITLE SAU CÙNG · PART {part.id}
+                      </p>
+                      <p className="mt-2 select-text break-words text-sm leading-6 text-zinc-200">{title}</p>
+                      <p className="mt-2 select-text text-xs leading-6 text-zinc-400 [overflow-wrap:anywhere]">
+                        {hashtags || "Chưa có hashtag (chỉnh tay)."}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <CopyButton
+                          text={`${title}\n\n${hashtags}`}
+                          ariaLabel={`Copy title và hashtag Part ${part.id} của ${job.plan!.originalTitle}`}
+                        />
+                        {output && (
+                          <a
+                            href={`${origin}${output.url}`}
+                            className="studio-control studio-download flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-black"
+                          >
+                            <Download className="size-3" /> Tải Part {part.id} ·{" "}
+                            {(output.size / 1024 / 1024).toFixed(1)} MB
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
 }

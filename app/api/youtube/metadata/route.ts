@@ -45,7 +45,10 @@ export async function GET(request: Request) {
       cf: { cacheTtl: 3600, cacheEverything: true },
     } as RequestInit);
     if (!response.ok) {
-      return NextResponse.json({ error: "Không lấy được metadata của video này." }, { status: response.status === 404 ? 404 : 502 });
+      return NextResponse.json(
+        { error: "Không lấy được metadata của video này." },
+        { status: response.status === 404 ? 404 : 502 },
+      );
     }
 
     const data = (await response.json()) as {
