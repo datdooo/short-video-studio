@@ -1,5 +1,7 @@
 # Editor autosave / restore — 2026-10-20
 
+Historical implementation notes. The current Beta saving policy is [manual Save plus hide/exit checkpoints](./BETA-SESSION-SAVING-2026-11-03.md); editing/playback save timers and click/input auto-enablement have been removed. The current blocked-raw protection requires verified preservation or explicit discard, not merely a deliberate edit.
+
 Source implementation; manual acceptance pending. No test, runtime QA, render,
 browser automation or provider/YouTube verification was performed for this change.
 

@@ -464,9 +464,11 @@ export default function Home() {
   const exportActivity=isStartingRender||renderJob?.state==='queued'||renderJob?.state==='rendering'||Boolean(workerHealth?.render?.resources?.renderBusy)||editorRenderJobs.some(job=>job.state==='queued'||job.state==='rendering');
 
 
-  const [previewSaveVersion,setPreviewSaveVersion]=useState(0);
-  const [sessionReady,setSessionReady]=useState(false),[saveEnabled,setSaveEnabled]=useState(false);
+  const [sessionReady,setSessionReady]=useState(false);
   const draftWriteBlocked=useRef(false);
+  const unsavedSession=useRef(false),manualSavePending=useRef(false);
+  const savedSessionNeedsArchive=useRef(false);
+  const pendingSaveBaseline=useRef<'saved'|'dirty'|'idle'|null>('idle');
   const [restoreBlocked,setRestoreBlocked]=useState(false);
   const [preservedDrafts,setPreservedDrafts]=useState<{key:string;label:string}[]>([]);
   const [sessionNotice,setSessionNotice]=useState(''),[saveError,setSaveError]=useState('');
@@ -488,11 +490,13 @@ export default function Home() {
   const {manualPart1Title,manualPart2Title,manualPart1Ranges,manualPart2Ranges,setManualPart1Title,setManualPart2Title,setManualPart1Ranges,setManualPart2Ranges}=useManualCutDraft({controls,setControls,scope:manualCutScope(sourceMode,sourceUrl,localFileName,batchDraftItem||batchEditing,localDraftId)});
   const reportDraftActivity=useCallback((key:string,busy:boolean)=>setDraftActivities(current=>current[key]===busy?current:{...current,[key]:busy}),[]);
   const pendingPreviewRestore=useRef<number|null>(null),restoringSource=useRef(false);
-  const saveGeneration=useRef(0),hydrated=useRef(false),sessionEpoch=useRef(0);
+  const hydrated=useRef(false),sessionEpoch=useRef(0);
   const sessionScope=manualCutScope(sourceMode,sourceUrl,localFileName,batchDraftItem||batchEditing,localDraftId);
   const draftContext=useMemo(()=>({controls,setControls,scope:sessionScope,activity:reportDraftActivity}),[controls,sessionScope,reportDraftActivity]);
   // Shared by startup and explicit draft restore. No task or playback resumes.
-  function restoreEditorDraft(d:Partial<EditorSession>,nextWorkspace=d.workspace||'editor'){
+  function restoreEditorDraft(d:Partial<EditorSession>,nextWorkspace=d.workspace||'editor',savedBaseline=false){
+    pendingSaveBaseline.current=savedBaseline?'saved':'dirty';unsavedSession.current=!savedBaseline;
+    savedSessionNeedsArchive.current=savedBaseline;
     cutHistory.clear();
     stopWorkspacePlayback();setPreparedSource(null);setLocalFile(null);setLocalVideoUrl('');
     setRestorePassive(true);setMusicIntent(false);
@@ -521,7 +525,6 @@ export default function Home() {
     if(d.sourceMode==='local'&&!d.sourceId)setSourceRestoreNotice('File local chưa import: chọn lại file để nối vào bản nháp; plan và các ô nhập vẫn được giữ.');
     if(d.sourceMode==='youtube')setYoutubeState(d.sourceId?'ready':'idle');
   }
-  function enableSessionSaving(){if(sessionReady&&!draftWriteBlocked.current)setSaveEnabled(true);}
   useEffect(()=>{
     if(hydrated.current)return;hydrated.current=true;
     const result=readEditorSession(),d=result.draft;
@@ -529,7 +532,7 @@ export default function Home() {
     setPreservedDrafts(listPreservedEditorSessions());
     if(result.notice)setSessionNotice(result.notice);
     if(d){
-      restoreEditorDraft(d);setSaveEnabled(!result.blocked);
+      restoreEditorDraft(d,d.workspace||'editor',true);
     }else if(!result.blocked){try{setBatchId(managedId(localStorage.getItem('shortcut-beta-batch-id')));setRestorePassive(true);}catch{/* Storage is optional. */}}
     setSaveState(result.blocked?'error':d?'saved':'idle');setSessionReady(true);
   },[]);
@@ -564,36 +567,94 @@ export default function Home() {
     batchId,renderJobId:renderJob?.id||restoredJobId,batchEditing,batchDraftItem,selectedBatchPreviewKey,batchUrls,manualPart1Title,manualPart2Title,manualPart1Ranges,manualPart2Ranges,webAiPrompt,webAiResult,webAiContext,controls,
     interrupted:[...interruptedTasks,...(isAnalyzing?['phân tích AI']:[]),...(isPreparingSource?['chuẩn bị nguồn']:[]),...(subtitleBusy?['tạo phụ đề']:[]),...(youtubeState==='loading'?['metadata nguồn']:[]),...(transcriptStatus.startsWith('Đang tự')?['lấy transcript']:[]),...(isStartingRender?['gửi render (kiểm tra danh sách worker trước khi thử lại)']:[]),...(isStartingBatch?['gửi batch (kiểm tra lịch sử trước khi thử lại)']:[]),...Object.entries(draftActivities).filter(([,busy])=>busy).map(([key])=>key)]
   }),[sourceAdvancedOpen,inspectorTab,sourceMode,sourceUrl,preparedSource?.id,retainedSourceId,localFileName,localDraftId,sourceTitle,transcript,editMode,provider,instruction,supplementalPrompt,plan,hasEditPlan,sourceCaptions,activePartIndex,workspace,batchId,renderJob?.id,restoredJobId,batchEditing,batchDraftItem,selectedBatchPreviewKey,batchUrls,manualPart1Title,manualPart2Title,manualPart1Ranges,manualPart2Ranges,webAiPrompt,webAiResult,webAiContext,controls,isAnalyzing,isPreparingSource,subtitleBusy,youtubeState,transcriptStatus,isStartingRender,isStartingBatch,draftActivities,interruptedTasks]);
-  const latestSession=useRef<EditorSession|null>(null),maySave=useRef(false);
-  useLayoutEffect(()=>{latestSession.current={...sessionSnapshot,previewTime:previewCurrentTime};maySave.current=sessionReady&&saveEnabled&&!draftWriteBlocked.current;},[sessionSnapshot,previewCurrentTime,sessionReady,saveEnabled]);
-  const saveSession=useCallback(()=>{if(draftWriteBlocked.current||!maySave.current||!latestSession.current)return;const error=writeEditorSession(latestSession.current);setSaveError(error);setSaveState(error?'error':'saved');},[]);
-  useEffect(()=>{if(!sessionReady||!saveEnabled)return;setSaveState('saving');const generation=saveGeneration.current;const timer=setTimeout(()=>{if(saveGeneration.current===generation)saveSession();},1000);return()=>clearTimeout(timer);},[sessionReady,saveEnabled,sessionSnapshot,saveSession,previewSaveVersion,isPreviewPlaying]);
+  const latestSession=useRef<EditorSession|null>(null);
+  const observedSession=useRef<typeof sessionSnapshot|null>(null);
+  const lastWrittenSession=useRef<{snapshot:typeof sessionSnapshot;previewTime:number}|null>(null);
+  useLayoutEffect(()=>{
+    latestSession.current={...sessionSnapshot,previewTime:previewCurrentTime};
+    if(!sessionReady)return;
+    const baseline=pendingSaveBaseline.current;
+    if(baseline){
+      pendingSaveBaseline.current=null;unsavedSession.current=baseline==='dirty';
+      lastWrittenSession.current=baseline==='saved'&&!draftWriteBlocked.current?{snapshot:sessionSnapshot,previewTime:previewCurrentTime}:null;
+      setSaveState(draftWriteBlocked.current?'error':baseline);
+    }else if(observedSession.current!==sessionSnapshot){
+      // Shallow memo identity only: no stringify/storage write per keystroke,
+      // polling event or preview frame. Playback time alone is not a dirty edit.
+      const previous=observedSession.current;
+      const viewOnly=['workspace','activePartIndex','sourceAdvancedOpen','inspectorTab','selectedBatchPreviewKey','interrupted'];
+      if(!previous||(Object.keys(sessionSnapshot) as (keyof typeof sessionSnapshot)[]).some(key=>!viewOnly.includes(key)&&previous[key]!==sessionSnapshot[key])){
+        unsavedSession.current=true;setSaveState(draftWriteBlocked.current?'error':'dirty');
+      }
+    }
+    observedSession.current=sessionSnapshot;
+  },[sessionSnapshot,previewCurrentTime,sessionReady]);
+  const markPreviewPositionDirty=useCallback(()=>{
+    if(!latestSession.current)return;
+    unsavedSession.current=true;
+    if(!draftWriteBlocked.current)setSaveState('dirty');
+  },[]);
+  function saveSession(onlyIfChanged=false):boolean{
+    if(!sessionReady||!latestSession.current||manualSavePending.current)return false;
+    if(draftWriteBlocked.current){setSaveError('Giữ bản gốc chưa đọc được trước khi lưu thay thế.');setSaveState('error');return false;}
+    const written=lastWrittenSession.current;
+    if(onlyIfChanged&&!unsavedSession.current&&(!written||written.snapshot===observedSession.current&&written.previewTime===latestSession.current.previewTime))return true;
+    manualSavePending.current=true;setSaveState('saving');
+    try{
+      // Explicit Save or the user's hide/exit exception keeps the item draft
+      // and current checkpoint. No periodic/content-change writer remains.
+      // Incomplete timecode/IME drafts stay in controls; no export validation.
+      if(!preserveCurrentDraft())return false;
+      const error=writeEditorSession(latestSession.current);
+      setSaveError(error);setSaveState(error?'error':'saved');
+      if(!error){unsavedSession.current=false;lastWrittenSession.current={snapshot:observedSession.current||sessionSnapshot,previewTime:latestSession.current.previewTime};setSessionNotice('');}
+      return !error;
+    }finally{manualSavePending.current=false;}
+  }
+  const manualSaveAction=useRef(saveSession);manualSaveAction.current=saveSession;
   useEffect(()=>{
-    const hide=()=>{if(document.visibilityState==='hidden')saveSession();};
-    window.addEventListener('beforeunload',saveSession);window.addEventListener('pagehide',saveSession);document.addEventListener('visibilitychange',hide);
-    return()=>{window.removeEventListener('beforeunload',saveSession);window.removeEventListener('pagehide',saveSession);document.removeEventListener('visibilitychange',hide);};
-  },[saveSession]);
-  useEffect(()=>{if(!isPreviewPlaying)return;const timer=setInterval(saveSession,5000);return()=>clearInterval(timer);},[isPreviewPlaying,saveSession]);
+    const keydown=(event:KeyboardEvent)=>{
+      if(event.defaultPrevented||event.altKey||event.shiftKey||(!event.metaKey&&!event.ctrlKey)||event.key.toLowerCase()!=='s')return;
+      event.preventDefault();
+      if(event.isComposing||event.keyCode===229||event.repeat)return;
+      manualSaveAction.current();
+    };
+    // A close can dispatch all three events. A successful write coalesces
+    // identical snapshots/playheads; playing frames never start a save timer.
+    const hide=()=>{if(document.visibilityState==='hidden')manualSaveAction.current(true);};
+    const pageHide=()=>{manualSaveAction.current(true);};
+    const beforeUnload=(event:BeforeUnloadEvent)=>{manualSaveAction.current(true);if(unsavedSession.current){event.preventDefault();event.returnValue='';}};
+    window.addEventListener('keydown',keydown);window.addEventListener('beforeunload',beforeUnload);
+    document.addEventListener('visibilitychange',hide);window.addEventListener('pagehide',pageHide);
+    return()=>{window.removeEventListener('keydown',keydown);window.removeEventListener('beforeunload',beforeUnload);document.removeEventListener('visibilitychange',hide);window.removeEventListener('pagehide',pageHide);};
+  },[]);
   function preserveCurrentDraft(){
     if(!sessionReady||!latestSession.current){setSaveError('Phiên chưa khôi phục xong; chưa thay bản nháp.');return false;}
     const result=preserveEditorSession(latestSession.current,{preserveBlockedRaw:draftWriteBlocked.current});
     if(result.error){setSaveState('error');setSaveError(result.error);return false;}
     // A blocked raw value may be replaced only after exact preservation succeeds.
-    saveGeneration.current++;maySave.current=false;draftWriteBlocked.current=false;setRestoreBlocked(false);setSaveEnabled(true);setSaveError('');
+    draftWriteBlocked.current=false;setRestoreBlocked(false);setSaveError('');
+    savedSessionNeedsArchive.current=false;
+    unsavedSession.current=true;setSaveState('dirty');
     setPreservedDrafts(listPreservedEditorSessions());return true;
+  }
+  function confirmReplaceEditorDraft(){
+    if(!sessionReady)return false;
+    if(draftWriteBlocked.current){setSaveError('Giữ bản gốc chưa đọc được hoặc chọn Phiên mới trước khi thay phiên.');return false;}
+    return (!unsavedSession.current&&!savedSessionNeedsArchive.current)||window.confirm('Phiên hiện tại chưa được lưu đầy đủ thành bản riêng. Mở phiên khác và bỏ phần chưa lưu? Bấm Hủy để Lưu trước.');
   }
   function restorePreservedDraft(key:string){
     if(!key)return;
     if(latestSession.current&&editorSessionIdentity(latestSession.current)===key){changeWorkspace('editor');return;}
     const saved=readPreservedEditorSession(key);
     if(saved.blocked||!saved.draft){setSaveError(saved.notice||'Không đọc được bản nháp đã giữ; phiên hiện tại chưa thay đổi.');return;}
-    if(!preserveCurrentDraft())return;
-    resetSourceSelection();restoreEditorDraft(saved.draft,'editor');setSessionNotice('Đã mở bản nháp đã giữ; phiên trước vẫn có trong danh sách.');
+    if(!confirmReplaceEditorDraft())return;
+    resetSourceSelection();restoreEditorDraft(saved.draft,'editor');setSessionNotice('Đã mở bản nháp đã lưu.');
   }
   function newSession(){
     // Remove the single draft only. Worker jobs/media/library/auth are untouched.
     try{localStorage.removeItem(SESSION_KEY);localStorage.removeItem('shortcut-beta-batch-id');}catch{setSaveState('error');setSaveError('Không bỏ được bản nháp trong bộ nhớ local; phiên hiện tại chưa bị xóa.');return;}
-    sessionEpoch.current++;batchSubmitPending.current=false;setIsStartingBatch(false);setIsStartingRender(false);saveGeneration.current++;maySave.current=false;latestSession.current=null;draftWriteBlocked.current=false;setRestoreBlocked(false);setSaveEnabled(false);setInterruptedTasks([]);
+    sessionEpoch.current++;batchSubmitPending.current=false;setIsStartingBatch(false);setIsStartingRender(false);latestSession.current=null;lastWrittenSession.current=null;draftWriteBlocked.current=false;setRestoreBlocked(false);unsavedSession.current=false;savedSessionNeedsArchive.current=false;pendingSaveBaseline.current='idle';setInterruptedTasks([]);
     resetSourceSelection();setControls({});setDraftActivities({});setRestorePassive(false);setMusicIntent(false);setRetainedSourceId('');restoringSource.current=false;pendingPreviewRestore.current=null;
     setSaveState('idle');setSourceAdvancedOpen(false);setInspectorTab('appearance');setLocalFile(null);setLocalVideoUrl('');setLocalFileName('');setLocalDraftId('');setSourceMode('youtube');setSourceUrl('');setEditMode('ai');setProvider('chatgpt');setPlan(mockPlan(DEFAULT_REQUEST));setSourceTitle(DEFAULT_REQUEST.originalTitle);
     setInstruction(DEFAULT_REQUEST.instruction||'');setSupplementalPrompt('');setBatchUrls('');
@@ -1218,7 +1279,7 @@ export default function Home() {
       if(saved.draft&&editorSessionIdentity(saved.draft)!==key)throw Error('Bản nháp không khớp source/item; chưa thay phiên.');
       const captions=source.captions?.length?sourceCaptionTrack({sourceId:source.id,cues:source.captions,origin:'youtube'},source):null;
       const nextPlan=saved.draft?null:snapshotPlanVisualStyle(item.plan||{...mockPlan({...DEFAULT_REQUEST,originalTitle:source.title}),music:item.settings?.music,musicSpeech:undefined,hookTransition:item.settings?.hookTransition,visualStyle:item.settings?.visualStyle,subtitles:item.settings?.subtitles});
-      if(!preserveCurrentDraft())throw Error('Chưa bảo toàn được bản nháp hiện tại; không mở item khác.');
+      if(!confirmReplaceEditorDraft())return;
       resetSourceSelection();
       if(saved.draft){restoreEditorDraft(saved.draft,'editor');}
       else{
@@ -1228,7 +1289,7 @@ export default function Home() {
         changeWorkspace('editor');
       }
       setPreparedSource(source);setRetainedSourceId(source.id);restoringSource.current=false;setSourceSize({width:source.width,height:source.height});setBatchEditing(identity);setBatchDraftItem(identity);
-      setSessionNotice(saved.draft?'Đã mở lại bản nháp của item; phiên trước đã được giữ.':'Đã mở item; bản nháp trước có trong danh sách đã giữ.');
+      setSessionNotice(saved.draft?'Đã mở lại bản nháp đã lưu của item.':'Đã mở item.');
     }catch(error){if(current())setBatchError(error instanceof Error?error.message:'Không mở được item.');}
     finally{sourceRequests.current.delete(controller);if(batchOpenRequest.current===controller)batchOpenRequest.current=null;}
   }
@@ -1681,7 +1742,7 @@ export default function Home() {
     const file = event.target.files?.[0];
     if (!file) return;
     if(restorePassive&&sourceMode==='local'&&file.name===localFileName&&!preparedSource){
-      setLocalFile(file);setLocalVideoUrl(URL.createObjectURL(file));setSourceRestoreNotice('File đã chọn lại; bấm Chuẩn bị nguồn để import, không tự tải/AI.');enableSessionSaving();return;
+      setLocalFile(file);setLocalVideoUrl(URL.createObjectURL(file));setSourceRestoreNotice('File đã chọn lại; bấm Chuẩn bị nguồn để import, không tự tải/AI.');return;
     }
     resetSourceSelection();
     if (localVideoUrl) URL.revokeObjectURL(localVideoUrl);
@@ -1732,7 +1793,7 @@ export default function Home() {
   const seekPreview = useCallback((value: number) => {
     const video = previewVideoRef.current;
     if (!video || !Number.isFinite(value)) return;
-    stopTeaserAuditions();setPreviewSaveVersion(v=>v+1);
+    stopTeaserAuditions();markPreviewPositionDirty();
     if(decks.current){decks.current.seek(value);return;}
     let sourceTime = value;
     if (hasEditPlan) {
@@ -1743,7 +1804,7 @@ export default function Home() {
     }
     video.currentTime = sourceTime;
     setPreviewCurrentTime(value);
-  }, [hasEditPlan, playbackSegments,stopTeaserAuditions]);
+  }, [hasEditPlan, playbackSegments,stopTeaserAuditions,markPreviewPositionDirty]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -1934,13 +1995,13 @@ export default function Home() {
           };
 
   return (
-    <EditorDraftContext.Provider value={draftContext}><main onInputCapture={enableSessionSaving} onClickCapture={enableSessionSaving} className="prototype-shell">
-      <StudioHeader workspace={workspace} onWorkspace={changeWorkspace} workerReady={!!workerHealth?.ok} providerReady={provider==='chatgpt'?!!chatGPTSession?.sharing:isWebAi} providerLabel={provider==='chatgpt'?(chatGPTSession?.sharing?'ChatGPT kết nối':'ChatGPT · cần đăng nhập'):isWebAi?`${webAiName} · web`:provider==='mock'?'Mô phỏng (không AI)':provider} saveState={saveState} saveMessage={saveError||sessionNotice||'Bản nháp lưu cục bộ, không chứa media/credentials.'} onNewSession={newSession} ready={sessionReady}/>
+    <EditorDraftContext.Provider value={draftContext}><main className="prototype-shell">
+      <StudioHeader workspace={workspace} onWorkspace={changeWorkspace} workerReady={!!workerHealth?.ok} providerReady={provider==='chatgpt'?!!chatGPTSession?.sharing:isWebAi} providerLabel={provider==='chatgpt'?(chatGPTSession?.sharing?'ChatGPT kết nối':'ChatGPT · cần đăng nhập'):isWebAi?`${webAiName} · web`:provider==='mock'?'Mô phỏng (không AI)':provider} saveState={saveState} saveMessage={saveError||sessionNotice||'Lưu bằng nút Lưu hoặc ⌘/Ctrl+S; giữ bản nháp khi ẩn/đóng tab. Không lưu theo timer.'} onSave={()=>saveSession()} saveBlocked={restoreBlocked} onNewSession={newSession} ready={sessionReady}/>
       {(sessionNotice||saveError||sourceRestoreNotice||(sourceLeaseError&&workspace!=='storage')||interruptedTasks.length>0||preservedDrafts.length>0)&&<div className="studio-notices" role="status">
        {sessionNotice&&<span>{sessionNotice}</span>}{saveError&&<span className="studio-danger">{saveError}</span>}{sourceRestoreNotice&&<span className="studio-warning">{sourceRestoreNotice}</span>}{sourceLeaseError&&workspace!=='storage'&&<span className="studio-warning">{sourceLeaseError}</span>}
        {!!interruptedTasks.length&&<span className="studio-warning">Đã gián đoạn: {interruptedTasks.join(', ')}. Dùng nút tác vụ để tiếp tục; không tự gửi lại.</span>}
        {retainedSourceId&&!preparedSource&&<button type="button" onClick={()=>setSourceRestoreVersion(v=>v+1)}>Nối lại source</button>}
-       {restoreBlocked&&<button type="button" onClick={()=>{if(preserveCurrentDraft())setSessionNotice('Đã giữ nguyên bản gốc; autosave được bật cho phiên hiện tại.');}}>Giữ bản gốc & bật lưu</button>}
+       {restoreBlocked&&<button type="button" onClick={()=>{if(preserveCurrentDraft())setSessionNotice('Đã giữ nguyên bản gốc. Bấm Lưu để lưu phiên hiện tại.');}}>Giữ bản gốc</button>}
        {!!preservedDrafts.length&&<select aria-label="Mở bản nháp đã giữ" className="studio-input min-w-0 max-w-full text-xs" style={{maxWidth:'min(100%, 28rem)'}} value="" onChange={event=>restorePreservedDraft(event.target.value)}><option value="">Bản nháp đã giữ ({preservedDrafts.length})</option>{preservedDrafts.map(draft=><option key={draft.key} value={draft.key}>{draft.label}</option>)}</select>}
       </div>}
       {workspace==='storage'&&<section className="studio-library-workspace">

@@ -38,7 +38,8 @@ Separator/useDefaultLayout API reused; no dependency change or editor engine.
   same panels stack vertically (no duplicated source/player or decoder). Independent
   scroll, min widths and adjacent equal timecode fields avoid horizontal overflow.
 - Bottom status/render footer shows validation, errors, current-job progress/encoder
-  fallback and Render/Cancel. Header shows actual local autosave writes. Complete
+  fallback and Render/Cancel. Header has one Save pill: orange for unsaved edits,
+  muted after a successful manual or hide/exit checkpoint; no periodic save. Complete
   worker render history is retained in Kho video alongside MediaLibraryPanel.
   No new animation loop, media request or decoder is introduced by layout/tab/part
   switching. Existing timing/caption/media preparation reacts only to real inputs.
