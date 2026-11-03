@@ -43,7 +43,7 @@ test("main selection attaches coverage stills, swaps the text-only rule and cach
   assert.ok(!call.instructions.includes("No images/video/audio are supplied"));
   assert.equal(call.input.visualCoverage.count, 2);
   assert.ok(plan.analysis.limitations.some((line) => /khung hình lấy mẫu đều/.test(line)));
-  assert.ok(!plan.analysis.limitations.some((line) => /không gửi ảnh/.test(line)));
+  assert.ok(!plan.analysis.limitations.some((line) => /không gửi ảnh|^Chỉ có text\/tín hiệu số;/.test(line)), "no stale text-only claim next to the stills");
   await f.select.select(source, context, { instruction: "keep story" });
   assert.equal(f.seen.length, 1, "cache hit: no second request");
   assert.equal(f.frameCalls(), 1, "cache hit: stills are not extracted again");

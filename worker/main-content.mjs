@@ -78,7 +78,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
         if(!plan&&options.currentPlan&&failure)throw Object.assign(Error(hookFailureNotice(failure)),{code:failure});
         if(!plan)throw Object.assign(Error('Chưa có main được AI biên tập. '+hookFailureNotice(failure||'provider-unavailable')),{code:failure||'MAIN_SELECTION_UNAVAILABLE'});
         if (textOnly) plan.analysis.limitations.push(stillsFailed?'MAIN chỉ dùng text/tín hiệu số: không tạo được khung hình phủ video; chưa xác minh hành động bằng thị giác.':'MAIN chỉ dùng text/tín hiệu số; không gửi ảnh/video/audio, chưa xác minh hành động bằng thị giác.');
-        else plan.analysis.limitations.push(`MAIN dùng text/tín hiệu số + ${stills.images.length} khung hình lấy mẫu đều (~${Math.round(stills.manifest.intervalSeconds)}s/khung); không xem liên tục, không nghe âm thanh.`);
+        else plan.analysis.limitations = [...plan.analysis.limitations.filter(line => !line.startsWith('Chỉ có text/tín hiệu số;')), `MAIN dùng text/tín hiệu số + ${stills.images.length} khung hình lấy mẫu đều (~${Math.round(stills.manifest.intervalSeconds)}s/khung); không xem liên tục, không nghe âm thanh.`];
         plan.analysis = { ...plan.analysis, sourceId, analysisKey, cacheKey:key, ...(options.local?.cacheKey ? { localCacheKey:options.local.cacheKey } : {}) };
         validatePlan(plan,source,{teasers:false}); signal.throwIfAborted();
         // Do not perpetually cache auth/rate/timeout failures as a successful AI result.
