@@ -1,3 +1,6 @@
+// Current Beta work-order smoke mode: synthetic/mocked, no installed runtime.
+if(process.env.QA_BETA_MOCK==='1'){await import('./qa-beta-work-order.mjs');process.exit(0);}
+if(process.env.QA_LEGACY_EXPLICIT!=='1')throw Error('Legacy QA requires obsolete runtime/fixtures. Use QA_BETA_MOCK=1 for isolated current Beta smoke.');
 import { expandCustomize } from "./qa-customize-helpers.mjs";
 // Actual source/built UI + native video filtering. Worker mutations are mocked;
 // source media comes only from the deterministic template render QA fixture.

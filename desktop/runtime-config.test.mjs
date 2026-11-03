@@ -92,7 +92,9 @@ test("invalid runtime profiles and worker origins fail closed", () => {
 });
 
 test("frontend uses the framework's statically exposed public variable", async () => {
-  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+  const source = await readFile(new URL("../lib/api/worker-client.ts", import.meta.url), "utf8");
+  assert.match(page, /from ["']@\/lib\/api\/worker-client["']/);
   assert.match(source, /resolveWorkerOrigin\(process\.env\.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN\)/);
-  assert.doesNotMatch(source, /const WORKER_ORIGIN = "http/);
+  assert.doesNotMatch(page + source, /const WORKER_ORIGIN = "http/);
 });

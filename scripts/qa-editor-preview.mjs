@@ -1,3 +1,6 @@
+// Current Beta work-order smoke mode: synthetic/mocked, no installed runtime.
+if(process.env.QA_BETA_MOCK==='1'){await import('./qa-beta-loaded-ui.mjs');process.exit(0);}
+if(process.env.QA_LEGACY_EXPLICIT!=='1')throw Error('Legacy QA requires obsolete runtime/fixtures. Use QA_BETA_MOCK=1 for isolated current Beta smoke.');
 // Isolated browser/worker fixture; intercept every production-worker URL.
 import { spawn } from 'node:child_process';
 import { mkdtemp, writeFile } from 'node:fs/promises';

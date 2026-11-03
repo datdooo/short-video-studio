@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useReducer } from "react";
+import type { EditPart, EditPlan } from "@/lib/edit-plan";
 import type { SetStateAction } from "react";
-import type { EditPlan, EditPart } from "@/lib/edit-plan";
+import { useCallback, useReducer } from "react";
 // Cut history excludes media, captions, appearance, music and renderer output.
 const keys = [
   "segments",
@@ -24,8 +24,8 @@ type Snapshot = {
   teaserTranscriptKey: EditPlan["teaserTranscriptKey"];
 };
 type Entry = { before: Snapshot; after: Snapshot; label: string; partIds: number[] };
-type State = { plan: EditPlan; past: Entry[]; future: Entry[]; group?: string };
-type Action =
+type State = { contextScope?: string | null; plan: EditPlan; past: Entry[]; future: Entry[]; group?: string };
+type CutAction =
   | { type: "set" | "cut"; update: SetStateAction<EditPlan>; label?: string; group?: string }
   | { type: "undo" }
   | { type: "redo" }
@@ -61,7 +61,7 @@ function install(plan: EditPlan, value: Snapshot): EditPlan {
     parts: plan.parts.map((p) => ({ ...p, ...structuredClone(value.parts.find((row) => row.id === p.id)!) })),
   };
 }
-function reduce(state: State, action: Action): State {
+function reduceCuts(state: State, action: CutAction): State {
   if (action.type === "clear") return { ...state, past: [], future: [], group: undefined };
   if (action.type === "boundary") return { ...state, group: undefined };
   if (action.type === "undo" || action.type === "redo") {
@@ -101,8 +101,22 @@ function reduce(state: State, action: Action): State {
   while (past.length && (past.length > 40 || stable(past).length * 2 > 4 * 1024 * 1024)) past = past.slice(1);
   return { plan: next, past, future: [], group: action.group };
 }
+type Action = CutAction | { type: "context"; scope: string };
+function reduce(state: State, action: Action): State {
+  if (action.type === "context")
+    return state.contextScope === action.scope
+      ? state
+      : { ...state, past: [], future: [], group: undefined, contextScope: action.scope };
+  const next = reduceCuts(state, action);
+  return next === state ? state : { ...next, contextScope: state.contextScope };
+}
 export function useCutHistory(initial: () => EditPlan) {
-  const [state, dispatch] = useReducer(reduce, undefined, () => ({ plan: initial(), past: [], future: [] }) as State);
+  const [state, dispatch] = useReducer(reduce, undefined, (): State => ({
+    plan: initial(),
+    past: [],
+    future: [],
+    contextScope: null,
+  }));
   const setPlan = useCallback((update: SetStateAction<EditPlan>) => dispatch({ type: "set", update }), []);
   const setCutPlan = useCallback(
     (update: SetStateAction<EditPlan>, label: string, group?: string) =>
@@ -113,7 +127,10 @@ export function useCutHistory(initial: () => EditPlan) {
     redo = useCallback(() => dispatch({ type: "redo" }), []),
     clear = useCallback(() => dispatch({ type: "clear" }), []),
     boundary = useCallback(() => dispatch({ type: "boundary" }), []);
+  const setContext = useCallback((scope: string) => dispatch({ type: "context", scope }), []);
   return {
+    contextScope: state.contextScope,
+    setContext,
     plan: state.plan,
     setPlan,
     setCutPlan,
