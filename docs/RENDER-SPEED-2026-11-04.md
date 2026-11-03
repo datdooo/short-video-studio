@@ -9,7 +9,7 @@ Máy: Apple M2 (8 lõi), render thật bằng đồ thị lọc của app, Video
 - Tăng số luồng một mình chỉ nhanh hơn ~20%, vì có bộ lọc chạy đơn luồng chiếm gần hết thời gian.
 
 ## Nút thắt thật: `geq` của hiệu ứng "shine" tiêu đề
-Mỗi khung hình, `geq` tính bốn biểu thức thông dịch cho từng điểm ảnh của dải 160×1920 (~25 ms/khung, một luồng) = khoảng một nửa thời gian render ở cấu hình cũ. Hầu hết kiểu mẫu đều bật shine.
+Mỗi khung hình, `geq` tính bốn biểu thức thông dịch cho từng điểm ảnh của dải 160×1920 (~25 ms/khung, một luồng) = khoảng một nửa thời gian render ở cấu hình cũ. Cả 98/98 job trong lịch sử đều bật shine và đi đường YUV (không bộ lọc màu, nền mờ mặc định), nên mọi render hiện có đều hưởng cải thiện này.
 
 ## Thay đổi
 1. **Shine:** hệ số mờ dần theo cột là hằng số, nên dựng một lần (một khung, rồi lặp) và áp dụng bằng `blend multiply` + `alphamerge` (`worker/render/shine-filter.mjs`, dùng ở `composition.mjs` và `title-animation.mjs`).
@@ -36,6 +36,6 @@ Tức từ 1,56× thời lượng thành phẩm xuống 0,69× (nhanh hơn thờ
 - Tăng lên 8 luồng: không nhanh hơn 4 luồng đáng kể.
 
 ## Giới hạn
-- Đo trên một nguồn và một kiểu mẫu (nền mờ, shine bật). Đường RGB (có bộ lọc màu hoặc nền khác) giữ `format=rgba` nên chỉ hưởng phần shine và luồng.
+- Đo trên một nguồn (kiểu mẫu nền mờ + shine, giống 98/98 job đã lưu). Đường RGB (có bộ lọc màu hoặc nền khác) giữ `format=rgba` nên chỉ hưởng phần shine và luồng.
 - Số liệu ±10–20% giữa các lần do trạng thái máy; kết luận dựa trên các lần xen kẽ.
 - Chưa đo trên Windows (đường libx264 phần mềm).
