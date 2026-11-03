@@ -11,6 +11,7 @@ import { AI_INPUT_INSTRUCTIONS, compactAiInput } from "./ai-input.mjs";
 import { aiMemo, beginAiRequest, measureAiStage, withAiOperation } from "./ai-operation.mjs";
 import { requireDiskSpace } from "./analysis-cache.mjs";
 import { validatePlan, validateRenderPlan } from "./plan-validation.mjs";
+import { framedTextInstructions, coverageManifestText } from "../lib/frame-rules.mjs";
 import { CODEX_TRANSPORT } from "./codex-cli.mjs";
 import { saveSourceContext, sourceContextFor } from "./source-context.mjs";
 /** One worker-owned domain; shared services are read at operation entry. */
@@ -86,19 +87,29 @@ export function createAnalysisService(read) {
         model,
         reasoningPolicyKey: `${reasoning.key}:${CODEX_TRANSPORT}`,
         reasoning: reasoning.effort,
+        // Optional visual lane: evenly sampled stills (file paths) across the whole source.
+        coverageDigest: (source) => read().coverageFrames.digest(source),
+        coverageFrames: (source, signal) => read().coverageFrames.frames(source, { signal }),
         analyze: async ({ input, images = [], schema, instructions, signal, maxTokens }) => {
-          if (images.length)
-            throw Object.assign(Error("VIDEO_TEXT_ONLY: đường phân tích không nhận ảnh."), { code: "VIDEO_TEXT_ONLY" });
-          const canonical = canonicalVideoInput(input),
+          const stills = images.filter((image) => typeof image?.file === "string" && Number.isFinite(image.time));
+          if (images.length && stills.length !== images.length)
+            throw Object.assign(Error("VIDEO_TEXT_ONLY: chỉ nhận khung hình đã lấy mẫu từ nguồn."), { code: "VIDEO_TEXT_ONLY" });
+          const { visualCoverage: manifest, ...evidence } = input;
+          const canonical = canonicalVideoInput(evidence),
             packed = compactAiInput(canonical.value),
             serializedInput = packed.text;
-          const content = [{ type: "input_text", text: serializedInput }];
+          const content = [
+            {
+              type: "input_text",
+              text: stills.length && manifest ? `${serializedInput}\n\n${coverageManifestText(manifest)}` : serializedInput,
+            },
+          ];
           const requestMetrics = {
             phase: input.phase || "select-main",
             inputCharacters: serializedInput.length,
             rawInputCharacters: JSON.stringify(input).length,
             inputFormat: packed.format,
-            imageCount: 0,
+            imageCount: stills.length,
             dataCounts: canonical.counts,
             dataAvailability: canonical.availability,
             textContract: VIDEO_TEXT_VERSION,
@@ -111,7 +122,7 @@ export function createAnalysisService(read) {
               model,
               schema,
               instructions:
-                VIDEO_TEXT_INSTRUCTIONS +
+                (stills.length ? framedTextInstructions(VIDEO_TEXT_INSTRUCTIONS) : VIDEO_TEXT_INSTRUCTIONS) +
                 "\n" +
                 (packed.encoded ? AI_INPUT_INSTRUCTIONS + "\n" : "") +
                 (instructions || "You are a precise source-accurate video editor."),
@@ -121,6 +132,7 @@ export function createAnalysisService(read) {
             signal,
             content,
             reasoning,
+            stills.map((image) => image.file),
           );
           return { value: result.plan };
         },

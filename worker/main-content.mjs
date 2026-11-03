@@ -2,6 +2,7 @@ import {CONTENT_LANGUAGE_VERSION,sourceContentLanguage,contentLanguageSchema,ass
 import {collectTeaserEvidence} from '../lib/teaser-evidence.mjs';
 import {mainInstruction,MAIN_EDITING_VERSION} from '../lib/main-instructions.mjs';
 import {measureAiStage,aiEvent} from './ai-operation.mjs';
+import {framedMainRules} from '../lib/frame-rules.mjs';
 import { normalizeLocalSignals } from '../lib/auto-cut/local-signals.mjs';
 import { createHash } from 'node:crypto';
 import { generateMainCandidates, selectionToPlan, MAIN_SCHEMA, MAIN_INSTRUCTIONS, modelSelectionInput, lockedParts, assertMainLocks } from '../lib/auto-cut/main-content.mjs';
@@ -34,21 +35,33 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
       let provider, failure;
       try { provider = await resolveProvider(options.signal); } catch (e) { options.signal?.throwIfAborted(); failure = hookFailure(e); }
       const { sourceId, analysisKey, ...stableInput } = prepared;
+      // Optional stills lane (Codex): identity is part of the cache key, extraction happens only on a miss.
+      const visualDigest = provider?.coverageDigest ? await provider.coverageDigest(source) : null;
+      const instructions = visualDigest ? framedMainRules(MAIN_INSTRUCTIONS) : MAIN_INSTRUCTIONS;
       const schema={...MAIN_SCHEMA,properties:{...MAIN_SCHEMA.properties,language:contentLanguageSchema(prepared.sourceLanguage)}};
-      const key = hash({ explanationLanguage:'vi-v1',analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none', reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured', retryVersion:'explicit-only-v1',logicVersion:MAIN_EDITING_VERSION,prompt:MAIN_INSTRUCTIONS,schema });
+      const key = hash({ explanationLanguage:'vi-v1',analysisKey, provider: provider?.id || 'none', model: provider?.model || 'none', reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured', retryVersion:'explicit-only-v1',logicVersion:MAIN_EDITING_VERSION,prompt:instructions,visual:visualDigest||'text-only',schema });
       const result = await shared(key, signal => cache.using(key, async () => {
         const cached = await cache.get(key);
         if (cached) {
           try { const plan = { ...cached, originalTitle:source.title, analysis:{ ...cached.analysis, sourceId, cacheKey:key } }; assertContentLanguage(plan.language,prepared.sourceLanguage); validatePlan(plan,source,{teasers:false}); assertMainLocks(plan,options.currentPlan); aiEvent('cache',{hit:true}); return plan; } catch { /* Invalid/old cache is not a valid analysis. */ }
         }
         aiEvent('cache',{hit:false});
-        let plan, textOnly = false;
+        let plan, textOnly = false, stillsFailed = false, stills = null;
         if (provider) {
-          const images=[];textOnly=true;
+          let images=[];textOnly=true;
           let localValidation=false;
+          if (visualDigest) {
+            try {
+              stills = await measureAiStage('frames', () => provider.coverageFrames(source, signal));
+              if (stills?.images?.length) { images = stills.images; textOnly = false; }
+            } catch {
+              signal.throwIfAborted();
+              stillsFailed = true; aiEvent('frames', { unavailable: true });
+            }
+          }
           try {
-            const input={...modelSelectionInput(stableInput),phase:'select-main'};
-            const response=await provider.analyze({input,images,schema,instructions:MAIN_INSTRUCTIONS,signal:AbortSignal.any([signal,AbortSignal.timeout(90000)]),maxTokens:3600});
+            const input={...modelSelectionInput(stableInput),phase:'select-main',...(images.length?{visualCoverage:stills.manifest}:{})};
+            const response=await provider.analyze({input,images,schema,instructions:images.length?instructions:MAIN_INSTRUCTIONS,signal:AbortSignal.any([signal,AbortSignal.timeout(90000)]),maxTokens:3600});
             localValidation=true;
             plan=await measureAiStage('validation',()=>{
               const next=selectionToPlan(prepared,response.value,{currentPlan:options.currentPlan,provider:provider.id,model:provider.model});
@@ -64,11 +77,12 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
         }
         if(!plan&&options.currentPlan&&failure)throw Object.assign(Error(hookFailureNotice(failure)),{code:failure});
         if(!plan)throw Object.assign(Error('Chưa có main được AI biên tập. '+hookFailureNotice(failure||'provider-unavailable')),{code:failure||'MAIN_SELECTION_UNAVAILABLE'});
-        if (textOnly) plan.analysis.limitations.push('MAIN chỉ dùng text/tín hiệu số; không gửi ảnh/video/audio, chưa xác minh hành động bằng thị giác.');
+        if (textOnly) plan.analysis.limitations.push(stillsFailed?'MAIN chỉ dùng text/tín hiệu số: không tạo được khung hình phủ video; chưa xác minh hành động bằng thị giác.':'MAIN chỉ dùng text/tín hiệu số; không gửi ảnh/video/audio, chưa xác minh hành động bằng thị giác.');
+        else plan.analysis.limitations.push(`MAIN dùng text/tín hiệu số + ${stills.images.length} khung hình lấy mẫu đều (~${Math.round(stills.manifest.intervalSeconds)}s/khung); không xem liên tục, không nghe âm thanh.`);
         plan.analysis = { ...plan.analysis, sourceId, analysisKey, cacheKey:key, ...(options.local?.cacheKey ? { localCacheKey:options.local.cacheKey } : {}) };
         validatePlan(plan,source,{teasers:false}); signal.throwIfAborted();
         // Do not perpetually cache auth/rate/timeout failures as a successful AI result.
-        if (plan.analysis.method === 'ai') await cache.put(key,plan);
+        if (plan.analysis.method === 'ai' && !stillsFailed) await cache.put(key,plan);
         return plan;
       }),options.signal);
       const plan = structuredClone(result);

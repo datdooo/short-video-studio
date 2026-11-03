@@ -623,7 +623,7 @@ export function SourceView({ model }: { model: Props }) {
                     </p>
                     <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
                       {chatGPTSession?.sharing
-                        ? `ChatGPT Auto · ${chatGPTSession.model || "gpt-6.1-sol"} · ${chatGPTSession.reasoning || "low"}${chatGPTSession.version ? ` · Codex ${chatGPTSession.version}` : ""}`
+                        ? `ChatGPT Auto · ${chatGPTSession.model || "gpt-6.1-sol"} · ${chatGPTSession.reasoning || "low"} · text + khung hình${chatGPTSession.version ? ` · Codex ${chatGPTSession.version}` : ""}`
                         : chatGPTSession
                           ? "Cài Codex rồi chạy `codex login` trong Terminal"
                           : "Chưa kiểm tra được Codex"}

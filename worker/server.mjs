@@ -21,6 +21,7 @@ import { createBatchProcessor } from "./batch-pipeline.mjs";
 import { createBatchSubmissionQueue } from "./batch-queue.mjs";
 import { createBatchService } from "./batch-service.mjs";
 import { createCodexCli } from "./codex-cli.mjs";
+import { createCoverageFrames } from "./coverage-frames.mjs";
 import { createCommandLifecycle } from "./command-lifecycle.mjs";
 import { createCommandRunner } from "./command-runner.mjs";
 import { createEditorSourceLeases } from "./editor-source-leases.mjs";
@@ -208,6 +209,7 @@ const ffmpeg = resolveBinary("FFMPEG_PATH", "ffmpeg", ["/opt/homebrew/bin/ffmpeg
 const ffprobe = resolveBinary("FFPROBE_PATH", "ffprobe", ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"]);
 const whisper = resolveBinary("WHISPER_PATH", "whisper-cli", ["/opt/homebrew/bin/whisper-cli"]);
 const speech = createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, run, resources: mediaResources });
+const coverageFrames = createCoverageFrames({ root: path.join(dataRoot, "cache", "coverage-frames"), ffmpeg, run });
 const ytDlp = resolveBinary("YT_DLP_PATH", "yt-dlp", [
   path.join(projectRoot, ".local-tools", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
 ]);
@@ -256,6 +258,7 @@ const {
 } = createAnalysisService(() => ({
   analyzeWithCodexPlan,
   batches,
+  coverageFrames,
   dataRoot,
   ensureCodexReady,
   jobs,
