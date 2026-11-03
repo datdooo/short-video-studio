@@ -1,24 +1,27 @@
 # Beta final local verification — 2026-11-03
 
-Current continuation supersedes the historical records below. Review baseline `8c2d05aa4dff8bec10761077f31e67bc20c1f121`; branch `beta/maintenance`. Local checkpoints now exist; HEAD is no longer the baseline SHA.
+Completion follow-up supersedes earlier acceptance and blocked-render records. Original review baseline `8c2d05aa4dff8bec10761077f31e67bc20c1f121`; follow-up starts at `1e506396bfa441d16b8be675e4b55822cc0e7c95`; branch `beta/maintenance`. Source checkpoint `8908ad1`.
 
 | Final check | Result |
 | --- | --- |
-| Focused worker/import/deck/OAuth tests | 10 pass / 0 fail / 0 skip |
-| `npm test` on Node 22.23.3 | **374 pass / 0 fail / 0 cancel / 0 skip** |
-| `npm run lint` | **0 errors / 28 warnings** |
+| Focused coordinator/route/import tests | 10 pass / 0 fail / 0 skip |
+| `npm test`, Node 22.23.3 | **378 pass / 0 fail / 0 cancel / 0 skip** |
+| `npm run lint` | **0 errors / 0 warnings** |
 | `npx --no-install tsc --noEmit` | **0 errors** |
 | `npm run build` | **success**, standalone build only |
 | `git diff --check` | **success** |
-| Current Beta browser fixtures | five viewports, loaded/empty/loading/error/disclosures, interaction and lifecycle fixtures pass; synthetic only |
-| Worker extraction render gate | **not met**: actual argv/graph equal, decoded hashes differ; render extraction not retained |
+| Beta browser fixtures | five viewports, loaded/empty/loading/error/disclosures, interaction and lifecycle fixtures pass; synthetic only |
+| Worker render extraction gate | **pass for the fixed lossless fixture**: actual spawn argv/graph equal, all 48 decoded frame hashes equal; before repeat also equal |
+| Structure | page 542 lines; server 475 lines; domain modules with original behavior |
 | CI matrix / Windows installer | **not run** |
 
-The 28 warnings comprise 21 unused-variable/import, 6 exhaustive-deps and 1 image advisory. No rules were disabled. Details, exact commands, screenshots, failed intermediate attempts, safe logs and full baseline diff: [current work-order report](work-order-2026-11-03.md), ignored `.isolation-verification/work-order-complete/`.
+The former 28 warnings are resolved without lint-rule changes. Same-code ABR repeats have identical argv/graph but different decoded hashes; lossless fixture controls make the extraction check reproducible. CRF0/VBV overrides exist only in the QA child. Normal app render parameters remain unchanged. Named worker function-body comparison: 84 match, 0 missing/different after dependency/export-format scaffolding is removed.
 
-The runtime closure test initially failed because a regex treated a new JSDoc type import as executable. It now uses TypeScript AST and has a regression for static/side-effect/export/dynamic/require versus comment imports. It still stages the real worker manifest and checks every runtime relative dependency. Music/lease harness initially used an invalid fixture asset ID and assumed network arrival order; corrected to the real ID contract and actual revision-aware lease reducer, without weakening ownership assertions.
+Added regression tests cover queued versus started cancellation, controller ownership, checkpoint preservation, completed-job no-op/duplicate resume rejection, lazy library construction and the composed route dependency map. Existing auth/transition/draft/decoder regressions remain.
 
-No installed-app/package update, push, provider/ASR/source download, user-media operation or three-OS CI claim. Phases 1–4 and independent Phase 5 work are locally checked; render extraction/server-size target remain blocked as documented.
+Current commands, final logs and full diff are in [the work-order report](work-order-2026-11-03.md) and ignored `.isolation-verification/work-order-finish/`. Screenshots/component evidence were rerun on the final build and remain under sibling `work-order-complete/` fixture directories.
+
+Local checkpoints: `d23a336` warning/callback cleanup; `8908ad1` renderer/worker completion. No installed-app/package update, push, real provider/ASR/source download, user-media operation or CI/installer success claim. All source work from Phases 1–5 is locally complete; real runtime, hardware/template coverage, CI and installer qualification remain external acceptance work.
 
 ---
 
