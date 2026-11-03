@@ -31,7 +31,7 @@ export async function downloadManualVideo({worker,sourceId,sourceKey,variantKey,
    if(Date.now()-started>25*60_000)throw Error('Chưa hoàn tất tải video; đã dừng lượt chờ này.');
    let response:Response;
    try{response=await fetch(status,{signal,cache:'no-store'});failures=0;}
-   catch(error){signal.throwIfAborted();if(++failures>=3)throw Error('Mất kết nối tiến trình tải video.');await pause(signal);continue;}
+   catch{signal.throwIfAborted();if(++failures>=3)throw Error('Mất kết nối tiến trình tải video.');await pause(signal);continue;}
    if(response.status===404){if(seen||Date.now()-started>10000)throw Error('Trình duyệt chưa bắt đầu tải video hoặc worker đã khởi động lại.');await pause(signal);continue;}
    const data=await response.json() as {progress?:unknown;error?:string};
    if(!response.ok)throw Error(data.error||'Không theo dõi được lượt tải video.');

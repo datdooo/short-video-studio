@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { ShortcutHelp } from "./shortcut-help";
 import { BETA_RELEASE } from "../desktop/beta-release.mjs";
 import { Cloud, CloudOff, Save, Film, LayoutGrid, FolderOpen } from "lucide-react";
@@ -40,7 +41,9 @@ export function StudioHeader({
   return (
     <header className="studio-header">
       <strong className="studio-brand">
-        <img
+        <Image
+          unoptimized
+          loading="eager"
           src="/favicon.svg?v=play-3"
           width={32}
           height={32}

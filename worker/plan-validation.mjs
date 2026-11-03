@@ -7,7 +7,6 @@ import { validateMainRangeMetadata } from "../lib/main-ranges.mjs";
 import { validateCustomTeaser } from "../lib/custom-teaser.mjs";
 import { normalizeMusic, validateSpeechActivity } from "../lib/music/settings.mjs";
 import { validateMainAnalysis } from "../lib/auto-cut/analysis.mjs";
-import { PLAYBACK_RATE } from "../lib/render-config.mjs";
 import { assertRenderableVisualStyle, resolvePlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { requireBothTeasers, validateTeaser, TEASER_POLICY } from "../lib/teaser-hooks.mjs";
 import { validSourceRange, MAX_SOURCE_RANGES } from "../lib/source-ranges.mjs";
@@ -46,7 +45,6 @@ export function validatePlan(plan, source, { teasers = true } = {}) {
     let previousEnd = partIndex === 0 ? 0 : previousPartEnd;
     let paddingStarted = false;
     let mainCount = 0;
-    let duration = 0;
     for (const segment of part.segments) {
       if (!segment || typeof segment !== "object") throw Error("Segment không hợp lệ.");
       if (segment.type && segment.type !== "source") throw new Error("Loại segment không hợp lệ.");
@@ -71,7 +69,6 @@ export function validatePlan(plan, source, { teasers = true } = {}) {
         previousEnd = end;
         mainCount += 1;
       }
-      duration += end - start;
     }
     // Editorial duration is not a reason to reinsert filler or padding.
     previousPartEnd = previousEnd;

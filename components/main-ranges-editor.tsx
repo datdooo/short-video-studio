@@ -6,7 +6,7 @@ import { useEditorDraft } from "./editor-draft-context";
 import type { ReactNode } from "react";
 import type { EditPlan, EditPart } from "@/lib/edit-plan";
 import { hookRangeKey } from "@/lib/teaser-hooks.mjs";
-import { MAX_MAIN_RANGES, mainRangeRows, inspectMainRanges, rangeTime } from "@/lib/main-ranges.mjs";
+import { MAX_MAIN_RANGES, mainRangeRows, inspectMainRanges } from "@/lib/main-ranges.mjs";
 import type { MainRangeRow } from "@/lib/main-ranges.mjs";
 
 type Props = {

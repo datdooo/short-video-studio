@@ -1,6 +1,5 @@
 import {CONTENT_LANGUAGE_SCHEMA,CONTENT_LANGUAGE_INSTRUCTIONS,assertContentLanguage,normalizeLanguageCode} from './content-language.mjs';
 import {MAIN_EDITING_CRITERIA,MAIN_RANGE_REASON_DESCRIPTION,mainInstruction} from './main-instructions.mjs';
-import {EXPLANATION_INSTRUCTIONS} from './explanation-language.mjs';
 import { PLAYBACK_RATE, FOREGROUND_SCALE, timelineDuration, isStillSegment } from "./render-config.mjs";
 import { resolvePlanVisualStyle } from "./visual-style/normalize.mjs";
 import type { VisualStyle } from "./visual-style/types";

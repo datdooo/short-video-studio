@@ -64,7 +64,7 @@ export function usePreviewCommands(state: State) {
     workspace,
     workspaceRef,
   } = state;
-  async function togglePreview() {
+  const togglePreview = useCallback(async () => {
     if (workspaceRef.current !== "editor" || previewSourceEpoch !== sourceSelectionEpoch.current) return;
     const video = previewVideoRef.current;
     if (!video || !previewVideoUrl) return;
@@ -115,7 +115,27 @@ export function usePreviewCommands(state: State) {
     } else {
       stopWorkspacePlayback();
     }
-  }
+  }, [
+    workspaceRef,
+    previewSourceEpoch,
+    sourceSelectionEpoch,
+    previewVideoRef,
+    previewVideoUrl,
+    stopTeaserAuditions,
+    setMusicIntent,
+    previewEpoch,
+    playbackIntentEpochRef,
+    decksRef,
+    setPreviewError,
+    previewPlayingRef,
+    hasEditPlan,
+    playbackSegments,
+    previewSegmentIndexRef,
+    setIsPreviewPlaying,
+    previewTicker,
+    musicPlaybackControl,
+    stopWorkspacePlayback,
+  ]);
   const seekPreview = useCallback(
     (value: number) => {
       const video = previewVideoRef.current;

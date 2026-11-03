@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { Check, Play, Pause, RotateCcw, Film } from "lucide-react";
 import type { EditPart } from "@/lib/edit-plan";
 import type { CaptionTrack } from "@/lib/subtitles.mjs";
@@ -114,11 +114,11 @@ export function TeaserCandidateReview({
   // Append new analysis results. Apply only changes the current badge; it never
   // sorts/replaces the catalog. Bound UI history, preserving the active choice.
   const ids = JSON.stringify(choices.map((c) => c.id));
-  const savedChoices = [...choices];
+  const savedChoices = useMemo(() => [...choices], [choices]);
   useEffect(() => {
     if (savedChoices.length && (catalog?.key !== contextKey || JSON.stringify(catalog.items.map((c) => c.id)) !== ids))
       setCatalog({ key: contextKey, items: savedChoices });
-  }, [contextKey, ids, catalog, setCatalog]);
+  }, [contextKey, ids, catalog, setCatalog, savedChoices]);
   if (proposed && pending?.selection === "manual" && !choices.some((c) => c.id === choiceId(pending)))
     choices.push({ id: choiceId(pending), part: proposed, draft: true });
   const [focus, setFocus] = useEditorDraft<{ scope: string; id: string } | null>(
@@ -378,16 +378,17 @@ function RangePlayer({
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
   }, []);
+  const nextAuditionEpoch = useCallback(() => ++epoch.current, []);
   const pause = useCallback(() => {
     playIntent.current = false;
-    epoch.current++;
+    nextAuditionEpoch();
     startup.current?.abort();
     startup.current = null;
     clearClock();
     video.current?.pause();
     setPlaying(false);
     setBuffering(false);
-  }, [clearClock]);
+  }, [clearClock, nextAuditionEpoch]);
   const bind = useCallback(
     (node: HTMLVideoElement | null) => {
       const old = video.current;
@@ -396,26 +397,26 @@ function RangePlayer({
         startup.current = null;
         clearClock();
         playIntent.current = false;
-        epoch.current++;
+        nextAuditionEpoch();
         old.pause();
         old.removeAttribute("src");
         old.load();
       }
       video.current = node;
     },
-    [clearClock],
+    [clearClock, nextAuditionEpoch],
   );
   useEffect(() => {
     onPlaybackControl({ pause });
     return () => {
       playIntent.current = false;
-      epoch.current++;
+      nextAuditionEpoch();
       startup.current?.abort();
       startup.current = null;
       clearClock();
       onPlaybackControl(null);
     };
-  }, [onPlaybackControl, pause, clearClock]);
+  }, [onPlaybackControl, pause, clearClock, nextAuditionEpoch]);
   const [wasSuspended, setWasSuspended] = useState(suspended);
   if (wasSuspended !== suspended) {
     setWasSuspended(suspended);
@@ -427,13 +428,13 @@ function RangePlayer({
   useLayoutEffect(() => {
     if (suspended) {
       playIntent.current = false;
-      epoch.current++;
+      nextAuditionEpoch();
       startup.current?.abort();
       startup.current = null;
       clearClock();
       video.current?.pause();
     }
-  }, [suspended, clearClock]);
+  }, [suspended, clearClock, nextAuditionEpoch]);
   function startClock() {
     clearClock();
     const generation = epoch.current;
@@ -458,7 +459,7 @@ function RangePlayer({
     clearClock();
     const controller = new AbortController();
     startup.current = controller;
-    const generation = ++epoch.current;
+    const generation = nextAuditionEpoch();
     requestedTime.current = target;
     setPosition(target);
     setError("");

@@ -7,7 +7,7 @@ import { EditPlan } from "@/lib/edit-plan";
 import type { Controls } from "@/lib/editor-session";
 import type { Caption } from "@/lib/subtitles.mjs";
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 type State = {
   sourceRevision: number;
   cutHistory: ReturnType<typeof useEditPlan>["cutHistory"];
@@ -110,37 +110,56 @@ export function useCutHistoryControls(state: State) {
     Object.entries(draftActivities).some(([key, busy]) => busy && key.startsWith("teaser Part ")) ||
     Object.values(teaserOperations).some((op) => op.running) ||
     contextScope !== cutHistoryScope;
-  function travelCutHistory(direction: "undo" | "redo") {
-    const entry = direction === "undo" ? cutHistory.previous : cutHistory.next;
-    if (cutHistoryBlocked || !entry) return;
-    cutHistoryTravelRevision.current++;
-    stopWorkspacePlayback();
-    invalidateAnalysis();
-    setRenderJob(null);
-    // Applied-only history: invalid/pending drafts block travel. Clear only
-    // projected timing drafts of affected parts, never unrelated input text.
-    const suffixes = entry.partIds.flatMap((id) => [`main-${id}`, `teaser-times-${id}`, `teaser-candidate-${id}`]);
-    setControls((current) =>
-      Object.fromEntries(
-        Object.entries(current).filter(([key]) => !suffixes.some((suffix) => key === `${sessionScope}:${suffix}`)),
-      ),
-    );
-    setMainDraftErrors((current) =>
-      Object.fromEntries(Object.entries(current).filter(([id]) => !entry.partIds.includes(Number(id)))),
-    );
-    setTeaserDraftErrors((current) =>
-      Object.fromEntries(Object.entries(current).filter(([id]) => !entry.partIds.includes(Number(id)))),
-    );
-    if (entry.partIds.length)
-      setActivePartIndex(
-        Math.max(
-          0,
-          plan.parts.findIndex((p) => p.id === entry.partIds[0]),
+  const { previous: historyPrevious, next: historyNext, undo: undoCuts, redo: redoCuts } = cutHistory;
+  const travelCutHistory = useCallback(
+    (direction: "undo" | "redo") => {
+      const entry = direction === "undo" ? historyPrevious : historyNext;
+      if (cutHistoryBlocked || !entry) return;
+      cutHistoryTravelRevision.current++;
+      stopWorkspacePlayback();
+      invalidateAnalysis();
+      setRenderJob(null);
+      // Applied-only history: invalid/pending drafts block travel. Clear only
+      // projected timing drafts of affected parts, never unrelated input text.
+      const suffixes = entry.partIds.flatMap((id) => [`main-${id}`, `teaser-times-${id}`, `teaser-candidate-${id}`]);
+      setControls((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([key]) => !suffixes.some((suffix) => key === `${sessionScope}:${suffix}`)),
         ),
       );
-    if (direction === "undo") cutHistory.undo();
-    else cutHistory.redo();
-  }
+      setMainDraftErrors((current) =>
+        Object.fromEntries(Object.entries(current).filter(([id]) => !entry.partIds.includes(Number(id)))),
+      );
+      setTeaserDraftErrors((current) =>
+        Object.fromEntries(Object.entries(current).filter(([id]) => !entry.partIds.includes(Number(id)))),
+      );
+      if (entry.partIds.length)
+        setActivePartIndex(
+          Math.max(
+            0,
+            plan.parts.findIndex((p) => p.id === entry.partIds[0]),
+          ),
+        );
+      if (direction === "undo") undoCuts();
+      else redoCuts();
+    },
+    [
+      historyPrevious,
+      historyNext,
+      undoCuts,
+      redoCuts,
+      cutHistoryBlocked,
+      stopWorkspacePlayback,
+      invalidateAnalysis,
+      setRenderJob,
+      setControls,
+      sessionScope,
+      setMainDraftErrors,
+      setTeaserDraftErrors,
+      setActivePartIndex,
+      plan.parts,
+    ],
+  );
   const cutHistoryAction = useRef(travelCutHistory);
   useLayoutEffect(() => {
     cutHistoryAction.current = travelCutHistory;

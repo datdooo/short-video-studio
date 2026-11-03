@@ -65,7 +65,7 @@ export function usePlanTiming(state: State) {
         error: caught instanceof Error ? caught.message : "Thời gian không hợp lệ.",
       };
     }
-  }, [plan.parts, plan.providerUsed, plan.analysis, preparedSource?.duration]);
+  }, [plan.parts, plan.providerUsed, plan.analysis]);
   const draftError =
     hasEditPlan &&
     timing.parts.some(

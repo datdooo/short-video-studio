@@ -62,7 +62,7 @@ for(const track of GENTLE_MUSIC_COLLECTION){
   asset=await library.import(createReadStream(tmp),{filename:track.title+'.mp3',signal:abort.signal});
   if(known.has(asset.id)){report.tracks.push({id:asset.id,title:asset.title,duplicate:true});}
   else{
-    const {file,...metadata}=asset;
+    const metadata={...asset};delete metadata.file;
     const next={...metadata,...track,catalogId:track.id,id:asset.id,contentHash:asset.id,
       origin:'official-composer-download',license:'Liborio Conti commercial video/media license; attribution optional; no redistribution/Content ID registration',
       licenseUrl,licenseCheckedDate:'2026-10-20',licenseDocumentHash:licenseHash,attributionRequired:false,

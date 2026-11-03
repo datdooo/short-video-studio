@@ -79,13 +79,14 @@ export function MediaLibraryPanel({
   const loadSerial = useRef(0),
     refreshPending = useRef(false),
     mounted = useRef(true);
+  const nextLoadSerial = useCallback(() => ++loadSerial.current, []);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      loadSerial.current++;
+      nextLoadSerial();
     };
-  }, []);
+  }, [nextLoadSerial]);
   const previewVideo = useRef<HTMLVideoElement | null>(null);
   // React clears refs before passive unmount cleanup. Pause the owned node
   // while it is still available, including workspace/file replacement.
@@ -98,13 +99,13 @@ export function MediaLibraryPanel({
   const [notice, setNotice] = useState("");
   const load = useCallback(
     async (signal?: AbortSignal) => {
-      const serial = ++loadSerial.current;
+      const serial = nextLoadSerial();
       const response = await fetch(`${workerOrigin}/api/storage`, { cache: "no-store", signal });
       const data = (await response.json()) as { library?: Library; error?: string };
       if (!response.ok || !data.library) throw new Error(data.error || "Không đọc được kho video.");
       if (!signal?.aborted && mounted.current && serial === loadSerial.current) setLibrary(data.library);
     },
-    [workerOrigin],
+    [workerOrigin, nextLoadSerial],
   );
   useEffect(() => {
     if (!ready) return;
@@ -183,7 +184,7 @@ export function MediaLibraryPanel({
         return;
       }
       requestPending.current = true;
-      loadSerial.current++;
+      nextLoadSerial();
       setOperation({
         startedAt: Date.now(),
         completed: 0,
@@ -276,7 +277,7 @@ export function MediaLibraryPanel({
         setOperation(null);
       }
     },
-    [editorSourceId, ensureEditorSource, workerOrigin, tab, onMoved, onRestored, load, confirm],
+    [editorSourceId, ensureEditorSource, workerOrigin, tab, onMoved, onRestored, load, confirm, nextLoadSerial],
   );
   const files = (tab === "renders" ? [] : library?.[tab] || []).filter((file) =>
     `${file.title} ${file.filename}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()),

@@ -52,18 +52,21 @@ export function usePreviewPlayback() {
   const registerMusicPlayback = useCallback((handle: { play: () => void; pause: () => void } | null) => {
     musicPlaybackControl.current = handle;
   }, []);
-  function stopWorkspacePlayback(exceptTeaser?: number) {
-    playbackIntentEpoch.current++;
-    stopTeaserAuditions(exceptTeaser);
-    previewPlayingRef.current = false;
-    setIsPreviewPlaying(false);
-    decks.current?.pause();
-    previewTicker.current?.stop();
-    for (const video of deckVideos.current) video?.pause();
-    previewVideoRef.current?.pause();
-    batchPreviewRef.current?.pause();
-    musicPlaybackControl.current?.pause();
-  }
+  const stopWorkspacePlayback = useCallback(
+    (exceptTeaser?: number) => {
+      playbackIntentEpoch.current++;
+      stopTeaserAuditions(exceptTeaser);
+      previewPlayingRef.current = false;
+      setIsPreviewPlaying(false);
+      decks.current?.pause();
+      previewTicker.current?.stop();
+      for (const video of deckVideos.current) video?.pause();
+      previewVideoRef.current?.pause();
+      batchPreviewRef.current?.pause();
+      musicPlaybackControl.current?.pause();
+    },
+    [stopTeaserAuditions],
+  );
   useEffect(() => {
     if (!previewElement) return;
     const updateWidth = () => {

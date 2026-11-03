@@ -124,7 +124,7 @@ function rankedSelection(value, {part,source,cues,boundaryCues,input,images,prov
   return{result:winner.result,rejected};
 }
 
-export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint,sleep=ms=>new Promise(r=>setTimeout(r,ms))}){
+export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint}){
   const shared=createSharedOperations({onJoin:()=>aiEvent('cache',{joined:true,reason:'shared-in-flight'})});
   async function pairTextInputs(parts,contexts,source,signal,refine,cues,supporting){
     const rows=[];

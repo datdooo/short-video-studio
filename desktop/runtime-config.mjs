@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { lstat, mkdir } from "node:fs/promises";
 import net from "node:net";
 import { homedir } from "node:os";

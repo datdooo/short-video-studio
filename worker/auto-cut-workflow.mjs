@@ -102,7 +102,7 @@ export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,ver
           validateTeaser(part,source.duration,source.id);
           await assertTeaserContexts({...plan,parts:[part]},source,cues,content,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
           part.teaserNeedsReselection=false;
-        }catch(error){
+        }catch{
           signal?.throwIfAborted();
           // Keep endpoints/evidence for editing, but never bless stale evidence
           // or hide a range outside the new main/gap. Readiness blocks export.

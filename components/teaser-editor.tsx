@@ -48,7 +48,6 @@ function savedInput(part: EditPart) {
 }
 export function TeaserEditor({
   statusTarget,
-  issues = [],
   transition,
   progress,
   aiBusy = false,
@@ -191,16 +190,12 @@ export function TeaserEditor({
       }
     },
   );
-  const [applyAcknowledgement, setApplyAcknowledgement] = useState<{ signature: string; revision: number } | null>(
-    null,
-  );
   const audition = useRef<{ pause: () => void } | null>(null);
   const bindAudition = useCallback((control: { pause: () => void } | null) => {
     audition.current = control;
   }, []);
   useDraftActivity(`teaser Part ${part.id}`, enabled && (busy || applying));
-  const proposed = candidate?.key === identity ? candidate.part : null,
-    h = proposed?.teaser;
+  const proposed = candidate?.key === identity ? candidate.part : null;
   const values = draft && draft.key === identity ? draft.times : baseline;
   // Raw prompt draft belongs to source/part (context scope), not to changing
   // cues/selected-plan identity. Timing/candidate drafts keep the stricter key.
@@ -220,7 +215,6 @@ export function TeaserEditor({
     if (raw === inputValue.current) return;
     inputValue.current = raw;
     inputRevision.current++;
-    setApplyAcknowledgement(null);
     request.current?.abort();
     setBusy(false);
     setError("");
@@ -286,7 +280,6 @@ export function TeaserEditor({
 
   function edit(boundary: "start" | "end", value: string) {
     inputRevision.current++;
-    setApplyAcknowledgement(null);
     request.current?.abort();
     audition.current?.pause();
     setCandidate(null);
@@ -429,10 +422,8 @@ export function TeaserEditor({
     request.current?.abort();
     audition.current?.pause();
     setError("");
-    const revision = inputRevision.current;
     try {
       await onChange(next, captionTrack);
-      setApplyAcknowledgement({ signature: JSON.stringify([next.teaser, next.customTeaser]), revision });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Chưa áp dụng được teaser.");
     } finally {
