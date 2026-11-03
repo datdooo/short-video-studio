@@ -1,0 +1,232 @@
+[
+  {
+    "order": 0,
+    "condition": "request.method==='POST'&&requestUrl.pathname==='/api/editor/source-lease'",
+    "matchers": ""
+  },
+  {
+    "order": 1,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/health\"",
+    "matchers": ""
+  },
+  {
+    "order": 2,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/auth/callback\"",
+    "matchers": ""
+  },
+  {
+    "order": 3,
+    "condition": "requestUrl.pathname.startsWith(\"/api/gemini/\")",
+    "matchers": ""
+  },
+  {
+    "order": 4,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/chatgpt/session\"",
+    "matchers": ""
+  },
+  {
+    "order": 5,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/chatgpt/auth/start\"",
+    "matchers": ""
+  },
+  {
+    "order": 6,
+    "condition": "requestUrl.pathname === \"/api/chatgpt/auth/status\" && [\"GET\", \"DELETE\"].includes(request.method)",
+    "matchers": ""
+  },
+  {
+    "order": 7,
+    "condition": "request.method === \"DELETE\" && requestUrl.pathname === \"/api/chatgpt/session\"",
+    "matchers": ""
+  },
+  {
+    "order": 8,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/chatgpt/models\"",
+    "matchers": ""
+  },
+  {
+    "order": 9,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/chatgpt/analyze\"",
+    "matchers": ""
+  },
+  {
+    "order": 10,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/youtube/metadata\"",
+    "matchers": ""
+  },
+  {
+    "order": 11,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/sources/youtube\"",
+    "matchers": ""
+  },
+  {
+    "order": 12,
+    "condition": "request.method==='POST'&&requestUrl.pathname==='/api/music/preview'",
+    "matchers": ""
+  },
+  {
+    "order": 13,
+    "condition": "['GET','HEAD'].includes(request.method)&&musicPreviewFile",
+    "matchers": "const musicPreviewFile=requestUrl.pathname.match(/^\\/api\\/music\\/preview\\/([a-f0-9]{64})\\/media$/);"
+  },
+  {
+    "order": 14,
+    "condition": "request.method==='GET'&&requestUrl.pathname==='/api/music'",
+    "matchers": ""
+  },
+  {
+    "order": 15,
+    "condition": "request.method==='POST'&&requestUrl.pathname==='/api/music/import'",
+    "matchers": ""
+  },
+  {
+    "order": 16,
+    "condition": "['GET','HEAD'].includes(request.method)&&musicFile",
+    "matchers": "const musicFile=requestUrl.pathname.match(/^\\/api\\/music\\/([a-f0-9]{64})\\/media$/);"
+  },
+  {
+    "order": 17,
+    "condition": "request.method==='POST'&&musicDetect",
+    "matchers": "const musicDetect=requestUrl.pathname.match(/^\\/api\\/sources\\/([a-f0-9-]+)\\/music-speech$/i);"
+  },
+  {
+    "order": 18,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/speech/status\"",
+    "matchers": ""
+  },
+  {
+    "order": 19,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/speech/model\"",
+    "matchers": ""
+  },
+  {
+    "order": 20,
+    "condition": "request.method==='GET'&&sourceMetadataMatch",
+    "matchers": "const sourceMetadataMatch=requestUrl.pathname.match(/^\\/api\\/sources\\/([a-f0-9-]{16,64})$/i);"
+  },
+  {
+    "order": 21,
+    "condition": "['GET','DELETE'].includes(request.method)&&manualStatus",
+    "matchers": "const manualStatus=requestUrl.pathname.match(/^\\/api\\/sources\\/([a-f0-9-]{16,64})\\/manual-video-status\\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i);"
+  },
+  {
+    "order": 22,
+    "condition": "['GET','HEAD'].includes(request.method)&&manualMedia",
+    "matchers": "const manualMedia=requestUrl.pathname.match(/^\\/api\\/sources\\/([a-f0-9-]{16,64})\\/manual-video$/i);"
+  },
+  {
+    "order": 23,
+    "condition": "request.method === \"POST\" && mainSource",
+    "matchers": "const mainSource = requestUrl.pathname.match(/^\\/api\\/sources\\/([a-f0-9-]+)\\/auto-cut$/i);"
+  },
+  {
+    "order": 24,
+    "condition": "request.method === \"POST\" && speechSource",
+    "matchers": "const speechSource = requestUrl.pathname.match(/^\\/api\\/sources\\/([a-f0-9-]+)\\/(smart-cut|captions|teaser-hooks)$/i);"
+  },
+  {
+    "order": 25,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/youtube/transcript\"",
+    "matchers": ""
+  },
+  {
+    "order": 26,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/sources/upload\"",
+    "matchers": ""
+  },
+  {
+    "order": 27,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/batches\"",
+    "matchers": ""
+  },
+  {
+    "order": 28,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/storage\"",
+    "matchers": ""
+  },
+  {
+    "order": 29,
+    "condition": "[\"GET\", \"HEAD\"].includes(request.method || \"\") && storageMediaMatch",
+    "matchers": "const storageMediaMatch = requestUrl.pathname.match(/^\\/api\\/storage\\/media\\/([^/]+)$/);"
+  },
+  {
+    "order": 30,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/storage/trash\"",
+    "matchers": ""
+  },
+  {
+    "order": 31,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/storage/restore\"",
+    "matchers": ""
+  },
+  {
+    "order": 32,
+    "condition": "request.method === \"DELETE\" && requestUrl.pathname === \"/api/storage/trash\"",
+    "matchers": ""
+  },
+  {
+    "order": 33,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/batches\"",
+    "matchers": ""
+  },
+  {
+    "order": 34,
+    "condition": "request.method==='POST'&&resumeBatchMatch",
+    "matchers": "const resumeBatchMatch=requestUrl.pathname.match(/^\\/api\\/batches\\/([a-f0-9-]{16,64})\\/resume$/i);"
+  },
+  {
+    "order": 35,
+    "condition": "request.method==='POST'&&batchPlanMatch",
+    "matchers": "const batchPlanMatch=requestUrl.pathname.match(/^\\/api\\/batches\\/([a-f0-9-]{16,64})\\/items\\/([a-f0-9-]{16,64})\\/plan$/i);"
+  },
+  {
+    "order": 36,
+    "condition": "request.method === \"DELETE\" && deleteBatchItemMatch",
+    "matchers": "const deleteBatchItemMatch = requestUrl.pathname.match(/^\\/api\\/batches\\/([a-f0-9-]{16,64})\\/items\\/([a-f0-9-]{16,64})$/i);"
+  },
+  {
+    "order": 37,
+    "condition": "request.method === \"POST\" && cancelBatchMatch",
+    "matchers": "const cancelBatchMatch = requestUrl.pathname.match(/^\\/api\\/batches\\/([a-f0-9-]{16,64})\\/cancel$/i);"
+  },
+  {
+    "order": 38,
+    "condition": "request.method === \"POST\" && cancelJobMatch",
+    "matchers": "const cancelJobMatch = requestUrl.pathname.match(/^\\/api\\/jobs\\/([a-f0-9-]{16,64})\\/cancel$/i);"
+  },
+  {
+    "order": 39,
+    "condition": "request.method === \"GET\" && requestUrl.pathname.startsWith(\"/api/batches/\")",
+    "matchers": ""
+  },
+  {
+    "order": 40,
+    "condition": "request.method === \"GET\" && requestUrl.pathname === \"/api/editor-renders\"",
+    "matchers": ""
+  },
+  {
+    "order": 41,
+    "condition": "request.method === \"DELETE\" && deleteEditorMatch",
+    "matchers": "const deleteEditorMatch = requestUrl.pathname.match(/^\\/api\\/editor-renders\\/([a-f0-9-]{16,64})$/i);"
+  },
+  {
+    "order": 42,
+    "condition": "request.method === \"POST\" && requestUrl.pathname === \"/api/render\"",
+    "matchers": ""
+  },
+  {
+    "order": 43,
+    "condition": "request.method === \"GET\" && requestUrl.pathname.startsWith(\"/api/jobs/\")",
+    "matchers": ""
+  },
+  {
+    "order": 44,
+    "condition": "[\"GET\", \"HEAD\"].includes(request.method || \"\") && sourceMediaMatch",
+    "matchers": "const sourceMediaMatch = requestUrl.pathname.match(/^\\/api\\/sources\\/([a-f0-9-]{16,64})\\/media$/i);"
+  },
+  {
+    "order": 45,
+    "condition": "[\"GET\", \"HEAD\"].includes(request.method || \"\") && requestUrl.pathname.startsWith(\"/files/\")",
+    "matchers": ""
+  }
+]

@@ -1,147 +1,185 @@
-import {resolveRuntime,runtimeEnvironment,prepareRuntimeDirectories} from '../desktop/runtime-config.mjs';
-import {canonicalVideoInput,VIDEO_TEXT_INSTRUCTIONS,VIDEO_TEXT_VERSION} from '../lib/video-ai-input.mjs';
-import {createEditorSourceLeases} from './editor-source-leases.mjs';
-import {createRequestOriginPolicy} from './request-origin.mjs';
-import {createHistoryPersistence} from './history-persistence.mjs';
-import {mediaByteRange} from './media-http.mjs';
-import {createExternalPromptSnapshots} from './external-prompt-snapshot.mjs';
-import {createWebAiVideo} from './web-ai-video.mjs';
-import {providerError,readProviderOutput,safeProviderId} from './provider-response.mjs';
-import {renderScratch,publishRender,recoverPublication} from './render-publication.mjs';
-import {assertTeaserContexts,selectionDigest,transcriptValue,teaserEvidenceValue} from '../lib/teaser-context.mjs';
-import {createMediaResources,createEditorMediaResources,balancedFfmpegArgs,RENDER_FILTER_COMPLEX_THREADS,RENDER_RESOURCE_PROFILE} from './media-resources.mjs';
-import {ANALYSIS_MODEL,ANALYSIS_REASONING,videoReasoning,reasoningCapabilities} from '../lib/ai-reasoning.mjs';
-import {withAiOperation,measureAiStage,aiEvent,aiMemo,beginAiRequest} from './ai-operation.mjs';
-import {compactAiInput,AI_INPUT_INSTRUCTIONS} from './ai-input.mjs';
-import {prepareRangeInput} from './range-input.mjs';
-import{parseCustomTeaser}from"../lib/custom-teaser.mjs";
-import {TRANSITION_SPRITE} from '../lib/visual-style/foreground-transitions.mjs';
-import {createMusicPreview} from './music-preview.mjs';
-import {createMusicLibrary} from './music-library.mjs';
-import {createMusicSpeech} from './music-speech.mjs';
-import {normalizeMusic,effectiveMusic} from '../lib/music/settings.mjs';
-import {MUSIC_CATALOG} from '../lib/music/catalog.mjs';
-import {musicMixFilters} from './music-audio.mjs';
-import { spawn, spawnSync } from "node:child_process";
-import {
-  createHash,
-  createPublicKey,
-  randomBytes,
-  randomUUID,
-  verify as verifySignature,
-} from "node:crypto";
-import {
-  createReadStream,
-  createWriteStream,
-  existsSync,
-  statSync,
-} from "node:fs";
-import {
-  mkdir,
-  mkdtemp,
-  lstat,
-  chmod,
-  readFile,
-  readdir,
-  rm,
-  rename,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { lstat, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { homedir, userInfo } from "node:os";
 import path from "node:path";
-import { homedir,setPriority,userInfo } from "node:os";
-import { pipeline } from "node:stream/promises";
-import { Transform } from "node:stream";
 import sharp from "sharp";
-import { cutTransitionFilters } from './cut-transition.mjs';
-import { titleAnimationFilters } from "./title-animation.mjs";
+import { prepareRuntimeDirectories, resolveRuntime, runtimeEnvironment } from "../desktop/runtime-config.mjs";
+import { parseCustomTeaser } from "../lib/custom-teaser.mjs";
+import { originalCutPlan } from "../lib/legacy-plan.mjs";
+import { MUSIC_CATALOG } from "../lib/music/catalog.mjs";
+import { effectiveMusic, normalizeMusic } from "../lib/music/settings.mjs";
+import {
+  FOREGROUND_SCALE,
+  FOREGROUND_Y,
+  PLAYBACK_RATE,
+  TITLE_LAYOUT,
+  TITLE_SHINE_SECONDS,
+  TITLE_SHINE_WIDTH,
+  foregroundFilter,
+} from "../lib/render-config.mjs";
+import {
+  effectiveCaptionTrack,
+  partCaptions,
+  sourceCaptionTrack,
+  subtitleStyle,
+  subtitleY,
+} from "../lib/subtitles.mjs";
+import { assertTeaserContexts, selectionDigest, transcriptValue } from "../lib/teaser-context.mjs";
+import {
+  partTransitionWindows,
+  presentationDuration,
+  presentationSegments,
+  validateTeaser,
+} from "../lib/teaser-hooks.mjs";
 import { normalizeTitleAnimation } from "../lib/visual-style/animations.mjs";
-import { renderSceneOverlay } from "./scene-overlays.mjs";
-import { removeBatchItem } from "./batch-cleanup.mjs";
-import { youtubeUrl } from "./youtube-common.mjs";
-import { EXPORT_METADATA_POLICY, EXPORT_METADATA_ARGS, requireCurrentExportPolicy } from './export-metadata.mjs';
-import { verifiedRenderOutput } from "./render-resume.mjs";
-import { createSourceReuse } from "./source-reuse.mjs";
-import { createBatchProcessor } from "./batch-pipeline.mjs";
-import { externalHooksCurrent } from "../lib/teaser-import.mjs";
-import { createBatchSubmissionQueue, restoreBatchPreparation } from "./batch-queue.mjs";
-import { createCommandLifecycle } from "./command-lifecycle.mjs";
-import { createMediaLibrary } from "./media-library.mjs";
-import { validatePlan,validateRenderPlan } from "./plan-validation.mjs";
-import { effectiveCutPlan } from "./part-start.mjs";
-import { createExportNameAllocator } from "./export-names.mjs";
-import { createSpeechService } from "./speech.mjs";
-import { smartCutPlan } from "./smart-cut.mjs";
-import { createAutoCutWorkflow } from "./auto-cut-workflow.mjs";
-import { requireDiskSpace } from "./analysis-cache.mjs";
-import { createLocalSignalAnalyzer } from "./local-signals.mjs";
-import { createMainContentSelector } from "./main-content.mjs";
-import { createSourceContextService, sourceContextFor, saveSourceContext } from "./source-context.mjs";
-import { createYouTubeDownloader } from "./youtube-downloader.mjs";
-import { createAuthAttempts, tokenError, assertTokenResponse, sessionHealth } from "./chatgpt-auth-state.mjs";
-import { createChatGPTStore } from './chatgpt-store.mjs';
-import { createTeaserSelector } from "./teaser-selection.mjs";
-import { TEASER_POLICY, presentationSegments, presentationDuration, partTransitionWindows, validateTeaser } from "../lib/teaser-hooks.mjs";
-import { detectScript, fontFamilyForStyle, listFonts } from "../lib/visual-style/fonts.mjs";
+import { assertRenderableBackground, gradientRowRgb } from "../lib/visual-style/backgrounds.mjs";
 import { DEFAULT_VISUAL_STYLE } from "../lib/visual-style/defaults.mjs";
+import { currentFilterEnvironment, ffmpegFilterExpression } from "../lib/visual-style/filters.mjs";
+import { detectScript, fontFamilyForStyle, listFonts } from "../lib/visual-style/fonts.mjs";
+import { TRANSITION_SPRITE } from "../lib/visual-style/foreground-transitions.mjs";
+import { snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { styledTextSvg } from "../lib/visual-style/text-render.mjs";
 import { constrainTitlePair, needsMeasuredTitleFit, partOverlayTitle } from "../lib/visual-style/title-fit.mjs";
-import { assertRenderableBackground, gradientRowRgb } from "../lib/visual-style/backgrounds.mjs";
-import { currentFilterEnvironment, ffmpegFilterExpression } from "../lib/visual-style/filters.mjs";
-import { snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
-import { PLAYBACK_RATE, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, foregroundFilter } from '../lib/render-config.mjs';
-import { originalCutPlan } from '../lib/legacy-plan.mjs';
-import { parseCaptions, partCaptions, subtitleStyle, subtitleY, sourceCaptionTrack, effectiveCaptionTrack, selectionCaptionTrack } from "../lib/subtitles.mjs";
+import { measureAiStage, withAiOperation } from "./ai-operation.mjs";
+import { createAnalysisService } from "./analysis-service.mjs";
+import { createAutoCutWorkflow } from "./auto-cut-workflow.mjs";
+import { removeBatchItem } from "./batch-cleanup.mjs";
+import { createBatchProcessor } from "./batch-pipeline.mjs";
+import { createBatchSubmissionQueue } from "./batch-queue.mjs";
+import { createChatGPTAuth } from "./chatgpt-auth.mjs";
+import { createCommandLifecycle } from "./command-lifecycle.mjs";
+import { createCommandRunner } from "./command-runner.mjs";
+import { cutTransitionFilters } from "./cut-transition.mjs";
+import { createEditorSourceLeases } from "./editor-source-leases.mjs";
+import { EXPORT_METADATA_ARGS, EXPORT_METADATA_POLICY, requireCurrentExportPolicy } from "./export-metadata.mjs";
+import { createExportNameAllocator } from "./export-names.mjs";
+import { createExternalPromptSnapshots } from "./external-prompt-snapshot.mjs";
+import { createHttpResponses } from "./http-responses.mjs";
+import { createLocalSignalAnalyzer } from "./local-signals.mjs";
+import { createMainContentSelector } from "./main-content.mjs";
+import { createMediaLibrary } from "./media-library.mjs";
+import {
+  RENDER_FILTER_COMPLEX_THREADS,
+  RENDER_RESOURCE_PROFILE,
+  createEditorMediaResources,
+  createMediaResources,
+} from "./media-resources.mjs";
+import { musicMixFilters } from "./music-audio.mjs";
+import { createMusicLibrary } from "./music-library.mjs";
+import { createMusicPreview } from "./music-preview.mjs";
+import { createMusicSpeech } from "./music-speech.mjs";
+import { effectiveCutPlan } from "./part-start.mjs";
+import { validatePlan, validateRenderPlan } from "./plan-validation.mjs";
+import { createQueueHistory } from "./queue-history.mjs";
+import { prepareRangeInput } from "./range-input.mjs";
+import { publishRender, recoverPublication, renderScratch } from "./render-publication.mjs";
+import { verifiedRenderOutput } from "./render-resume.mjs";
+import { createRequestOriginPolicy } from "./request-origin.mjs";
+import { createAuthRoutes } from "./routes/auth.mjs";
+import { createBatchRoutes } from "./routes/batch.mjs";
+import { createHealthRoutes } from "./routes/health.mjs";
+import { createRequestHandler } from "./routes/http-handler.mjs";
+import { createMusicRoutes } from "./routes/music.mjs";
+import { createRenderRoutes } from "./routes/render.mjs";
+import { createRouter } from "./routes/router.mjs";
+import { createSourcesRoutes } from "./routes/sources.mjs";
+import { createStorageRoutes } from "./routes/storage.mjs";
+import { renderSceneOverlay } from "./scene-overlays.mjs";
+import { smartCutPlan } from "./smart-cut.mjs";
+import { createSourceContextService } from "./source-context.mjs";
+import { createSourceReuse } from "./source-reuse.mjs";
+import { createSourceService } from "./source-service.mjs";
+import { createSpeechService } from "./speech.mjs";
+import { createTeaserSelector } from "./teaser-selection.mjs";
+import { titleAnimationFilters } from "./title-animation.mjs";
+import { createWebAiVideo } from "./web-ai-video.mjs";
+import { youtubeUrl } from "./youtube-common.mjs";
+import { createYouTubeDownloader } from "./youtube-downloader.mjs";
 
-sharp.concurrency(2);sharp.cache({memory:32,files:8,items:32});
+sharp.concurrency(2);
+sharp.cache({ memory: 32, files: 8, items: 32 });
 
 const projectRoot = path.resolve(import.meta.dirname, "..");
-const betaRuntime=resolveRuntime({profile:process.env.SHORTCUT_RUNTIME_PROFILE||'beta',home:userInfo().homedir,supportRoot:process.env.SHORTCUT_BETA_SUPPORT_ROOT});
-for(const [key,expected] of Object.entries({MEDIA_WORKER_DATA_DIR:betaRuntime.dataRoot,MEDIA_WORKER_PORT:String(betaRuntime.workerPort),PORT:String(betaRuntime.webPort),CHATGPT_KEYCHAIN_SERVICE:betaRuntime.credentialService})){
- if(process.env[key]!==undefined&&process.env[key]!==expected)throw Error(`Beta isolation: invalid ${key}; refusing cross-profile access.`);
+const betaRuntime = resolveRuntime({
+  profile: process.env.SHORTCUT_RUNTIME_PROFILE || "beta",
+  home: userInfo().homedir,
+  supportRoot: process.env.SHORTCUT_BETA_SUPPORT_ROOT,
+});
+for (const [key, expected] of Object.entries({
+  MEDIA_WORKER_DATA_DIR: betaRuntime.dataRoot,
+  MEDIA_WORKER_PORT: String(betaRuntime.workerPort),
+  PORT: String(betaRuntime.webPort),
+  CHATGPT_KEYCHAIN_SERVICE: betaRuntime.credentialService,
+})) {
+  if (process.env[key] !== undefined && process.env[key] !== expected)
+    throw Error(`Beta isolation: invalid ${key}; refusing cross-profile access.`);
 }
-const inheritedFontConfig=process.env.FONTCONFIG_FILE,credentialHelper=process.env.CHATGPT_CREDENTIAL_HELPER;
-const isolatedEnvironment=runtimeEnvironment(betaRuntime);
-for(const key of Object.keys(process.env))if(!(key in isolatedEnvironment))delete process.env[key];
-Object.assign(process.env,isolatedEnvironment);
-if(inheritedFontConfig){if(path.resolve(inheritedFontConfig)!==path.join(betaRuntime.dataRoot,'fontconfig.xml'))throw Error('Beta fontconfig must be app-local.');process.env.FONTCONFIG_FILE=inheritedFontConfig;}
-if(credentialHelper){if(process.platform!=='win32'||path.resolve(credentialHelper)!==path.resolve(projectRoot,'../runtime/bin/chatgpt-credential-store.exe'))throw Error('Beta credential helper must be bundled.');process.env.CHATGPT_CREDENTIAL_HELPER=credentialHelper;}
+const inheritedFontConfig = process.env.FONTCONFIG_FILE,
+  credentialHelper = process.env.CHATGPT_CREDENTIAL_HELPER;
+const isolatedEnvironment = runtimeEnvironment(betaRuntime);
+for (const key of Object.keys(process.env)) if (!(key in isolatedEnvironment)) delete process.env[key];
+Object.assign(process.env, isolatedEnvironment);
+if (inheritedFontConfig) {
+  if (path.resolve(inheritedFontConfig) !== path.join(betaRuntime.dataRoot, "fontconfig.xml"))
+    throw Error("Beta fontconfig must be app-local.");
+  process.env.FONTCONFIG_FILE = inheritedFontConfig;
+}
+if (credentialHelper) {
+  if (
+    process.platform !== "win32" ||
+    path.resolve(credentialHelper) !== path.resolve(projectRoot, "../runtime/bin/chatgpt-credential-store.exe")
+  )
+    throw Error("Beta credential helper must be bundled.");
+  process.env.CHATGPT_CREDENTIAL_HELPER = credentialHelper;
+}
 await prepareRuntimeDirectories(betaRuntime);
-const dataRoot=betaRuntime.dataRoot;
-const sourcesRoot=path.join(dataRoot,'sources');
-const port=betaRuntime.workerPort,webPort=betaRuntime.webPort;
-const requestOrigins=createRequestOriginPolicy({webPort,workerPort:port});
-const editorSourceLeases=createEditorSourceLeases();
+const dataRoot = betaRuntime.dataRoot;
+const sourcesRoot = path.join(dataRoot, "sources");
+const port = betaRuntime.workerPort,
+  webPort = betaRuntime.webPort;
+const requestOrigins = createRequestOriginPolicy({ webPort, workerPort: port });
+const editorSourceLeases = createEditorSourceLeases();
 const host = "127.0.0.1";
+const {
+  assertId,
+  downloadYouTubeSource,
+  fetchYouTubeTranscript,
+  importUpload,
+  importYouTube,
+  loadSource,
+  probeMedia,
+  publicSource,
+} = createSourceService(() => ({ dataRoot, ffprobe, run, sourceContexts, sourceReuse, sourcesRoot, youtube }));
+const { run } = createCommandRunner(() => ({
+  commandLifecycle,
+  ffmpeg,
+  ffprobe,
+  mediaResources,
+  metadataResources,
+  projectRoot,
+  whisper,
+}));
+const {
+  corsHeaders,
+  createManualDownload,
+  manualDownloadError,
+  manualDownloadKey,
+  manualDownloadProgress,
+  manualVideoDownloads,
+  pruneManualDownloads,
+  readJson,
+  sendHtml,
+  sendJson,
+  serveAiOperation,
+  serveFile,
+  serveMediaPath,
+  serveSourceMedia,
+} = createHttpResponses(() => ({ loadSource, requestOrigins, sourcesRoot }));
 const jobs = new Map();
-// Ephemeral telemetry for one native browser download, never a persisted job.
-// GET/poll reads only this map; it cannot prepare/restart media work.
-const manualVideoDownloads = new Map();
-const MANUAL_DOWNLOAD_TTL = 5 * 60_000, MANUAL_DOWNLOAD_LIMIT = 32;
-const manualDownloadKey=(sourceId,downloadId)=>`${sourceId.toLowerCase()}:${downloadId.toLowerCase()}`;
-function pruneManualDownloads(){
-  const now=Date.now();
-  for(const[key,item]of manualVideoDownloads)if(item.progress.state!=='running'&&now-item.updatedAt>MANUAL_DOWNLOAD_TTL)manualVideoDownloads.delete(key);
-}
-function createManualDownload(sourceId,downloadId,progress){
-  pruneManualDownloads();
-  if(manualVideoDownloads.size>=MANUAL_DOWNLOAD_LIMIT)throw Object.assign(Error('Có quá nhiều lượt tải đang được theo dõi. Chờ một lát rồi tải lại.'),{status:429});
-  const item={sourceId:sourceId.toLowerCase(),downloadId:downloadId.toLowerCase(),updatedAt:Date.now(),progress:{...progress,updatedAt:Date.now()},cancel:null};
-  manualVideoDownloads.set(manualDownloadKey(sourceId,downloadId),item);return item;
-}
-function manualDownloadProgress(item,progress){
-  if(!item||item.progress.state!=='running')return;
-  item.updatedAt=Date.now();item.progress={...progress,updatedAt:item.updatedAt};
-}
-function manualDownloadError(error){
-  if(error?.code==='SOURCE_BUSY')return'Nguồn đang được di chuyển. Chờ xong rồi tải lại.';
-  if(['WEB_VIDEO_SOURCE_CHANGED','WEB_VIDEO_VARIANT_CHANGED'].includes(error?.code))return'Nguồn hoặc bản video đã đổi. Tải TXT mới rồi tải video lại.';
-  if(error?.code==='SOURCE_MEDIA_MISSING'||error?.code==='ENOENT')return'Không còn video nguồn. Chuẩn bị hoặc khôi phục nguồn rồi tải lại.';
-  if(error?.code==='ENOSPC')return'Không đủ dung lượng để chuẩn bị video.';
-  if(error?.code==='WEB_VIDEO_TOO_LONG'||error?.code==='WEB_VIDEO_TOO_LARGE')return'Chưa tạo được video đầy đủ trong giới hạn 512 MiB; nguồn và plan vẫn được giữ.';
-  return'Không chuẩn bị hoặc truyền được video. Bấm Tải video để thử lại.';
-}
+
 const exportNameAllocator = createExportNameAllocator();
 const batches = new Map();
 const batchControllers = new Map();
@@ -149,120 +187,520 @@ const renderControllers = new Map();
 const startedRenderControllers = new WeakSet();
 const renderParentCleanup = new WeakMap();
 const commandLifecycle = createCommandLifecycle();
-const mediaResources=createEditorMediaResources();
+const mediaResources = createEditorMediaResources();
 // Header/stream inspection is serial and bounded, but must not wait for a full
 // export. No full-video decode or heavy FFmpeg/ASR lease is needed here.
-const metadataResources=createMediaResources({maxWaiting:16});
-const pendingRenderSubmissions=new Map();
-let renderQueue=Promise.resolve();
-const exportBusy=()=>pendingRenderSubmissions.size>0||[...jobs.values()].some(j=>["queued","rendering"].includes(j.state)&&renderControllers.has(j.id));
-const batchHistoryPath = path.join(dataRoot, "batch-history.json");
-const historyPersistence=createHistoryPersistence(batchHistoryPath);
-function persistBatchHistory({strict=false,immediate=false}={}) {
-  const snapshot=JSON.stringify({batches:[...batches.values()],jobs:[...jobs.values()].filter(job=>job.origin==="editor"||[...batches.values()].some(batch=>batch.items.some(item=>!item.deleted&&(item.jobId===job.id||item.submissionId===job.id))))});
-  const write=historyPersistence.save(snapshot,{strict:strict||immediate});
-  return strict?write:write.catch(error=>console.error(`Queue history write failed: ${error.code||'IO_ERROR'}`));
+const metadataResources = createMediaResources({ maxWaiting: 16 });
+const pendingRenderSubmissions = new Map();
+let renderQueue = Promise.resolve();
+
+function exportPrefixFor(plan, source) {
+  const aliases = {
+    de: "de",
+    fr: "fr",
+    ja: "jp",
+    jp: "jp",
+    ko: "kr",
+    kr: "kr",
+    en: "us",
+    us: "us",
+    vi: "vn",
+    zh: "cn",
+    es: "es",
+    it: "it",
+    pt: "pt",
+    ru: "ru",
+  };
+  const sourceLanguage = String(source.language || "")
+    .toLowerCase()
+    .split(/[-_]/)[0];
+  if (aliases[sourceLanguage]) return aliases[sourceLanguage];
+  const script = detectScript(`${plan.originalTitle} ${plan.parts.map((part) => part.title).join(" ")}`);
+  if (script === "korean") return "kr";
+  if (script === "japanese") return "jp";
+  return aliases[String(plan.language || "").toLowerCase()] || "us";
 }
 
-async function restoreBatchHistory() {
+function reserveExportNames(plan, source) {
+  return exportNameAllocator.reserve(exportPrefixFor(plan, source), plan.parts.length);
+}
+
+async function executeRender(job, source, plan, signal) {
+  let scratch;
   try {
-    const history = JSON.parse(await readFile(batchHistoryPath, "utf8"));
-    let normalized=false;
-    for (const job of history.jobs || []) {
-      if (!["done", "error", "cancelled"].includes(job.state)) {
-        normalized=true;job.state = "cancelled";
-        job.error = "App đã đóng trước khi xử lý xong. File đã hoàn tất vẫn được giữ.";
+    signal?.throwIfAborted();
+    requireCurrentExportPolicy(job);
+    validateRenderPlan(plan, source);
+    await verifySourceTeasers(plan, source, signal);
+    job.plan = structuredClone(plan);
+    job.state = "rendering";
+    job.startedAt = new Date().toISOString();
+    const outputDirectory = path.join(source.directory, "outputs", job.id);
+    await mkdir(outputDirectory, { recursive: true });
+    scratch = await renderScratch(outputDirectory, { sourceId: source.id, jobId: job.id });
+    const exportNames = job.exportNames || (await reserveExportNames(plan, source));
+    job.exportNames = exportNames;
+    await persistBatchHistory({ strict: true });
+    const sceneAsset = await renderSceneOverlay({
+      overlays: plan.visualStyle?.overlays || [],
+      publicRoot: path.join(projectRoot, "public"),
+      outputPath: path.join(scratch.root, "scene-overlays.png"),
+    });
+    // One static gradient per job, shared by all parts; never rasterize per frame.
+    const background = assertRenderableBackground(plan.visualStyle?.background);
+    let backgroundAsset;
+    if (background.mode === "gradient") {
+      backgroundAsset = path.join(scratch.root, "background.png");
+      const pixels = Buffer.alloc(1080 * 1920 * 3);
+      for (let y = 0; y < 1920; y++) {
+        const row = Buffer.from(gradientRowRgb(background, y, 1920));
+        pixels.fill(row, y * 1080 * 3, (y + 1) * 1080 * 3);
       }
-      jobs.set(job.id, job);
+      await sharp(pixels, { raw: { width: 1080, height: 1920, channels: 3 } })
+        .png()
+        .toFile(backgroundAsset);
     }
-    for (const batch of history.batches || []) {
-      const before=JSON.stringify(batch);
-      for(const item of batch.items||[])item.id ||= randomUUID();
-      restoreBatchPreparation(batch,jobs);if(JSON.stringify(batch)!==before)normalized=true;
-      batches.set(batch.id, batch);
+    const outputDurations = plan.parts.map((part) => presentationDuration(part) / PLAYBACK_RATE),
+      totalOutputSeconds = outputDurations.reduce((a, b) => a + b, 0);
+    let completedSeconds = 0;
+    job.totalOutputSeconds = totalOutputSeconds;
+    for (const [index, part] of plan.parts.entries()) {
+      signal?.throwIfAborted();
+      const finalDirectory = path.join(outputDirectory, `part-${part.id}`);
+      const prior =
+        job.outputs.find((o) => o.part === part.id) ||
+        (await recoverPublication({
+          directory: finalDirectory,
+          filename: exportNames[index],
+          sourceId: source.id,
+          jobId: job.id,
+          partId: part.id,
+          metadataPolicy: EXPORT_METADATA_POLICY,
+        }));
+      const completed = await verifiedRenderOutput({
+        file: path.join(outputDirectory, `part-${part.id}`, exportNames[index]),
+        filename: exportNames[index],
+        record: prior,
+        sourceId: source.id,
+        jobId: job.id,
+        partId: part.id,
+        duration: presentationDuration(part) / PLAYBACK_RATE,
+        probe: probeMedia,
+      });
+      if (completed) {
+        if (!job.outputs.some((o) => o.part === part.id)) job.outputs.push(completed);
+        completedSeconds += outputDurations[index];
+        job.outputSeconds = completedSeconds;
+        job.progress = Math.min(99, Math.floor((completedSeconds / totalOutputSeconds) * 100));
+        await persistBatchHistory({ strict: true });
+        continue;
+      }
+      // An existing unrecorded/legacy/corrupt file is never overwritten or
+      // adopted as a clean export. Keep it and require a separate new job.
+      const existingFile = path.join(outputDirectory, `part-${part.id}`, exportNames[index]);
+      const existingOutput = await lstat(existingFile).catch((error) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (existingOutput)
+        throw new Error(
+          "MP4 đã tồn tại nhưng không đủ bằng chứng chính sách metadata hiện tại. Xuất thành job mới; không ghi đè/xóa file cũ.",
+        );
+      job.outputs = job.outputs.filter((o) => o.part !== part.id);
+      job.currentPart = part.id;
+      job.phase = "rendering";
+      const filename = exportNames[index];
+      const partDirectory = path.join(scratch.root, `part-${part.id}`);
+      await mkdir(partDirectory, { recursive: true });
+      const outputPath = path.join(partDirectory, filename);
+      job.encoder = await renderPart({
+        source,
+        plan,
+        part,
+        totalParts: plan.parts.length,
+        backgroundAsset,
+        sceneAsset,
+        outputPath,
+        signal,
+        onEncoder: (encoder, fallback) => {
+          job.encoder = encoder;
+          job.encoderFallback = fallback;
+          job.resourceNotice =
+            encoder === "libx264"
+              ? fallback
+                ? "VideoToolbox lỗi; chuyển CPU · giới hạn 2 luồng."
+                : "CPU · giới hạn 2 luồng (VideoToolbox chưa khả dụng)."
+              : "Apple VideoToolbox · Balanced M2";
+          void persistBatchHistory();
+        },
+        onProgress: (partProgress) => {
+          job.outputSeconds = completedSeconds + partProgress * outputDurations[index];
+          job.progress = Math.max(
+            job.progress || 0,
+            Math.min(99, Math.floor((job.outputSeconds / totalOutputSeconds) * 100)),
+          );
+        },
+      });
+      signal?.throwIfAborted();
+      job.phase = "validating";
+      const outputStat = await stat(outputPath);
+      const checked = await verifiedRenderOutput({
+        file: outputPath,
+        filename,
+        record: { filename, size: outputStat.size, metadataPolicy: EXPORT_METADATA_POLICY },
+        sourceId: source.id,
+        jobId: job.id,
+        partId: part.id,
+        duration: presentationDuration(part) / PLAYBACK_RATE,
+        probe: probeMedia,
+      });
+      if (!checked) throw Error("MP4 chưa đạt geometry/duration/audio contract; chưa publish, có thể Resume part này.");
+      job.phase = "publishing";
+      await publishRender({
+        staging: outputPath,
+        directory: finalDirectory,
+        filename,
+        sourceId: source.id,
+        jobId: job.id,
+        partId: part.id,
+        metadataPolicy: EXPORT_METADATA_POLICY,
+        signal,
+      });
+      job.outputs.push({
+        part: part.id,
+        filename,
+        size: outputStat.size,
+        metadataPolicy: EXPORT_METADATA_POLICY,
+        url: `/files/${source.id}/outputs/${job.id}/part-${part.id}/${encodeURIComponent(filename)}`,
+      });
+      await persistBatchHistory({ strict: true });
+      completedSeconds += outputDurations[index];
     }
-    await importLegacyRenderHistory();if(normalized)await persistBatchHistory({strict:true});
+    job.progress = 100;
+    job.state = "done";
+    job.finishedAt = new Date().toISOString();
   } catch (error) {
-    if (error.code === "ENOENT") await importLegacyRenderHistory();
-    else console.error(`Không đọc được lịch sử hàng đợi: ${error.message}`);
+    job.state = signal?.aborted ? "cancelled" : "error";
+    job.error = signal?.aborted ? null : error instanceof Error ? error.message : String(error);
+    job.finishedAt = new Date().toISOString();
+  } finally {
+    if (scratch) await scratch.dispose().catch(() => {});
   }
 }
-async function importLegacyRenderHistory() {
-  // Older personal builds stored files but no history. Recover completed YouTube
-  // outputs for download/delete, without touching media or claiming to recover AI plans.
-  const recoveredItems = [];
-  let directories;
-  try { directories = await readdir(sourcesRoot, { withFileTypes: true }); } catch { return; }
-  for (const directory of directories) {
-    if (!directory.isDirectory() || !/^[a-f0-9-]{16,64}$/i.test(directory.name)) continue;
-    const sourceDirectory = path.join(sourcesRoot, directory.name);
-    try {
-      const source = JSON.parse(await readFile(path.join(sourceDirectory, "source.json"), "utf8"));
-      if (source.kind !== "youtube") continue;
-      for (const jobId of await readdir(path.join(sourceDirectory, "outputs"))) {
-        if (!/^[a-f0-9-]{16,64}$/i.test(jobId)) continue;
-        if (jobs.has(jobId) || [...batches.values()].some((batch) => batch.items.some((item) => item.jobId === jobId))) continue;
-        const outputs = [];
-        for (const part of [1, 2]) {
-          const partDirectory = path.join(sourceDirectory, "outputs", jobId, `part-${part}`);
-          let files;
-          try { files = await readdir(partDirectory); } catch { continue; }
-          for (const filename of files.filter((name) => name.endsWith(".mp4"))) {
-            const target = path.join(partDirectory, filename);
-            try {
-              const media = await probeMedia(target);
-              if (!media.duration) continue;
-              outputs.push({ part, filename, size: (await stat(target)).size, url: `/files/${directory.name}/outputs/${jobId}/part-${part}/${encodeURIComponent(filename)}` });
-            } catch { /* Ignore incomplete exports. */ }
-          }
+
+function startRender(body, parentSignal) {
+  // Pending HTTP calls and already queued/running editor jobs share this key.
+  const fingerprint = createHash("sha256")
+    .update(
+      JSON.stringify([body.sourceId, body.plan], (_key, v) =>
+        v && typeof v === "object" && !Array.isArray(v)
+          ? Object.fromEntries(
+              Object.keys(v)
+                .sort()
+                .map((k) => [k, v[k]]),
+            )
+          : v,
+      ),
+    )
+    .digest("hex");
+  const key = body.submissionId ? `id:${assertId(body.submissionId)}` : `editor:${fingerprint}`;
+  if (pendingRenderSubmissions.has(key)) {
+    const pending = pendingRenderSubmissions.get(key);
+    if (pending.sourceId !== body.sourceId)
+      throw Object.assign(new Error("Submission belongs to another source"), { status: 409 });
+    return pending.promise;
+  }
+  if (!body.submissionId) {
+    const active = [...jobs.values()].find(
+      (j) =>
+        j.origin === "editor" &&
+        j.submissionFingerprint === fingerprint &&
+        ["queued", "rendering"].includes(j.state) &&
+        !j.deleted,
+    );
+    if (active) return Promise.resolve(active);
+  }
+  const task = prepareRenderSubmission(body, parentSignal, fingerprint).finally(() => {
+    if (pendingRenderSubmissions.get(key)?.promise === task) pendingRenderSubmissions.delete(key);
+  });
+  pendingRenderSubmissions.set(key, { sourceId: body.sourceId, promise: task });
+  return task;
+}
+
+async function prepareRenderSubmission(body, parentSignal, fingerprint) {
+  if (mediaLibrary.isLocked(body.sourceId))
+    throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
+  const source = await loadSource(body.sourceId, parentSignal);
+  parentSignal?.throwIfAborted();
+  body.plan = originalCutPlan(body.plan, source.id);
+  if (body.transcript !== undefined) {
+    if (typeof body.transcript !== "string" || body.transcript.length > 1_000_000)
+      throw Error("Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; không tự bỏ phần cuối.");
+    body.plan = { ...body.plan, teaserTranscriptKey: await selectionDigest(transcriptValue(body.transcript)) };
+  }
+  const captions = effectiveCaptionTrack(body.plan, source);
+  let originalPlan = structuredClone(
+    effectiveCutPlan({ ...body.plan, originalTitle: source.title, ...(captions ? { captionCues: captions } : {}) }),
+  );
+  validateRenderPlan(originalPlan, source);
+  if (body.instruction !== undefined || body.supplementalPrompt !== undefined)
+    await assertTeaserContexts(originalPlan, source, captions?.cues || [], body.transcript || source.transcript || "", {
+      instruction: body.instruction,
+      supplementalPrompt: body.supplementalPrompt,
+    });
+  await verifySourceTeasers(originalPlan, source, parentSignal);
+  // Rendering never selects/fills hooks. Explicit selection must finish first.
+  validateRenderPlan(originalPlan, source);
+  originalPlan = snapshotPlanVisualStyle(originalPlan);
+  if (originalPlan.subtitles.enabled && !originalPlan.captionCues)
+    throw Error("Tạo/duyệt phụ đề trong editor trước khi xuất; không tự thay caption track của job đã gửi.");
+  if (originalPlan.subtitles.enabled && originalPlan.captionCues)
+    originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
+  originalPlan.music = normalizeMusic(originalPlan.music);
+  if (originalPlan.music.enabled) {
+    for (const part of originalPlan.parts) {
+      const m = effectiveMusic(originalPlan.music, part.id);
+      if (m.enabled) await musicLibrary.resolve(m.assetId);
+    }
+  }
+  const renderPlan = originalPlan;
+  validateRenderPlan(renderPlan, source);
+  if (mediaLibrary.isLocked(source.id))
+    throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
+  if (body.submissionId) {
+    assertId(body.submissionId);
+    const existing = jobs.get(body.submissionId);
+    if (existing) {
+      if (existing.sourceId !== source.id) throw new Error("Submission belongs to another source");
+      requireCurrentExportPolicy(existing);
+      validateRenderPlan(existing.plan, source);
+      return existing;
+    }
+    if (existsSync(path.join(source.directory, "outputs", body.submissionId)))
+      throw new Error("Render output exists without its history; inspect it before another submission.");
+  }
+  const job = {
+    id: body.submissionId || randomUUID(),
+    sourceId: source.id,
+    origin: parentSignal ? "batch" : "editor",
+    metadataPolicy: EXPORT_METADATA_POLICY,
+    submissionFingerprint: fingerprint,
+    resourceProfile: RENDER_RESOURCE_PROFILE,
+    plan: originalPlan,
+    startTrimSeconds: 1,
+    state: "queued",
+    progress: 0,
+    currentPart: null,
+    outputs: [],
+    encoder: preferredVideoEncoder,
+    error: null,
+    createdAt: new Date().toISOString(),
+  };
+  jobs.set(job.id, job);
+  try {
+    await persistBatchHistory({ strict: true });
+  } catch (error) {
+    job.state = "error";
+    job.error = "Không lưu được lịch sử job; chưa bắt đầu render.";
+    job.finishedAt = new Date().toISOString();
+    throw error;
+  }
+  enqueueRender(job, source, renderPlan, parentSignal);
+  return job;
+}
+
+function enqueueRender(job, source, renderPlan, parentSignal) {
+  const controller = new AbortController();
+  renderControllers.set(job.id, controller);
+  const abort = () => cancelRender(job);
+  const detachParent = () => parentSignal?.removeEventListener("abort", abort);
+  renderParentCleanup.set(controller, detachParent);
+  parentSignal?.addEventListener("abort", abort, { once: true });
+  if (parentSignal?.aborted) abort();
+  const task = renderQueue
+    .then(async () => {
+      // A queued cancellation is already final. Its old promise must not touch a
+      // resumed job or reacquire resources when the preceding export completes.
+      if (controller.signal.aborted || renderControllers.get(job.id) !== controller) return;
+      startedRenderControllers.add(controller);
+      const signal = controller.signal;
+      signal.throwIfAborted();
+      job.phase = "preparing";
+      let prepared = structuredClone(renderPlan);
+      // Cut compatibility was resolved before job creation; snapshots never run a second Smart Cut here.
+      if (prepared.parts.some((p) => !p.startTrimApplied || !p.smartCutApplied))
+        throw Error("Snapshot cũ chưa chốt cut; mở trong editor và gửi job mới, không tự sửa job đã lưu.");
+      if (prepared.music?.enabled && prepared.music.ducking)
+        prepared.musicSpeech = await musicSpeech.detect(source, signal);
+      if (prepared.subtitles?.enabled && !prepared.captionCues)
+        throw Error("Tạo/duyệt phụ đề trong editor trước khi gửi job mới; không đổi track sau khi snapshot.");
+      signal.throwIfAborted();
+      validateRenderPlan(prepared, source);
+      job.plan = structuredClone(prepared);
+      job.phase = "rendering";
+      await mediaResources.use("render", (active) => executeRender(job, source, prepared, active), signal);
+    })
+    .catch((error) => {
+      if (renderControllers.get(job.id) !== controller) return;
+      job.state = controller.signal.aborted ? "cancelled" : "error";
+      job.error = controller.signal.aborted ? null : error instanceof Error ? error.message : String(error);
+      job.finishedAt = new Date().toISOString();
+    })
+    .finally(async () => {
+      try {
+        if (renderControllers.get(job.id) === controller) {
+          renderControllers.delete(job.id);
+          job.phase = null;
+          await persistBatchHistory({ strict: true });
         }
-        if (!outputs.length) continue;
-        jobs.set(jobId, { id: jobId, sourceId: directory.name, state: "done", progress: 100, currentPart: null, outputs, error: null });
-        recoveredItems.push({ id: randomUUID(), title: source.title, url: source.sourceUrl || "Video YouTube đã render", sourceId: directory.name, jobId, state: "done", error: null });
+      } finally {
+        detachParent();
+        renderParentCleanup.delete(controller);
+        startedRenderControllers.delete(controller);
       }
-    } catch { /* Subtitle-only and incomplete source folders are not history. */ }
-  }
-  if (recoveredItems.length) {
-    const batch = { id: randomUUID(), items: recoveredItems };
-    batches.set(batch.id, batch);
-    await persistBatchHistory({strict:true});
-  }
+    });
+  renderQueue = task.catch((error) => console.error(`Render final history write failed: ${error.code || "IO_ERROR"}`));
 }
+
+async function resumeRender(job, parentSignal) {
+  requireCurrentExportPolicy(job);
+  if (!["error", "cancelled"].includes(job.state) || renderControllers.has(job.id))
+    throw new Error("Render still active or already complete; no duplicate submission.");
+  if (mediaLibrary.isLocked(job.sourceId)) throw new Error("Source is in use/trash.");
+  const source = await loadSource(job.sourceId, parentSignal);
+  validateRenderPlan(job.plan, source);
+  await verifySourceTeasers(job.plan, source, parentSignal);
+  const previous = {
+    state: job.state,
+    error: job.error,
+    attempt: job.attempt,
+    progress: job.progress,
+    outputSeconds: job.outputSeconds,
+  };
+  job.state = "queued";
+  job.error = null;
+  job.attempt = (job.attempt || 1) + 1;
+  job.progress = 0;
+  job.outputSeconds = 0;
+  try {
+    await persistBatchHistory({ strict: true });
+  } catch (error) {
+    Object.assign(job, previous);
+    throw error;
+  }
+  enqueueRender(job, source, structuredClone(job.plan), parentSignal);
+  return job;
+}
+
+function cancelRender(job) {
+  if (!job) return;
+  if (["done", "error", "cancelled"].includes(job.state)) return;
+  job.state = "cancelled";
+  job.error = null;
+  job.finishedAt = new Date().toISOString();
+  const controller = renderControllers.get(job.id);
+  controller?.abort();
+  // Nothing has started for this controller: no process, resource lease or
+  // output cleanup needs waiting. Do not wait for unrelated earlier exports.
+  if (controller && !startedRenderControllers.has(controller) && renderControllers.get(job.id) === controller) {
+    renderControllers.delete(job.id);
+    job.phase = null;
+    renderParentCleanup.get(controller)?.();
+    renderParentCleanup.delete(controller);
+  }
+  void persistBatchHistory({ immediate: true });
+}
+
+function renderSnapshot(job) {
+  return { ...job, stopping: job.state === "cancelled" && renderControllers.has(job.id) };
+}
+
+const exportBusy = () =>
+  pendingRenderSubmissions.size > 0 ||
+  [...jobs.values()].some((j) => ["queued", "rendering"].includes(j.state) && renderControllers.has(j.id));
+const { persistBatchHistory, restoreBatchHistory } = createQueueHistory(() => ({
+  batches,
+  dataRoot,
+  jobs,
+  probeMedia,
+  sourcesRoot,
+}));
 
 const batchPreparationQueue = createBatchSubmissionQueue({
-  batches, controllers: batchControllers, prepare: prepareBatch, onChange: ()=>persistBatchHistory({immediate:true}),
+  batches,
+  controllers: batchControllers,
+  prepare: prepareBatch,
+  onChange: () => persistBatchHistory({ immediate: true }),
 });
-const legacyDataRoot = process.env.MEDIA_WORKER_LEGACY_DATA_DIR || path.join(homedir(), "Documents", "tiktok-edit", "short-video-studio", "worker-data");
+const legacyDataRoot =
+  process.env.MEDIA_WORKER_LEGACY_DATA_DIR ||
+  path.join(homedir(), "Documents", "tiktok-edit", "short-video-studio", "worker-data");
 const mediaLibrary = createMediaLibrary({
-  editorInUse:({storageId,sourceId,kind})=>storageId==='current'&&kind==='original'&&editorSourceLeases.has(sourceId),
+  editorInUse: ({ storageId, sourceId, kind }) =>
+    storageId === "current" && kind === "original" && editorSourceLeases.has(sourceId),
   roots: [
     { id: "current", label: "Dữ liệu app hiện tại", root: dataRoot },
     // Beta never mounts another profile's library.
   ],
-  isBusy: ({ storageId, sourceId, jobId, kind }) => storageId === "current" && (["part","parts"].includes(kind) ? (
-    // Outputs belong to a specific job directory. Playback/analysis of the
-    // source, or a different export of that source, cannot mutate these files.
-    [...jobs.values()].some(job=>job.id===jobId&&(["queued","rendering"].includes(job.state)||renderControllers.has(job.id))) ||
-    [...batches.values()].some(batch=>batch.items.some(item=>!item.deleted&&item.jobId===jobId&&(item.deleting||item.state==='submitting')))
-  ) : (
-    speech.isBusy(sourceId) ||
-    musicSpeech.isBusy(sourceId) || musicPreview.isBusy(sourceId) ||
-    localSignals.isBusy(sourceId) || webAiVideos.isBusy(sourceId) ||
-    [...jobs.values()].some((job) => job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id))) ||
-    [...batches.values()].some((batch) => batch.items.some((item) => !item.deleted && (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId && (item.deleting || ["downloading", "analyzing", "paused", "awaiting-import", "review-required", "render-ready", "submitting"].includes(item.state))))
-  )),
+  isBusy: ({ storageId, sourceId, jobId, kind }) =>
+    storageId === "current" &&
+    (["part", "parts"].includes(kind)
+      ? // Outputs belong to a specific job directory. Playback/analysis of the
+        // source, or a different export of that source, cannot mutate these files.
+        [...jobs.values()].some(
+          (job) => job.id === jobId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id)),
+        ) ||
+        [...batches.values()].some((batch) =>
+          batch.items.some(
+            (item) => !item.deleted && item.jobId === jobId && (item.deleting || item.state === "submitting"),
+          ),
+        )
+      : speech.isBusy(sourceId) ||
+        musicSpeech.isBusy(sourceId) ||
+        musicPreview.isBusy(sourceId) ||
+        localSignals.isBusy(sourceId) ||
+        webAiVideos.isBusy(sourceId) ||
+        [...jobs.values()].some(
+          (job) =>
+            job.sourceId === sourceId && (["queued", "rendering"].includes(job.state) || renderControllers.has(job.id)),
+        ) ||
+        [...batches.values()].some((batch) =>
+          batch.items.some(
+            (item) =>
+              !item.deleted &&
+              (item.sourceId || jobs.get(item.jobId)?.sourceId) === sourceId &&
+              (item.deleting ||
+                [
+                  "downloading",
+                  "analyzing",
+                  "paused",
+                  "awaiting-import",
+                  "review-required",
+                  "render-ready",
+                  "submitting",
+                ].includes(item.state)),
+          ),
+        )),
   onMoved: async (item) => {
-    if(item.storageId==="current"&&item.kind==="original"){await sourceReuse.forget(item.sourceId);return;}
+    if (item.storageId === "current" && item.kind === "original") {
+      await sourceReuse.forget(item.sourceId);
+      return;
+    }
     if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
     const job = jobs.get(item.jobId);
     if (job) {
-      if (item.kind === "parts") { job.deleted = true; job.outputs = []; }
-      else job.outputs = job.outputs.filter((output) => output.url !== item.renderUrl);
+      if (item.kind === "parts") {
+        job.deleted = true;
+        job.outputs = [];
+      } else job.outputs = job.outputs.filter((output) => output.url !== item.renderUrl);
     }
-    await persistBatchHistory({strict:true});
+    await persistBatchHistory({ strict: true });
   },
   onRestored: async (item) => {
-    if(item.storageId==="current"&&item.kind==="original"){await sourceReuse.restored(item.sourceId);return;}
+    if (item.storageId === "current" && item.kind === "original") {
+      await sourceReuse.restored(item.sourceId);
+      return;
+    }
     if (item.storageId !== "current" || !["part", "parts"].includes(item.kind)) return;
     const outputs = [];
     for (const part of [1, 2]) {
@@ -272,34 +710,59 @@ const mediaLibrary = createMediaLibrary({
         const info = await lstat(folder);
         if (!info.isDirectory() || info.isSymbolicLink()) continue;
         files = await readdir(folder, { withFileTypes: true });
-      } catch { continue; }
+      } catch {
+        continue;
+      }
       for (const file of files.filter((file) => file.isFile() && /\.mp4$/i.test(file.name))) {
-        outputs.push({ part, filename: file.name, size: (await stat(path.join(folder, file.name))).size, url: `/files/${item.sourceId}/outputs/${item.jobId}/part-${part}/${encodeURIComponent(file.name)}` });
+        outputs.push({
+          part,
+          filename: file.name,
+          size: (await stat(path.join(folder, file.name))).size,
+          url: `/files/${item.sourceId}/outputs/${item.jobId}/part-${part}/${encodeURIComponent(file.name)}`,
+        });
       }
     }
     const job = jobs.get(item.jobId);
-    if (job) { job.outputs = outputs; delete job.deleted; }
-    else jobs.set(item.jobId, { id: item.jobId, sourceId: item.sourceId, state: "done", progress: 100, currentPart: null, outputs, error: null });
+    if (job) {
+      job.outputs = outputs;
+      delete job.deleted;
+    } else
+      jobs.set(item.jobId, {
+        id: item.jobId,
+        sourceId: item.sourceId,
+        state: "done",
+        progress: 100,
+        currentPart: null,
+        outputs,
+        error: null,
+      });
     const restoredItemIds = [];
-    for (const batch of batches.values()) for (const candidate of batch.items) {
-      if (candidate.jobId === item.jobId && candidate.deleted) { delete candidate.deleted; candidate.state = "done"; candidate.error = null; restoredItemIds.push(candidate.id); }
-    }
-    await persistBatchHistory({strict:true});
+    for (const batch of batches.values())
+      for (const candidate of batch.items) {
+        if (candidate.jobId === item.jobId && candidate.deleted) {
+          delete candidate.deleted;
+          candidate.state = "done";
+          candidate.error = null;
+          restoredItemIds.push(candidate.id);
+        }
+      }
+    await persistBatchHistory({ strict: true });
     return { restoredItemIds, restoredUrls: outputs.map((output) => output.url) };
   },
 });
-const pendingChatGPTAuth = createAuthAttempts();
-const chatGPTRegistrationPath = path.join(dataRoot, "chatgpt-registration.json");
-const chatGPTRefreshes = new Map();
-const chatGPTRefreshFailures = new Map();
-const chatGPTHostPath = path.join(dataRoot, "chatgpt-host.json");
-const chatGPTStore = createChatGPTStore({ dataRoot });
-const chatGPTResource = "https://api.openai.com/v1";
-const chatGPTIssuer = "https://auth.openai.com";
-const chatGPTAuthorizeEndpoint = `${chatGPTIssuer}/api/accounts/authorize`;
-const chatGPTTokenEndpoint = `${chatGPTIssuer}/api/accounts/oauth/token`;
-const chatGPTJwksEndpoint = `${chatGPTIssuer}/.well-known/jwks.json`;
-const chatGPTScopes = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+const {
+  activeChatGPTCredentials,
+  chatGPTRegistrationPath,
+  chatGPTResource,
+  chatGPTStore,
+  deleteChatGPTCredentials,
+  exchangeChatGPTCode,
+  listChatGPTModels,
+  pendingChatGPTAuth,
+  publicChatGPTSession,
+  readChatGPTCredentials,
+  startChatGPTAuthorization,
+} = createChatGPTAuth(() => ({ betaRuntime, dataRoot, host, port }));
 
 function findOnPath(name) {
   const extensions = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
@@ -321,12 +784,22 @@ function resolveBinary(environmentName, name, fallbacks = []) {
 const ffmpeg = resolveBinary("FFMPEG_PATH", "ffmpeg", ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]);
 const ffprobe = resolveBinary("FFPROBE_PATH", "ffprobe", ["/opt/homebrew/bin/ffprobe", "/usr/local/bin/ffprobe"]);
 const whisper = resolveBinary("WHISPER_PATH", "whisper-cli", ["/opt/homebrew/bin/whisper-cli"]);
-const speech = createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, run, resources:mediaResources });
+const speech = createSpeechService({ dataRoot, sourcesRoot, ffmpeg, whisper, run, resources: mediaResources });
 const ytDlp = resolveBinary("YT_DLP_PATH", "yt-dlp", [
   path.join(projectRoot, ".local-tools", process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"),
 ]);
-const youtube = createYouTubeDownloader({ dataRoot, ytDlp, ffmpeg, run, probeMedia, upscaleEncoder: () => preferredVideoEncoder });
-const sourceContexts = createSourceContextService({ youtube, cacheRoot: path.join(dataRoot, "cache", "source-context") });
+const youtube = createYouTubeDownloader({
+  dataRoot,
+  ytDlp,
+  ffmpeg,
+  run,
+  probeMedia,
+  upscaleEncoder: () => preferredVideoEncoder,
+});
+const sourceContexts = createSourceContextService({
+  youtube,
+  cacheRoot: path.join(dataRoot, "cache", "source-context"),
+});
 
 function supportsEncoder(binary, encoder) {
   if (!binary) return false;
@@ -343,833 +816,35 @@ const preferredVideoEncoder = videoToolboxAvailable ? "h264_videotoolbox" : "lib
 const { contrast: renderContrast, saturation: renderSaturation } = currentFilterEnvironment(process.env);
 const hardwareDecodeCodecs = new Set(["h264", "hevc", "prores"]);
 
-function binaryVersion(binary, args = ["--version"]) {
-  if (!binary) return null;
-  const result = spawnSync(binary, args, { encoding: "utf8", timeout: 5_000, windowsHide: true });
-  return result.status === 0 ? result.stdout.trim().split("\n")[0] : null;
-}
-
-const versions = {
-  ffmpeg: binaryVersion(ffmpeg, ["-version"])?.replace(/^ffmpeg version\s+/, "") || null,
-  ffprobe: binaryVersion(ffprobe, ["-version"])?.replace(/^ffprobe version\s+/, "") || null,
-  ytDlp: binaryVersion(ytDlp),
-};
-
-function corsHeaders(request) {
-  return {
-    ...(requestOrigins.allowsOrigin(request.headers.origin)?{"Access-Control-Allow-Origin":request.headers.origin}:{}),
-    "Access-Control-Allow-Methods": "GET, HEAD, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Filename, X-Catalog-Id, Range",
-    "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
-    ...(requestOrigins.allowsOrigin(request.headers.origin)?{"Access-Control-Allow-Private-Network":"true"}:{}),
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
-}
-
-function sendJson(request, response, statusCode, value) {
-  response.writeHead(statusCode, {
-    ...corsHeaders(request),
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
-  response.end(JSON.stringify(value));
-}
-
-async function readJson(request, limit = 6 * 1024 * 1024) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of request.iterator({destroyOnReturn:false})) {
-    size += chunk.length;
-    if (size > limit) {request.resume();throw Object.assign(new Error("Request JSON quá lớn."),{status:413});}
-    chunks.push(chunk);
-  }
-  let value;
-  try{value=JSON.parse(Buffer.concat(chunks).toString("utf8")||"{}");}
-  catch{throw Object.assign(Error('Request JSON không hợp lệ.'),{status:400});}
-  if(!value||typeof value!=='object'||Array.isArray(value))throw Object.assign(Error('Request cần một JSON object.'),{status:400});
-  return value;
-}
-
-function sendHtml(request, response, statusCode, title, message) {
-  const escapeHtml = (value) => String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-  response.writeHead(statusCode, {
-    ...corsHeaders(request),
-    "Content-Type": "text/html; charset=utf-8",
-    "Cache-Control": "no-store",
-  });
-  response.end(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>body{margin:0;background:#090a0c;color:#f4f4f5;font:16px/1.5 system-ui;display:grid;min-height:100vh;place-items:center}.card{max-width:520px;margin:24px;padding:28px;border:1px solid #ffffff18;border-radius:20px;background:#111216}h1{font-size:22px;margin:0 0 10px}p{color:#a1a1aa;margin:0}</style></head><body><main class="card"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p></main><script>setTimeout(()=>window.close(),1200)</script></body></html>`);
-}
-
-function base64Url(bytes) {
-  return Buffer.from(bytes).toString("base64url");
-}
-
-function readChatGPTCredentials() {
-  return chatGPTStore.read();
-}
-
-function writeChatGPTCredentials(credentials) {
-  chatGPTStore.write(credentials);
-}
-
-function deleteChatGPTCredentials() {
-  return chatGPTStore.delete();
-}
-
-async function getChatGPTHostId() {
-  try {
-    const saved = JSON.parse(await readFile(chatGPTHostPath, "utf8"));
-    if (/^urn:uuid:[a-f0-9-]{36}$/i.test(saved.ext_agent_host_id || "")) return saved.ext_agent_host_id;
-  } catch {
-    // First launch creates the stable host identifier below.
-  }
-  const extAgentHostId = `urn:uuid:${randomUUID()}`;
-  await mkdir(dataRoot, { recursive: true });
-  await writeFile(chatGPTHostPath, JSON.stringify({ ext_agent_host_id: extAgentHostId }, null, 2), { flag: "wx", mode: 0o600 })
-    .catch(async (error) => {
-      if (error?.code !== "EEXIST") throw error;
-    });
-  await chmod(chatGPTHostPath, 0o600).catch(() => undefined);
-  const saved = JSON.parse(await readFile(chatGPTHostPath, "utf8"));
-  return saved.ext_agent_host_id;
-}
-
-function decodeJwtPart(value) {
-  return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-}
-
-let cachedChatGPTJwks = null;
-
-async function validateChatGPTIdToken(idToken, { clientId, nonce, subject } = {}) {
-  const parts = String(idToken || "").split(".");
-  if (parts.length !== 3) throw new Error("OpenAI trả về ID token không hợp lệ.");
-  const header = decodeJwtPart(parts[0]);
-  const payload = decodeJwtPart(parts[1]);
-  if (header.alg !== "RS256" || !header.kid) throw new Error("ID token dùng thuật toán không được hỗ trợ.");
-
-  if (!cachedChatGPTJwks) {
-    const response = await fetch(chatGPTJwksEndpoint, { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error("Không tải được OpenAI signing keys.");
-    cachedChatGPTJwks = await response.json();
-  }
-  let jwk = cachedChatGPTJwks.keys?.find((key) => key.kid === header.kid);
-  if (!jwk) {
-    cachedChatGPTJwks = null;
-    const response = await fetch(chatGPTJwksEndpoint, { signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error("Không refresh được OpenAI signing keys.");
-    cachedChatGPTJwks = await response.json();
-    jwk = cachedChatGPTJwks.keys?.find((key) => key.kid === header.kid);
-  }
-  if (!jwk) throw new Error("Không tìm thấy signing key cho ID token.");
-  const validSignature = verifySignature(
-    "RSA-SHA256",
-    Buffer.from(`${parts[0]}.${parts[1]}`),
-    createPublicKey({ key: jwk, format: "jwk" }),
-    Buffer.from(parts[2], "base64url"),
-  );
-  if (!validSignature) throw new Error("Chữ ký OpenAI ID token không hợp lệ.");
-
-  const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-  const now = Math.floor(Date.now() / 1_000);
-  if (payload.iss !== chatGPTIssuer) throw new Error("OpenAI ID token issuer không hợp lệ.");
-  if (!audience.includes(clientId)) throw new Error("OpenAI ID token audience không khớp.");
-  if (!Number.isFinite(payload.exp) || payload.exp <= now) throw new Error("OpenAI ID token đã hết hạn.");
-  if (nonce && payload.nonce !== nonce) throw new Error("OpenAI ID token nonce không khớp.");
-  if (!payload.sub || (subject && payload.sub !== subject)) throw new Error("ChatGPT account không khớp với session đã lưu.");
-  return payload;
-}
-
-function normalizeScope(value) {
-  return String(value || "").split(/\s+/).filter(Boolean);
-}
-
-function publicChatGPTSession(credentials) {
-  if (!credentials) return { available: chatGPTStore.available, connected: false, sharing: false };
-  return {
-    available: chatGPTStore.available,
-    ...sessionHealth(credentials),
-    email: credentials.email || null,
-    name: credentials.name || null,
-    expiresAt: credentials.expires_at || null,
-  };
-}
-
-async function startChatGPTAuthorization() {
-  if (!chatGPTStore.available) throw new Error('Bản app chưa có kho lưu phiên ChatGPT cho hệ điều hành này. Hãy cập nhật app.');
-  const existing = readChatGPTCredentials();
-  const state = base64Url(randomBytes(32));
-  const nonce = base64Url(randomBytes(32));
-  const verifier = base64Url(randomBytes(48));
-  const challenge = base64Url(createHash("sha256").update(verifier).digest());
-  const redirectUri = `http://${host}:${port}/auth/callback`;
-  const extAgentHostId = await getChatGPTHostId();
-  let registration;
-  try { registration = JSON.parse(await readFile(chatGPTRegistrationPath, 'utf8')); } catch { /* No issued registration yet. */ }
-  const clientId = existing?.client_id || (/^oaiapp_[a-zA-Z0-9_-]+$/.test(registration?.clientId || '') ? registration.clientId : "dynamic_agent_client");
-  pendingChatGPTAuth.add({
-    state,
-    nonce,
-    verifier,
-    redirectUri,
-    clientId,
-    subject: existing?.subject || null,
-    createdAt: Date.now(),
-  });
-
-
-  const url = new URL(chatGPTAuthorizeEndpoint);
-  url.searchParams.set("client_id", clientId);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("redirect_uri", redirectUri);
-  url.searchParams.set("scope", chatGPTScopes);
-  url.searchParams.set("resource", chatGPTResource);
-  url.searchParams.set("state", state);
-  url.searchParams.set("nonce", nonce);
-  url.searchParams.set("code_challenge", challenge);
-  url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set("ext_agent_host_id", extAgentHostId);
-  if (clientId === "dynamic_agent_client") {
-    url.searchParams.set("agent_name_hint", betaRuntime.name);
-  } else {
-    if (existing && !existing.scopes?.includes("chatgpt.tokens.use.direct")) url.searchParams.set("prompt", "consent");
-    if (existing?.id_token) url.searchParams.set("id_token_hint", existing.id_token);
-    if (existing?.email) url.searchParams.set("login_hint", existing.email);
-  }
-  return { url: url.toString(), attemptId: state };
-}
-
-async function exchangeChatGPTCode(attempt, requestUrl) {
-  if (requestUrl.searchParams.get("state") !== attempt.state) throw new Error("OAuth state không khớp.");
-  const oauthError = requestUrl.searchParams.get("error");
-  if (oauthError) throw new Error(oauthError === "access_denied" ? "Bạn đã hủy cấp quyền ChatGPT." : "ChatGPT từ chối đăng nhập. Thử lại sau hoặc kiểm tra quyền tài khoản.");
-  const code = requestUrl.searchParams.get("code");
-  const callbackClientId = requestUrl.searchParams.get("client_id");
-  const issuedClientId = attempt.clientId === "dynamic_agent_client" ? callbackClientId : attempt.clientId;
-  if (!code || !issuedClientId || issuedClientId === "dynamic_agent_client") throw new Error("ChatGPT registration chưa hoàn tất.");
-  if (attempt.clientId !== "dynamic_agent_client" && callbackClientId && callbackClientId !== attempt.clientId) {
-    throw new Error("ChatGPT callback trả về client khác với account đã chọn.");
-  }
-
-  await mkdir(dataRoot, { recursive: true });
-  await writeFile(chatGPTRegistrationPath, JSON.stringify({ clientId: issuedClientId }), { mode: 0o600 });
-  const response = await fetch(chatGPTTokenEndpoint, {
-    signal: AbortSignal.timeout(20_000),
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: issuedClientId,
-      code,
-      code_verifier: attempt.verifier,
-      redirect_uri: attempt.redirectUri,
-      resource: chatGPTResource,
-    }),
-  });
-  const token = await response.json().catch(() => ({}));
-  if (!response.ok) throw tokenError(token, response.status);
-  assertTokenResponse(token);
-  if (attempt.status !== "exchanging") throw new Error("Đã hủy đăng nhập; không lưu phiên.");
-  const identity = await validateChatGPTIdToken(token.id_token, {
-    clientId: issuedClientId,
-    nonce: attempt.nonce,
-    subject: attempt.subject || undefined,
-  });
-  const scopes = normalizeScope(token.scope);
-  const credentials = {
-    client_id: issuedClientId,
-    ext_agent_host_id: await getChatGPTHostId(),
-    subject: identity.sub,
-    email: identity.email || null,
-    name: identity.name || identity.preferred_username || null,
-    id_token: token.id_token,
-    access_token: token.access_token,
-    refresh_token: token.refresh_token,
-    token_type: token.token_type || "Bearer",
-    scopes,
-    expires_at: new Date(Date.now() + Number(token.expires_in || 3600) * 1_000).toISOString(),
-    earliest_refresh_at: token.earliest_refresh_at || null,
-    saved_at: new Date().toISOString(),
-  };
-  if (!credentials.access_token || !credentials.refresh_token) throw new Error("OpenAI không trả đủ OAuth credentials.");
-  if (attempt.status !== "exchanging") throw new Error("Đã hủy đăng nhập; không lưu phiên.");
-  writeChatGPTCredentials(credentials);
-  chatGPTRefreshFailures.delete(issuedClientId);
-  return credentials;
-}
-
-async function refreshChatGPTCredentials(credentials) {
-  const key = credentials.client_id;
-  if (chatGPTRefreshes.has(key)) return chatGPTRefreshes.get(key);
-  const failed = chatGPTRefreshFailures.get(key);
-  if (failed && Date.now() < failed.until) throw failed.error;
-  const refresh = (async () => {
-    const response = await fetch(chatGPTTokenEndpoint, {
-      signal: AbortSignal.timeout(20_000),
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: credentials.client_id,
-        refresh_token: credentials.refresh_token,
-        resource: chatGPTResource,
-      }),
-    });
-    const token = await response.json().catch(() => ({}));
-    if (!response.ok) throw tokenError(token, response.status);
-    assertTokenResponse(token);
-    if (readChatGPTCredentials()?.refresh_token !== credentials.refresh_token) throw new Error("Phiên đã thay đổi trong lúc refresh; thử lại.");
-    let identity = null;
-    if (token.id_token) {
-      identity = await validateChatGPTIdToken(token.id_token, {
-        clientId: credentials.client_id,
-        subject: credentials.subject,
-      });
-    }
-    const next = {
-      ...credentials,
-      email: identity?.email || credentials.email,
-      name: identity?.name || credentials.name,
-      id_token: token.id_token || credentials.id_token,
-      access_token: token.access_token,
-      refresh_token: token.refresh_token || credentials.refresh_token,
-      token_type: token.token_type || credentials.token_type || "Bearer",
-      scopes: normalizeScope(token.scope).length ? normalizeScope(token.scope) : credentials.scopes,
-      expires_at: new Date(Date.now() + Number(token.expires_in || 3600) * 1_000).toISOString(),
-      earliest_refresh_at: token.earliest_refresh_at || null,
-      saved_at: new Date().toISOString(),
-    };
-    if (readChatGPTCredentials()?.refresh_token !== credentials.refresh_token) throw new Error("Phiên đã thay đổi trong lúc refresh; thử lại.");
-    writeChatGPTCredentials(next);
-    return next;
-  })().then(value => { chatGPTRefreshFailures.delete(key); return value; }).catch(error => {
-    chatGPTRefreshFailures.set(key, { error, until: Date.now() + (error.status === 401 ? 300_000 : 30_000) }); throw error;
-  }).finally(() => chatGPTRefreshes.delete(key));
-  chatGPTRefreshes.set(key, refresh);
-  return refresh;
-}
-
-async function activeChatGPTCredentials() {
-  const credentials = readChatGPTCredentials();
-  if (!credentials) throw new Error("AUTH_REQUIRED: Hãy bấm Continue with ChatGPT trước.");
-  if (!credentials.scopes?.includes("chatgpt.tokens.use.direct")) {
-    throw new Error("PLAN_USAGE_DISABLED: ChatGPT plan usage chưa được cấp quyền.");
-  }
-  const expiresAt = Date.parse(credentials.expires_at || "");
-  if (!Number.isFinite(expiresAt) || expiresAt - Date.now() < 90_000) {
-    return refreshChatGPTCredentials(credentials);
-  }
-  return credentials;
-}
-
-async function listChatGPTModels(credentials = null, signal) {
-  const session = credentials || await activeChatGPTCredentials();
-  const response = await fetch(`${chatGPTResource}/models`, {
-    signal,
-    headers: { Authorization: `Bearer ${session.access_token}`, Accept: "application/json" },
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(`Không đọc được model ChatGPT (${response.status}).`),{status:response.status});
-  const models = (body.models || body.data || [])
-    .filter((model) => !model.visibility || model.visibility === "list")
-    .map((model) => ({ slug: model.slug || model.id, displayName: model.display_name || model.name || model.slug || model.id, ...(reasoningCapabilities(model)!==undefined?{supported_reasoning_efforts:reasoningCapabilities(model)}:{}) }))
-    .filter((model) => model.slug);
-  return models;
-}
-
-async function analyzeWithChatGPTPlan(body, signal, content, reasoningPolicy) {
-  signal?.throwIfAborted();
-  const credentials = await activeChatGPTCredentials();
-  const model = body.model || ANALYSIS_MODEL;
-  if(model!==ANALYSIS_MODEL)throw new Error(`MODEL_UNAVAILABLE: App đã chốt ${model}; không tự chuyển model khác.`);
-  const reasoning=reasoningPolicy||videoReasoning();
-  if(reasoning.effort!==ANALYSIS_REASONING)throw Object.assign(Error('REASONING_CONFIGURATION: Phân tích video chỉ dùng low.'),{code:'REASONING_CONFIGURATION'});
-  const finishRequest=beginAiRequest(model,reasoning,{...body.requestMetrics,requestedServiceTier:"default"}),requestStart=performance.now();
-  let providerMs;
-  const transport={endpoint:`${chatGPTResource}/responses`,responseKind:"not-received"};
-  try {
-  const response = await measureAiStage('provider',()=>fetch(`${chatGPTResource}/responses`, {
-    signal,
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${credentials.access_token}`,
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-    },
-    body: JSON.stringify({
-      model,
-      reasoning: {effort:reasoning.effort},
-      store: false,
-      stream: true,
-      // SIWC HTTP contract explicitly forbids max_output_tokens. The generic
-      // provider's maxTokens hint must not leak onto this OAuth route.
-      instructions: body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
-      input: [{ role: "user", content: content || String(body.input || "") }],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "edit_plan",
-          strict: true,
-          schema: body.schema,
-        },
-      },
-    }),
-  }));
-  providerMs=Math.round(performance.now()-requestStart);
-  transport.httpStatus=response.status;
-  transport.requestId=safeProviderId(response.headers.get('x-request-id'))||safeProviderId(response.headers.get('request-id'));
-  // MIME and structural diagnostics are captured by the single body reader.
-  finishRequest(transport);
-  const readStart=performance.now();
-  transport.readStartedAt=readStart;
-  const {outputText,actualReasoning,actualServiceTier,usage,responseModel}=await readProviderOutput(response,transport,signal);
-  const {readStartedAt:ignoredReadStart,...safeTransport}=transport;void ignoredReadStart;finishRequest({...safeTransport,providerMs,readMs:Math.round(performance.now()-readStart),actualReasoning,actualServiceTier,...(responseModel?{responseModel}:{}),...(usage?{usage}:{})});
-  const cleaned = outputText.trim();
-  if(actualReasoning&&actualReasoning!==reasoning.effort)throw providerError('REASONING_CONFIGURATION',transport);
-  try {
-    const plan=await measureAiStage('validation',()=>JSON.parse(cleaned));
-    finishRequest({status:'completed'});
-    return { plan, model, reasoning:{requested:reasoning.effort,actual:actualReasoning,source:reasoning.source}, serviceTier:{requested:"default",actual:actualServiceTier}, usage };
-  } catch {
-    throw providerError('PROVIDER_OUTPUT_JSON_INVALID',transport);
-  }
-  }catch(error){if(!signal?.aborted&&(!error.code||!(/^(PROVIDER_|MODEL_|REASONING_|FAST_|INVALID_RESPONSE_)/.test(error.code)))){transport.networkCode=safeProviderId(error.cause?.code||error.code);error=providerError(error.name==='TimeoutError'?'PROVIDER_TIMEOUT':'PROVIDER_NETWORK',transport,error);}const {readStartedAt,...safeTransport}=transport;finishRequest({...safeTransport,...(readStartedAt!==undefined?{readMs:Math.round(performance.now()-readStartedAt)}:{}),errorCode:error.code||'PROVIDER_CANCELLED',status:signal?.aborted?'cancelled':'error',providerMs:providerMs??Math.round(performance.now()-requestStart)});throw error;}
-}
-
-const sourceDigests = new Map();
-async function hookSourceFingerprint(source, signal) {
-  signal?.throwIfAborted();
-  const info = await stat(source.mediaPath), key = `${source.id}:${info.size}:${info.mtimeMs}`;
-  if (sourceDigests.has(key)) return sourceDigests.get(key);
-  const digest = createHash("sha256");
-  for await (const chunk of createReadStream(source.mediaPath)) { signal?.throwIfAborted(); digest.update(chunk); }
-  const value = digest.digest("hex");
-  if (sourceDigests.size >= 32) sourceDigests.delete(sourceDigests.keys().next().value);
-  sourceDigests.set(key, value); return value;
-}
-async function resolveEditingProvider(signal,task='main') {
-  return aiMemo('editing-provider:'+task,async()=>{
-    signal?.throwIfAborted();
-    const model=ANALYSIS_MODEL;
-    let reasoning;
-    if(task==='teaser'){
-      const models=await listChatGPTModels(null,signal),entry=models.find(item=>item.slug===model);
-      if(!entry)throw Object.assign(Error('MODEL_UNAVAILABLE: Catalog tài khoản không có gpt-6.1-sol; không tự đổi model.'),{code:'MODEL_UNAVAILABLE'});
-      if(entry.supported_reasoning_efforts&&!entry.supported_reasoning_efforts.includes('low'))throw Object.assign(Error('REASONING_CONFIGURATION: Catalog không cho phép low cho gpt-6.1-sol.'),{code:'REASONING_CONFIGURATION'});
-      reasoning={effort:'low',source:entry.supported_reasoning_efforts?'model-metadata':'owner-pin-low-catalog-model-confirmed',key:videoReasoning().key};
-    }else reasoning=videoReasoning();
-    // Explicit owner pin: no model-list ordering or extra discovery request.
-    // Existing credential checks and provider capability errors occur on the
-    // real request. Unsupported/unavailable never falls back to another model.
-    return { id: "chatgpt", model, reasoningPolicyKey:reasoning.key, reasoning:reasoning.effort, analyze: async ({ input, images=[], schema, instructions, signal, maxTokens }) => {
-      if(images.length)throw Object.assign(Error('VIDEO_TEXT_ONLY: đường phân tích không nhận ảnh.'),{code:'VIDEO_TEXT_ONLY'});
-      const canonical=canonicalVideoInput(input),packed=compactAiInput(canonical.value),serializedInput=packed.text;
-      const content=[{type:'input_text',text:serializedInput}];
-      const requestMetrics={phase:input.phase||'select-main',inputCharacters:serializedInput.length,rawInputCharacters:JSON.stringify(input).length,inputFormat:packed.format,imageCount:0,dataCounts:canonical.counts,dataAvailability:canonical.availability,textContract:VIDEO_TEXT_VERSION,partCount:Array.isArray(input.parts)?input.parts.length:input.partId?1:0,...(input.partId?{partId:input.partId}:{}),inputIntegrity:packed.encoded||canonical.encoded?"roundtrip-verified":"original-json"};
-      const result = await analyzeWithChatGPTPlan({ model, schema, instructions:VIDEO_TEXT_INSTRUCTIONS+'\n'+(packed.encoded?AI_INPUT_INSTRUCTIONS+'\n':'')+(instructions||'You are a precise source-accurate video editor.'), maxTokens,requestMetrics }, signal, content,reasoning);
-      return { value: result.plan };
-    } };
-  });
-}
-const selectTeasers = createTeaserSelector({ cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"), fingerprint: hookSourceFingerprint, resolveProvider: signal=>resolveEditingProvider(signal,'teaser') });
-const musicLibrary=createMusicLibrary({root:path.join(dataRoot,"music"),ffmpeg,ffprobe,run});
-const musicSpeech=createMusicSpeech({root:path.join(dataRoot,"cache","music-speech"),ffmpeg,run,fingerprint:hookSourceFingerprint,protectedKeys:protectedAnalysisKeys,resources:mediaResources});
-const musicPreview=createMusicPreview({root:path.join(dataRoot,"cache","music-preview"),ffmpeg,run,musicLibrary,musicSpeech,fingerprint:hookSourceFingerprint,resources:mediaResources});
-const localSignals = createLocalSignalAnalyzer({ ffmpeg, run, fingerprint: hookSourceFingerprint, cacheRoot:path.join(dataRoot,"cache","local-signals"), protectedKeys:protectedAnalysisKeys });
-const mainContent = createMainContentSelector({ cacheRoot: path.join(dataRoot, "cache", "main-content"), fingerprint: hookSourceFingerprint, resolveProvider: resolveEditingProvider, protectedKeys:protectedAnalysisKeys });
-
-function protectedAnalysisKeys() {
-  const keys=new Set();
-  for(const job of jobs.values())if(job.plan?.musicSpeech?.cacheKey)keys.add(job.plan.musicSpeech.cacheKey);
-  for(const batch of batches.values())for(const item of batch.items)if(!item.deleted&&item.plan?.musicSpeech?.cacheKey)keys.add(item.plan.musicSpeech.cacheKey);
-  for(const plan of [...jobs.values()].map(j=>j.plan).concat([...batches.values()].flatMap(b=>b.items.filter(i=>!i.deleted).map(i=>i.plan)))) {
-    if(plan?.analysis?.cacheKey)keys.add(plan.analysis.cacheKey);if(plan?.analysis?.localCacheKey)keys.add(plan.analysis.localCacheKey);
-  }
-  return keys;
-}
-
-const webAiVideos=createWebAiVideo({root:path.join(dataRoot,'cache','web-ai-video'),youtube,ffmpeg,run,probeMedia,fingerprint:hookSourceFingerprint,isLocked:id=>mediaLibrary.isLocked(id)});
-const sourceReuse = createSourceReuse({sourcesRoot,load:loadSource,download:downloadYouTubeSource,metadata:(url,signal)=>youtube.context(url,signal),isLocked:id=>mediaLibrary.isLocked(id)});
-function publicSource(source){const {directory,mediaPath,...metadata}=source;void directory;void mediaPath;return metadata;}
-const processBatch = createBatchProcessor({acquire:async(url,signal,onProgress)=>{const stop=youtube.subscribeProgress(url,onProgress);try{return await importYouTube(url,signal);}finally{stop();}},load:loadSource,analyze:(source,body,signal)=>analyzeSource(source,body,signal),repairTeasers:repairBatchTeasers,render:startRender,resumeRender:resumeRender,getJob:id=>jobs.get(id),persist:()=>persistBatchHistory({strict:true})});
-const autoCutWorkflow = createAutoCutWorkflow({externalSnapshots:createExternalPromptSnapshots(path.join(dataRoot,'cache','external-prompt-snapshots')),prepareInputs:mainAnalysisInputs,mainContent,selectHooks:planTeasers,verifyPreservedTeasers:verifySourceTeasers,describeWebVideo:(source,signal)=>webAiVideos.describe(source,signal)});
-const analyzeSource=(source,body,signal)=>withAiOperation('generate',()=>autoCutWorkflow(source,body,signal));
-
-async function mainAnalysisInputs(source, body, signal) {
-  if(body.transcript!==undefined&&typeof body.transcript!=='string'||String(body.transcript??source.transcript??'').length>1_000_000)throw Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; chưa gọi AI, không tự bỏ phần cuối.');
-  if (body.currentPlan) {
-    if (body.currentPlan.analysis?.sourceId && body.currentPlan.analysis.sourceId !== source.id) throw new Error("Plan belongs to another source.");
-    validatePlan(body.currentPlan, source, {teasers:false});
-  }
-  // Independent context network I/O and one bounded local media analysis can
-  // overlap. This does not parallelize AI calls or open another heavy lease.
-  const preparation=new AbortController(),preparing=AbortSignal.any([...(signal?[signal]:[]),preparation.signal]);
-  let context,local;
-  try{[context,local]=await Promise.all([measureAiStage('preparation',()=>sourceContexts.ensure(source,{signal:preparing,comments:true}),{reason:'source-context'}),measureAiStage('preparation',()=>localSignals.forSource(source,preparing),{reason:'local-signals'})]);}
-  finally{preparation.abort();}
-  context.visualSignals = { ...local.visual,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
-  context.audioSignals = { ...local.audio,version:local.version,timeUnit:local.timeUnit,sourceKey:local.sourceKey,sampledRanges:local.sampledRanges,cacheKey:local.cacheKey };
-  try { await saveSourceContext(source.directory, context); } catch { signal?.throwIfAborted(); }
-  let cues = source.captions || [];
-  if (!cues.length) {
-    try { cues = (await speech.cachedCaptions(source))?.cues || []; } catch { /* Missing cached speech is normal. */ }
-  }
-  if (!cues.length && !body.transcript?.trim() && source.hasAudio && source.duration <= 1800) {
-    try {
-      const status = await speech.status();
-      if(status.binaryReady&&status.modelReady){await requireDiskSpace(dataRoot,256*1024*1024+Math.ceil(source.duration*32000));cues=(await measureAiStage('preparation',()=>speech.captions(source,AbortSignal.any([signal,AbortSignal.timeout(60000)])),{reason:'source-captions'})).cues;}
-    } catch { signal?.throwIfAborted(); /* Use available local/metadata evidence; no model is downloaded. */ }
-  }
-  const track=selectionCaptionTrack({captionCues:body.captionCues||body.currentPlan?.captionCues},source,body.transcript||source.transcript,
-    cues.length?{sourceId:source.id,cues,origin:'cached-caption'}:undefined);
-  return { context, options: { cues:track.cues, boundaryCues:track.cues, captionTrack:track, local, currentPlan:body.currentPlan, transcript:String(body.transcript??source.transcript??''),instruction:String(body.instruction || ''), supplementalPrompt:String(body.supplementalPrompt || ''), signal } };
-
-}
-
-async function planTeasers(plan, source, signal, transcript, selectionOptions = {}) {
-  if(String(transcript??source.transcript??'').length>1_000_000)throw Error('Transcript vượt giới hạn 1 triệu ký tự; chưa gọi AI, không tự bỏ phần cuối.');
-  const sourceContext = await sourceContexts.ensure(source, { signal, comments: true });
-  // The shared YouTube metadata cache does not own source-local scene/audio
-  // analysis. Preserve those current source-bound signals through enrichment.
-  for(const key of ['visualSignals','audioSignals'])if(source.sourceContext?.[key])sourceContext[key]=structuredClone(source.sourceContext[key]);
-  if (source.directory) {
-    try { await saveSourceContext(source.directory, sourceContext); }
-    catch { signal?.throwIfAborted(); /* Context persistence failure must not disable hook analysis. */ }
-  }
-  source = { ...source, sourceContext };
-  let cached;
-  if(!plan.captionCues&&!source.captions?.length)try{cached=await speech.cachedCaptions(source);}catch{/* Optional local cache only. */}
-  const sourceInput={...source,transcript:transcriptValue(transcript??source.transcript)};
-  const track=selectionCaptionTrack(plan,sourceInput,sourceInput.transcript,cached);
-  const cues=track.cues;
-  sourceInput.captionProvenance={origin:track.origin,timing:track.timing||'cue',language:track.language||'unknown',trackId:track.trackId||null,warning:track.warning||null};
-  sourceInput.selectionRequest={instruction:String(selectionOptions.instruction||''),supplementalPrompt:String(selectionOptions.supplementalPrompt||'')};
-  plan={...plan,captionCues:track};
-
-  const context = source.sourceContext;
-  return selectTeasers(plan, sourceInput, { ...selectionOptions, cues, boundaryCues:cues, supporting: context ? { ...context.metadata, chapters: context.chapters, commentClusters: context.comments?.clusters, heatmap: context.heatmap, visualSignals:context.visualSignals,audioSignals:context.audioSignals } : source, signal });
-}
-
-async function repairBatchTeasers(plan,source,signal,transcript,request={}){
- return withAiOperation('batch-teaser-repair',()=>repairBatchTeasersInner(plan,source,signal,transcript,request));
-}
-async function repairBatchTeasersInner(plan,source,signal,transcript,request={}){
- validatePlan(plan,source,{teasers:false});let next=structuredClone(plan);
- next.teaserTranscriptKey=await selectionDigest(transcriptValue(transcript));
- for(const part of next.parts){
-  if(part.teaserEnabled===false)continue;
-  const isolated={...next,parts:next.parts.map(p=>p.id===part.id?p:{...p,teaserEnabled:false,teaser:undefined,customTeaser:undefined})};
-  try{validateRenderPlan(isolated,source);await verifySourceTeasers(isolated,source,signal);continue;}catch{/* Repair this part only, never rerun the main planner. */}
-  if(part.teaser?.selection==='manual'||part.customTeaser?.mode==='timestamp')throw Object.assign(Error(`Part ${part.id}: mốc manual cần sửa trong Timeline; batch không tự đổi quyết định người dùng.`),{code:'TEASER_REQUIRED',status:409});
-  next=await planTeasers(next,source,signal,transcript,{targetPartId:part.id,instruction:request.instruction,supplementalPrompt:request.supplementalPrompt,customInstruction:part.customTeaser?.mode==='description'?part.customTeaser.input:undefined,forceRefresh:true});
- }
- validateRenderPlan(next,source);await verifySourceTeasers(next,source,signal);return next;
-}
-
-async function verifySourceTeasers(plan,source,signal){
- const selected=plan.parts.filter(p=>p.teaserEnabled!==false&&p.teaser?.status==='selected'&&['ai','external-import'].includes(p.teaser.selection));
- if(!selected.length)return;
- const digest=await hookSourceFingerprint(source,signal);
- const stored=JSON.parse(await readFile(path.join(source.directory,'source.json'),'utf8'));
- const evidenceKey=await selectionDigest(teaserEvidenceValue({...source,sourceContext:sourceContextFor({...source,...stored})}));
- if(selected.some(p=>p.teaser.binding?.sourceFingerprint!==digest||p.teaser.binding?.evidenceKey!==evidenceKey))throw Object.assign(Error('Source đã đổi hoặc teaser cũ chưa có bằng chứng source; chọn lại teaser trước khi xuất.'),{code:'TEASER_REQUIRED',status:409});
-}
-async function finalizeImportedTeasers(plan,source,transcript,signal,request){
- validatePlan(plan,source);
- const cues=effectiveCaptionTrack(plan,source)?.cues||[];
- if(!await externalHooksCurrent(plan,source,transcript))throw Error('Hook web import đã cũ; tạo prompt/import lại, không tự chuyển provider.');
- await assertTeaserContexts(plan,source,cues,transcript,request);
- const next=structuredClone(plan),digest=await hookSourceFingerprint(source,signal);
- for(const p of next.parts)if(p.teaserEnabled!==false&&p.teaser?.status==='selected'&&p.teaser.selection==='external-import'){p.teaser.binding.sourceFingerprint=digest;p.teaser.binding.evidenceKey=await selectionDigest(teaserEvidenceValue(source));}
- next.teaserTranscriptKey=await selectionDigest(transcriptValue(transcript));
- return next;
-}
-
-function safeName(value) {
-  return String(value || "source.mp4")
-    .normalize("NFKD")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 120) || "source.mp4";
-}
-
-function assertId(value) {
-  if (!/^[a-f0-9-]{16,64}$/i.test(value)) throw new Error("Source/job ID không hợp lệ.");
-  return value;
-}
-
-async function run(binary,args,options={}){
-  if(ffprobe&&binary===ffprobe){
-    const inherited=mediaResources.currentSignal(),exportOwner=mediaResources.currentKind()==='render';
-    const parent=AbortSignal.any([options.signal,inherited].filter(Boolean));
-    // Heavy-lease validation gets the next probe slot, not the background FIFO.
-    // Its execution deadline starts at spawn, so waiting behind one live probe
-    // cannot consume the time budget of an otherwise completed export.
-    let timeout=exportOwner?undefined:AbortSignal.timeout(30_000);
-    const bounded=timeout?AbortSignal.any([parent,timeout]):parent;
-    try{return await metadataResources.use(exportOwner?'render':'probe',signal=>{
-      timeout ||= AbortSignal.timeout(30_000);
-      return runCommand(binary,args,{...options,signal:AbortSignal.any([signal,timeout]),lowerPriority:true});
-    },bounded);}
-    catch(error){
-      parent.throwIfAborted();
-      if(timeout?.aborted)throw Object.assign(new Error('Kiểm tra video quá 30 giây. Thử chuẩn bị nguồn lại sau.'),{code:'MEDIA_PROBE_TIMEOUT',status:504});
-      if(error.code==='MEDIA_QUEUE_FULL')throw Object.assign(new Error('Đang có nhiều lượt kiểm tra video. Thử lại sau.'),{code:'MEDIA_PROBE_BUSY',status:429});
-      throw error;
-    }
-  }
-  const heavy=binary&&(binary===ffmpeg||binary===whisper);
-  if(heavy){
-    const state=mediaResources.commandState();
-    if(!mediaResources.ownsLease()&&(state.active||state.waiting))options.onQueued?.(state.renderBusy?'render':'analysis');
-    return mediaResources.use('analysis',signal=>{
-      options.onStart?.();
-      return runCommand(binary,binary===ffmpeg?balancedFfmpegArgs(args,{filterComplexThreads:options.filterComplexThreads}):args,{...options,signal,lowerPriority:true});
-    },options.signal);
-  }
-  return runCommand(binary,args,options);
-}
-async function runCommand(binary, args, options = {}) {
-  commandLifecycle.assertRunning();
-  options.signal?.throwIfAborted();
-  if (!binary) throw new Error(options.missingMessage || "Thiếu binary cần thiết.");
-  return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, {
-      cwd: options.cwd || projectRoot,
-      env: { ...process.env, ...options.env },
-      stdio: ["ignore", "pipe", "pipe"],
-      detached: Boolean(options.signal) && process.platform !== "win32",
-      windowsHide: true,
-    });
-    commandLifecycle.track(child, Boolean(options.signal) && process.platform !== "win32");
-    if(options.lowerPriority&&Number.isInteger(child.pid)){try{setPriority(child.pid,10);}catch{/* OS may not support priority adjustment; thread limits still apply. */}}
-    let killTimer;
-    const kill = (signal) => {
-      if(!Number.isInteger(child.pid)||child.pid<=0)return;
-      try {
-        if (options.signal && process.platform !== "win32") process.kill(-child.pid, signal);
-        else child.kill(signal);
-      } catch { /* The process may already have exited. */ }
-    };
-    const abort = () => {
-      kill("SIGTERM");
-      killTimer = setTimeout(() => kill("SIGKILL"), 3000);
-      killTimer.unref();
-    };
-    const cleanup = () => { clearTimeout(killTimer); options.signal?.removeEventListener("abort", abort); };
-    options.signal?.addEventListener("abort", abort, { once: true });
-    if (options.signal?.aborted) abort();
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout = `${stdout}${chunk}`.slice(-(options.maxStdout || 100_000));
-      options.onStdout?.(chunk.toString());
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr = `${stderr}${chunk}`.slice(-100_000);
-      options.onStderr?.(chunk.toString());
-    });
-    child.once("error", (error) => { cleanup(); reject(error); });
-    child.once("close", (code) => {
-      cleanup();
-      if (options.signal?.aborted) { reject(options.signal.reason); return; }
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error((stderr || stdout || `${path.basename(binary)} exited with ${code}`).trim().slice(-5_000)));
-    });
-  });
-}
-
-async function probeMedia(mediaPath, signal) {
-  const result = await run(
-    ffprobe,
-    [
-      "-v", "error",
-      "-threads", "1", "-probesize", "5000000", "-analyzeduration", "5000000",
-      "-show_entries", "format=duration,start_time:stream=index,codec_type,codec_name,width,height,sample_aspect_ratio,start_time,duration,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation",
-      "-of", "json",
-      mediaPath,
-    ],
-    { signal, missingMessage: "Không tìm thấy ffprobe. Hãy cài FFmpeg trước." },
-  );
-  const data = JSON.parse(result.stdout);
-  const video = data.streams?.find((stream) => stream.codec_type === "video");
-  if (!video) throw new Error("File nguồn không có video stream.");
-  const audio=data.streams?.find(stream=>stream.codec_type==='audio');
-  const sourceStart=Number(data.format?.start_time||0);
-  const [sarN,sarD]=String(video.sample_aspect_ratio||'1:1').split(':').map(Number);
-  const sar=Number.isFinite(sarN/sarD)&&sarN/sarD>0?sarN/sarD:1;
-  const rotation=Number(video.side_data_list?.find(item=>Number.isFinite(Number(item.rotation)))?.rotation??video.tags?.rotate??0);
-  const quarterTurn=Math.abs(Math.round(rotation/90))%2===1;
-  const displayWidth=Number(video.width||0)*sar,displayHeight=Number(video.height||0);
-  const audioStart=audio&&Number.isFinite(Number(audio.start_time))?Number(audio.start_time)-sourceStart:undefined;
-  const audioEnd=audioStart!==undefined&&audio?.duration!==undefined&&Number.isFinite(Number(audio.duration))?audioStart+Number(audio.duration):undefined;
-  return {
-    duration: Number(data.format?.duration || 0),sourceStart,sampleAspectRatio:sar,rotation,
-    codedWidth:Number(video.width||0),codedHeight:Number(video.height||0),
-    width:quarterTurn?displayHeight:displayWidth,
-    height:quarterTurn?displayWidth:displayHeight,
-    ...(audioStart!==undefined?{audioStart}:{}),...(audioEnd!==undefined?{audioEnd}:{}),
-    videoStart:video.start_time!==undefined?Number(video.start_time)-sourceStart:0,
-    videoDuration:video.duration!==undefined?Number(video.duration):null,
-    hasAudio: Boolean(data.streams?.some((stream) => stream.codec_type === "audio")),
-    videoCodec: String(video.codec_name || ""),
-    pixelFormat: String(video.pix_fmt || ""),
-    colorRange: String(video.color_range || "unknown"),
-    colorSpace: String(video.color_space || "unknown"),
-    colorTransfer: String(video.color_transfer || "unknown"),
-    colorPrimaries: String(video.color_primaries || "unknown"),
-  };
-}
-
-function decodeEntities(value) {
-  return value
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"');
-}
-
-function compactTimestamp(value) {
-  const match = value.match(/(?:(\d+):)?(\d{2}):(\d{2})[.,](\d{3})/);
-  if (!match) return value;
-  const hours = Number(match[1] || 0);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3]);
-  return hours > 0
-    ? [hours, minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":")+`.${match[4]}`
-    : [minutes, seconds].map((part) => String(part).padStart(2, "0")).join(":")+`.${match[4]}`;
-}
-
-function vttToTranscript(vtt) {
-  const blocks = vtt.replace(/^\uFEFF/, "").split(/\r?\n\r?\n+/);
-  const cues = [];
-  for (const block of blocks) {
-    const lines = block.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const timingIndex = lines.findIndex((line) => line.includes("-->"));
-    if (timingIndex < 0) continue;
-    const start = lines[timingIndex].split("-->")[0].trim();
-    const text = decodeEntities(lines.slice(timingIndex + 1).join(" ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim());
-    if (!text || cues.at(-1)?.text === text) continue;
-    const previous = cues.at(-1);
-    if (previous && text.startsWith(previous.text)) {
-      previous.text = text;
-      continue;
-    }
-    if (previous && previous.text.endsWith(text)) continue;
-    cues.push({ at: compactTimestamp(start), text });
-  }
-  return cues.map((cue) => `${cue.at} ${cue.text}`).join("\n");
-}
-
-async function findSourceMedia(directory) {
-  const entries = await readdir(directory);
-  const extensions = new Set([".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"]);
-  const candidates = entries.filter((name) => name.startsWith("source.") && extensions.has(path.extname(name).toLowerCase()));
-  if (!candidates.length) throw Object.assign(new Error("Nguồn đã lưu không còn tệp video. Chọn lại nguồn hoặc khôi phục từ Thùng rác nếu đã chuyển."), { code: "SOURCE_MEDIA_MISSING", status: 404 });
-  candidates.sort((a, b) => (path.extname(a).toLowerCase() === ".mp4" ? -1 : 1) - (path.extname(b).toLowerCase() === ".mp4" ? -1 : 1));
-  return path.join(directory, candidates[0]);
-}
-
-async function saveSourceMetadata(directory, source) {
-  await writeFile(path.join(directory, "source.json"), JSON.stringify(source, null, 2));
-  return source;
-}
-
-async function fetchYouTubeTranscript(url, signal) {
-  const info = await youtube.transcript(url, signal);
-  return {
-    title: String(info.title || "YouTube video"),
-    sourceContext: youtube.peekContext(url),
-    transcript: vttToTranscript(info.vtt || ""), captions: parseCaptions(info.vtt || ""),
-    language:info.spokenLanguage||'',captionLanguage:info.captionLanguage||'',captionTrackId:info.captionTrackId||'',captionTranslated:info.captionTranslated===true,captionWarning:info.captionWarning||'',
-    message:info.captionWarning||(info.vtt?"":"YouTube không cung cấp phụ đề gốc phù hợp; có thể chọn Whisper."),
-  };
-}
-
-async function importYouTube(url,signal){return sourceReuse.get(url,signal);}
-
-async function downloadYouTubeSource(url, signal) {
-  return youtube.download(url, async ({ info, media, mediaPath, parsed, signal: activeSignal }) => {
-    const id = randomUUID(), directory = path.join(sourcesRoot, id);
-    let captions;
-    try { captions = await fetchYouTubeTranscript(parsed.url, activeSignal); }
-    catch (error) { activeSignal.throwIfAborted(); captions = { transcript: "", message: error.message }; }
-    activeSignal.throwIfAborted();
-    await mkdir(directory, { recursive: true });
-    try {
-      const filename = `source${path.extname(mediaPath)}`;
-      await rename(mediaPath, path.join(directory, filename));
-      const sourceContext = await sourceContexts.ensure({ id, kind: "youtube", sourceUrl: parsed.url, title: info.title, ...media }, { signal: activeSignal });
-      return await saveSourceMetadata(directory, {
-        sourceContext, id, kind: "youtube", title: String(info.title || "YouTube video"), sourceUrl: `https://www.youtube.com/watch?v=${parsed.id}`,
-        originalFilename: filename, ...media, transcript: captions.transcript || "",
-        transcriptMessage: captions.message || "", captions: captions.captions || [],
-        language:captions.language||info.language||'',captionLanguage:captions.captionLanguage||'',captionTrackId:captions.captionTrackId||'',captionTranslated:captions.captionTranslated===true,captionWarning:captions.captionWarning||'',subtitleFound: Boolean(captions.transcript),
-        subtitleFile: null, youtubeVideoId: parsed.id, createdAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      await rm(directory, { recursive: true, force: true }); throw error;
-    }
-  }, signal);
-}
-
-async function importUpload(request, url, response) {
-  const rawFilename=request.headers['x-filename']||url.searchParams.get('filename')||'source.mp4';
-  const filename=safeName(decodeURIComponent(String(rawFilename))),extension=path.extname(filename).toLowerCase()||'.mp4';
-  if(!['.mp4','.mov','.mkv','.webm','.m4v','.avi'].includes(extension))throw Error('Chỉ nhận MP4, MOV, MKV, WebM, M4V hoặc AVI.');
-  const controller=new AbortController(),signal=controller.signal;
-  const abort=()=>controller.abort(new Error('Đã dừng import video.'));
-  const disconnected=()=>{if(!response.writableEnded)abort();};
-  request.once('aborted',abort);response.once('close',disconnected);
-  if(request.aborted||response.destroyed)abort();
-  let directory,owner,published=false;
-  try{
-    const uploadBytes=Number(request.headers['content-length']);
-    await requireDiskSpace(dataRoot,(Number.isFinite(uploadBytes)&&uploadBytes>0?uploadBytes:512*1024*1024)+256*1024*1024);
-    signal.throwIfAborted();
-    // Catalog/reuse only accepts UUID directories. An unfinished upload is never
-    // visible as a usable source, even after its media file has been renamed.
-    directory=await mkdtemp(path.join(sourcesRoot,'.upload-work-'));
-    owner=await lstat(directory);signal.throwIfAborted();
-    const temporaryPath=path.join(directory,`upload${extension}.partial`),mediaPath=path.join(directory,`source${extension}`);
-    await pipeline(request,createWriteStream(temporaryPath,{flags:'wx'}),{signal});
-    signal.throwIfAborted();await rename(temporaryPath,mediaPath);signal.throwIfAborted();
-    const media=await probeMedia(mediaPath,signal);signal.throwIfAborted();
-    const id=randomUUID(),source={id,kind:'upload',title:path.basename(filename,extension),originalFilename:filename,
-      duration:media.duration,width:media.width,height:media.height,hasAudio:media.hasAudio,
-      transcript:'',subtitleFound:false,subtitleFile:null,createdAt:new Date().toISOString()};
-    source.sourceContext=sourceContextFor(source);
-    await saveSourceMetadata(directory,source);signal.throwIfAborted();
-    const destination=path.join(sourcesRoot,id);
-    try{await lstat(destination);throw Object.assign(Error('Source ID đã tồn tại; không ghi đè.'),{status:409});}catch(error){if(error.code!=='ENOENT')throw error;}
-    signal.throwIfAborted();await rename(directory,destination);
-    // Publication is the commit point. A disconnect after this atomic rename
-    // must not delete a complete source another operation may already open.
-    published=true;return source;
-  }finally{
-    request.removeListener('aborted',abort);response.removeListener('close',disconnected);
-    if(directory&&owner&&!published)try{
-      const current=await lstat(directory);
-      if(current.isDirectory()&&!current.isSymbolicLink()&&current.dev===owner.dev&&current.ino===owner.ino)await rm(directory,{recursive:true,force:false});
-    }catch(error){if(error.code!=='ENOENT')console.error(`Upload scratch cleanup failed: ${error.code||'IO_ERROR'}`);}
-  }
-}
-
 function fontFamilyFor(text, font = "auto") {
-  return fontFamilyForStyle(font, text, { overrides: { latin: process.env.FONT_LATIN_FAMILY, japanese: process.env.FONT_JAPANESE_FAMILY, korean: process.env.FONT_KOREAN_FAMILY } });
+  return fontFamilyForStyle(font, text, {
+    overrides: {
+      latin: process.env.FONT_LATIN_FAMILY,
+      japanese: process.env.FONT_JAPANESE_FAMILY,
+      korean: process.env.FONT_KOREAN_FAMILY,
+    },
+  });
 }
 
 let overlayFontsReady;
+
 function registerOverlayFonts() {
-  overlayFontsReady ||= Promise.all(listFonts().filter((font) => font.bundled).map(({ family, file }) => sharp({ text: {
-    text: "A", font: `${family} Bold 12`, fontfile: path.join(projectRoot, "public", file), rgba: true,
-  } }).png().toBuffer()));
+  overlayFontsReady ||= Promise.all(
+    listFonts()
+      .filter((font) => font.bundled)
+      .map(({ family, file }) =>
+        sharp({
+          text: {
+            text: "A",
+            font: `${family} Bold 12`,
+            fontfile: path.join(projectRoot, "public", file),
+            rgba: true,
+          },
+        })
+          .png()
+          .toBuffer(),
+      ),
+  );
   return overlayFontsReady;
 }
 
@@ -1246,7 +921,10 @@ function ellipsizeLine(value, maxWidthEm) {
 
 function fitOverlayText(value, role, fontCap = TITLE_LAYOUT.maxFontSize) {
   const config = overlayFitConfig[role];
-  const normalized = String(value || "").trim().replace(/\s+/g, " ") || "UNTITLED";
+  const normalized =
+    String(value || "")
+      .trim()
+      .replace(/\s+/g, " ") || "UNTITLED";
 
   for (let fontSize = Math.min(config.maxFontSize, fontCap); fontSize >= config.minFontSize; fontSize -= 2) {
     const lines = wrapByVisualWidth(normalized, config.maxWidth / fontSize);
@@ -1271,27 +949,32 @@ function escapeXml(value) {
     .replace(/'/g, "&apos;");
 }
 
-async function loadSource(sourceId, signal) {
-  signal?.throwIfAborted();
-  const id = assertId(sourceId);
-  const directory = path.join(sourcesRoot, id);
-  const metadata = JSON.parse(await readFile(path.join(directory, "source.json"), "utf8"));
-  const mediaPath = await findSourceMedia(directory);
-  const media = await probeMedia(mediaPath, signal);
-  const source = { ...metadata, ...media, directory, mediaPath,...(metadata.captions?.length&&!metadata.captionTrackId?{captionWarning:'Phụ đề nguồn cũ chưa xác minh ngôn ngữ; chọn Whisper nếu không đúng tiếng nguồn.'}:{}) };
-  return { ...source, sourceContext: sourceContextFor(source) };
-}
-
-async function renderTitleOverlay({ outputPath, shineOutputPath, originalTitle, partTitle, partId, totalParts, visualStyle = DEFAULT_VISUAL_STYLE }) {
+async function renderTitleOverlay({
+  outputPath,
+  shineOutputPath,
+  originalTitle,
+  partTitle,
+  partId,
+  totalParts,
+  visualStyle = DEFAULT_VISUAL_STYLE,
+}) {
   partTitle = partOverlayTitle(partTitle);
   await registerOverlayFonts();
-  const size = Math.min(fitOverlayText(originalTitle, 'original').fontSize, fitOverlayText(partTitle, 'part').fontSize);
-  let pair = { original: fitOverlayText(originalTitle, "original", size), part: fitOverlayText(partTitle, "part", size) };
+  const size = Math.min(fitOverlayText(originalTitle, "original").fontSize, fitOverlayText(partTitle, "part").fontSize);
+  let pair = {
+    original: fitOverlayText(originalTitle, "original", size),
+    part: fitOverlayText(partTitle, "part", size),
+  };
   if (needsMeasuredTitleFit(visualStyle)) {
     pair = await constrainTitlePair(originalTitle, partTitle, pair, async (text, fontSize, role) => {
       const style = visualStyle[role === "original" ? "originalTitle" : "partTitle"];
       const family = fontFamilyFor(role === "original" ? originalTitle : partTitle, style.font);
-      const { width } = await sharp({ text: { text: `<span font_family="${escapeXml(family)}" weight="${style.fontWeight}" size="${fontSize * 1024}">${escapeXml(text)}</span>`, rgba: true } }).metadata();
+      const { width } = await sharp({
+        text: {
+          text: `<span font_family="${escapeXml(family)}" weight="${style.fontWeight}" size="${fontSize * 1024}">${escapeXml(text)}</span>`,
+          rgba: true,
+        },
+      }).metadata();
       return width + style.outline * 2 + 2;
     });
   }
@@ -1311,8 +994,11 @@ async function renderTitleOverlay({ outputPath, shineOutputPath, originalTitle, 
     </svg>`;
   await sharp(Buffer.from(svg)).png().toFile(outputPath);
   if (shineOutputPath) {
-    const shineText = (fit, family, baseline, style) => style.effect !== "current-title-glow-shine" ? "" : `<g font-family="${escapeXml(family)}" font-size="${fit.fontSize}" font-weight="${style.fontWeight}" opacity="${style.opacity}"><g fill="#b4e9ff" filter="url(#shine-glow)">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g><g fill="#e8f7ff">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join('')}</g></g>`;
-    const shineSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><defs><filter id="shine-glow"><feGaussianBlur stdDeviation="${originalFit.fontSize * .08}"/></filter><clipPath id="top"><rect width="1080" height="${FOREGROUND_Y}"/></clipPath><clipPath id="bottom"><rect y="${TITLE_LAYOUT.part.top - 24}" width="1080" height="${1800 - TITLE_LAYOUT.part.top + 24}"/></clipPath></defs><g clip-path="url(#top)">${shineText(originalFit, originalFamily, originalFirstBaseline, visualStyle.originalTitle)}</g><g clip-path="url(#bottom)">${shineText(partFit, partFamily, TITLE_LAYOUT.part.top + partFit.fontSize * .82, visualStyle.partTitle)}</g></svg>`;
+    const shineText = (fit, family, baseline, style) =>
+      style.effect !== "current-title-glow-shine"
+        ? ""
+        : `<g font-family="${escapeXml(family)}" font-size="${fit.fontSize}" font-weight="${style.fontWeight}" opacity="${style.opacity}"><g fill="#b4e9ff" filter="url(#shine-glow)">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join("")}</g><g fill="#e8f7ff">${fit.lines.map((line, index) => `<text x="540" y="${baseline + index * (fit.fontSize + fit.lineSpacing)}" text-anchor="middle">${escapeXml(line)}</text>`).join("")}</g></g>`;
+    const shineSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><defs><filter id="shine-glow"><feGaussianBlur stdDeviation="${originalFit.fontSize * 0.08}"/></filter><clipPath id="top"><rect width="1080" height="${FOREGROUND_Y}"/></clipPath><clipPath id="bottom"><rect y="${TITLE_LAYOUT.part.top - 24}" width="1080" height="${1800 - TITLE_LAYOUT.part.top + 24}"/></clipPath></defs><g clip-path="url(#top)">${shineText(originalFit, originalFamily, originalFirstBaseline, visualStyle.originalTitle)}</g><g clip-path="url(#bottom)">${shineText(partFit, partFamily, TITLE_LAYOUT.part.top + partFit.fontSize * 0.82, visualStyle.partTitle)}</g></svg>`;
     await sharp(Buffer.from(shineSvg)).png().toFile(shineOutputPath);
   }
 }
@@ -1333,23 +1019,47 @@ async function subtitleFrames(source, plan, part, directory, signal) {
   await registerOverlayFonts();
   const captions = partCaptions(cues, part, style);
   const blank = path.join(directory, "subtitle-blank.png");
-  await sharp({ create: { width: 1080, height: 1920, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toFile(blank);
-  const frames = []; let position = 0;
+  await sharp({ create: { width: 1080, height: 1920, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .png()
+    .toFile(blank);
+  const frames = [];
+  let position = 0;
   // Replayed teaser/main captions can share exact bitmaps within this part.
   const subtitleImages = new Map();
-  const add = (file, duration) => { if (duration > 0.001) frames.push(`file '${path.basename(file)}'\nduration ${(duration/PLAYBACK_RATE).toFixed(6)}`); };
+  const add = (file, duration) => {
+    if (duration > 0.001)
+      frames.push(`file '${path.basename(file)}'\nduration ${(duration / PLAYBACK_RATE).toFixed(6)}`);
+  };
   for (const [index, cue] of captions.entries()) {
     signal?.throwIfAborted();
-    const start = Math.max(position, cue.start), end = Math.min(cue.end, captions[index + 1]?.start ?? Infinity);
+    const start = Math.max(position, cue.start),
+      end = Math.min(cue.end, captions[index + 1]?.start ?? Infinity);
     if (end <= start) continue;
     add(blank, start - position);
     const size = style.size;
-    const lines = cue.text.split("\n"), family = fontFamilyFor(cue.text, style.font);
+    const lines = cue.text.split("\n"),
+      family = fontFamilyFor(cue.text, style.font);
     const y = subtitleY(style, source.height);
-    const text = lines.map((line, lineIndex) => `<text x="540" y="${y - (lines.length - lineIndex - 1) * size * 1.2}" text-anchor="middle">${escapeXml(line)}</text>`).join("");
+    const text = lines
+      .map(
+        (line, lineIndex) =>
+          `<text x="540" y="${y - (lines.length - lineIndex - 1) * size * 1.2}" text-anchor="middle">${escapeXml(line)}</text>`,
+      )
+      .join("");
     const legacyGraphic = `<g font-family="${escapeXml(family)}" font-size="${size}" font-weight="700" stroke-linejoin="round" paint-order="stroke fill"><g transform="translate(2,3)" fill="#000" stroke="#000" stroke-width="${style.outline * 2 + 2}" opacity=".6">${text}</g><g fill="${style.color}" stroke="${style.outlineColor}" stroke-width="${style.outline * 2}">${text}</g></g>`;
-    const graphic = style.effect === undefined ? legacyGraphic : styledTextSvg(lines, { fontFamily: family, fontSize: size, firstBaseline: y - (lines.length - 1) * size * 1.2, lineHeight: size * 1.2, roundBaseline: false, style: { ...style, fontWeight: style.fontWeight ?? 700, opacity: style.opacity ?? 1 } });
-    const svg = (opacity) => `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><g opacity="${opacity}">${graphic}</g></svg>`;
+    const graphic =
+      style.effect === undefined
+        ? legacyGraphic
+        : styledTextSvg(lines, {
+            fontFamily: family,
+            fontSize: size,
+            firstBaseline: y - (lines.length - 1) * size * 1.2,
+            lineHeight: size * 1.2,
+            roundBaseline: false,
+            style: { ...style, fontWeight: style.fontWeight ?? 700, opacity: style.opacity ?? 1 },
+          });
+    const svg = (opacity) =>
+      `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920"><g opacity="${opacity}">${graphic}</g></svg>`;
     const image = svg(1);
     let file = subtitleImages.get(image);
     if (!file) {
@@ -1367,19 +1077,31 @@ async function subtitleFrames(source, plan, part, directory, signal) {
   return list;
 }
 
-
-async function renderPart({ source, plan, part, totalParts, outputPath, backgroundAsset, sceneAsset, onProgress, onEncoder=()=>{}, signal }) {
+async function renderPart({
+  source,
+  plan,
+  part,
+  totalParts,
+  outputPath,
+  backgroundAsset,
+  sceneAsset,
+  onProgress,
+  onEncoder = () => {},
+  signal,
+}) {
   signal?.throwIfAborted();
   if (!ffmpeg) throw new Error("Không tìm thấy FFmpeg. macOS: brew install ffmpeg");
   const workDirectory = path.dirname(outputPath);
   const titleOverlayPath = path.join(workDirectory, `part-${part.id}-titles.png`);
-  const visualStyle=plan.visualStyle||DEFAULT_VISUAL_STYLE;
+  const visualStyle = plan.visualStyle || DEFAULT_VISUAL_STYLE;
   const animated = normalizeTitleAnimation(visualStyle.titleAnimation) !== "none";
   // Static non-shine titles previously decoded an entirely transparent PNG and
   // ran crop/geq/overlay on it every frame. Keep the existing animated grouping
   // (including its format conversions) and actual shine effects untouched.
-  const needsShineInput=animated||[visualStyle.originalTitle,visualStyle.partTitle].some(style=>style.effect==='current-title-glow-shine');
-  const titleShinePath = needsShineInput?path.join(workDirectory, `part-${part.id}-shine.png`):null;
+  const needsShineInput =
+    animated ||
+    [visualStyle.originalTitle, visualStyle.partTitle].some((style) => style.effect === "current-title-glow-shine");
+  const titleShinePath = needsShineInput ? path.join(workDirectory, `part-${part.id}-shine.png`) : null;
   await renderTitleOverlay({
     outputPath: titleOverlayPath,
     shineOutputPath: titleShinePath,
@@ -1391,994 +1113,550 @@ async function renderPart({ source, plan, part, totalParts, outputPath, backgrou
   });
 
   // Scene decorations stay outside the foreground transition, under text.
-  const musicSettings=effectiveMusic(plan.music,part.id);
-  const musicAsset=musicSettings.enabled?await musicLibrary.resolve(musicSettings.assetId):null;
+  const musicSettings = effectiveMusic(plan.music, part.id);
+  const musicAsset = musicSettings.enabled ? await musicLibrary.resolve(musicSettings.assetId) : null;
   const segments = presentationSegments(part);
   // One output clock before composition. Do not use AV-concat's longest-stream
   // padding, per-segment fps conversion or cloned EOF frames to conceal cuts.
-  const outputFrames=Math.round(presentationDuration(part)/PLAYBACK_RATE*30);
-  const transitionWindows=partTransitionWindows(part,plan.visualStyle?.cutTransition,plan.hookTransition).map(w=>({...w,presetId:w.presetId||plan.visualStyle?.cutTransition||"none"}));
-  const hasTransitions=transitionWindows.length>0;
+  const outputFrames = Math.round((presentationDuration(part) / PLAYBACK_RATE) * 30);
+  const transitionWindows = partTransitionWindows(part, plan.visualStyle?.cutTransition, plan.hookTransition).map(
+    (w) => ({ ...w, presetId: w.presetId || plan.visualStyle?.cutTransition || "none" }),
+  );
+  const hasTransitions = transitionWindows.length > 0;
   let titleInputPath = titleOverlayPath;
   if (sceneAsset && !animated) {
     titleInputPath = path.join(workDirectory, `part-${part.id}-scene-titles.png`);
-    await sharp(sceneAsset).composite([{ input: titleOverlayPath }]).png().toFile(titleInputPath);
+    await sharp(sceneAsset)
+      .composite([{ input: titleOverlayPath }])
+      .png()
+      .toFile(titleInputPath);
   }
 
   const subtitlesPath = await subtitleFrames(source, plan, part, workDirectory, signal);
-  const rangeInput=await prepareRangeInput({source,segments,directory:workDirectory,ffmpeg,run,signal});
-  const filterGraphPath=path.join(workDirectory,`part-${part.id}-filters.ffgraph`);
+  const rangeInput = await prepareRangeInput({ source, segments, directory: workDirectory, ffmpeg, run, signal });
+  const filterGraphPath = path.join(workDirectory, `part-${part.id}-filters.ffgraph`);
   try {
-  const overlayInput=2; // sequential source video + finite, sample-trimmed PCM
-  // Allocate optional inputs in precisely the same order as buildArgs below.
-  let nextInput=overlayInput+1;
-  const shineInput=needsShineInput?nextInput++:undefined;
-  const subtitleInput=subtitlesPath?nextInput++:undefined;
-  const backgroundInput=backgroundAsset?nextInput++:undefined;
-  const animatedSceneInput=animated&&sceneAsset?nextInput++:undefined;
-  const vrInput=nextInput;
-  // Decode each static PNG once, then repeat that one decoded frame on the same
-  // 30fps output clock. Never use this for source video or caption sequences.
-  const staticInputFilter='loop=loop=-1:size=1:start=0,setpts=N/(30*TB),';
-  const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t,${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
-  // Keep the existing Rec.709 limited output contract after composition.
-  const background = assertRenderableBackground(plan.visualStyle?.background);
-  const rgbFilter = Boolean(plan.visualStyle?.filter?.presetId) || background.mode !== "source-blur";
-  const overlayFormat = rgbFilter ? ":format=rgb" : "";
-  const outputColor = rgbFilter ? "scale=out_color_matrix=bt709:out_range=tv," : "";
-  const animationFilters = titleAnimationFilters({ id: plan.visualStyle?.titleAnimation, titleInput: overlayInput, shineInput, sceneInput: animatedSceneInput, overlayFormat, clockRate:1,staticInputFilter });
-  const filters = [
-    `[0:v]select=concatdec_select,settb=AVTB,setpts=PTS/${PLAYBACK_RATE},fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
-    '[1:a]asetpts=N/SR/TB[cuta]',
-    `[cutv]${ffmpegFilterExpression(plan.visualStyle?.filter, { contrast: renderContrast, saturation: renderSaturation })}[graded]`,
-    ...(background.mode === "source-blur" ? [
-      `[graded]split=2[bgsrc][mainsrc]`,
-      `color=c=black:s=1080x1920:r=30[black]`,
-      `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=1080:1920:flags=bilinear,format=rgba,colorchannelmixer=aa=${background.opacity}[bgvideo]`,
-      `[black][bgvideo]overlay=shortest=1${overlayFormat}[bg]`,
-    ] : [
-      `[graded]null[mainsrc]`,
-      background.mode === "solid" ? `color=c=black:s=1080x1920:r=30,format=rgb24[bg]` : `[${backgroundInput}:v]${staticInputFilter}format=rgb24[bg]`,
-    ]),
-    `[mainsrc]${foregroundFilter()}[mainUnlit]`,
-    ...(cutTransitionFilters(plan.visualStyle?.cutTransition,segments,transitionWindows,{spriteInput:vrInput,staticInputFilter})||["[mainUnlit]null[main]"]),
-    `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[layout]`,
-    ...(animationFilters || [
-    `[${overlayInput}:v]${staticInputFilter}format=rgba[titlecard]`,
-    `[layout][titlecard]overlay=0:0:shortest=1${overlayFormat}[baseTitles]`,
-    ...(needsShineInput?[
-    `[${shineInput}:v]${staticInputFilter}format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
-    `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1${overlayFormat}[titled]`,
-    ]:[`[baseTitles]null[titled]`]),
-    ]),
-    ...(subtitlesPath ? [`[${subtitleInput}:v]fps=30,format=rgba[subcard]`, `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`] : []),
-    `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,trim=end_frame=${outputFrames}[vout]`,
-    `[cuta]atempo=${PLAYBACK_RATE}[${musicAsset?"originalaudio":"aout"}]`,
-  ];
-
-  const buildArgs = async (videoEncoder) => {
-    const hardwareRender = videoEncoder === "h264_videotoolbox";
-    const args = ["-y","-copyts"];
-    if (hardwareRender && hardwareDecodeCodecs.has(source.videoCodec)) {
-      args.push("-hwaccel", "videotoolbox");
-    }
-    args.push('-an','-sn','-dn','-f','concat','-safe','0','-segment_time_metadata','1','-i',rangeInput.list);
-    args.push('-f','f32le','-ar','48000','-ac','2','-i',rangeInput.audio);
-    args.push("-framerate", "30", "-i", titleInputPath);
-    if(needsShineInput)args.push("-framerate", "30", "-i", titleShinePath);
-    if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
-    if (backgroundAsset) args.push("-framerate", "30", "-i", backgroundAsset);
-    if (animatedSceneInput !== undefined) args.push("-framerate", "30", "-i", sceneAsset);
-    if(hasTransitions)args.push("-framerate","30","-i",path.join(projectRoot,"public",TRANSITION_SPRITE.slice(1)));
-    const renderFilters=[...filters];
-    if(musicAsset){const input=args.filter(a=>a==="-i").length;args.push("-stream_loop","-1","-i",musicAsset.file);renderFilters.push(...musicMixFilters({input,settings:musicSettings,part,activity:plan.musicSpeech,duration:presentationDuration(part)/PLAYBACK_RATE}));}
-    await writeFile(filterGraphPath,renderFilters.join(";"),{mode:0o600});
-    args.push(
-      // FFmpeg 9 reads argument files with -/option; keep large graphs off argv.
-      "-/filter_complex", filterGraphPath,
-      "-map", "[vout]",
-      "-map", "[aout]",
-      // OUTPUT scope, after all -i inputs and before the output filename.
-      // Only rendered A/V: no source tags, chapters, subtitles/data/attachments.
-      ...EXPORT_METADATA_ARGS,
-      "-r", "30",
-      "-pix_fmt", "yuv420p",
-      "-color_range", "tv",
-      "-colorspace", "bt709",
-      "-color_primaries", "bt709",
-      "-color_trc", "bt709",
-    );
-    if (hardwareRender) {
-      args.push(
-        "-c:v", "h264_videotoolbox",
-        "-profile:v", "high",
-        "-level:v", "4.2",
-        "-b:v", process.env.FFMPEG_VIDEO_BITRATE || "12M",
-        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "14M",
-        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
-        "-spatial_aq", "1",
-        "-realtime", "0",
-        "-allow_sw", "0",
-      );
-    } else {
-      args.push(
-        "-c:v", videoEncoder,
-        "-preset", process.env.FFMPEG_PRESET || "medium",
-        ...(process.env.FFMPEG_CRF ? ["-crf",process.env.FFMPEG_CRF] : ["-b:v",process.env.FFMPEG_VIDEO_BITRATE || "12M"]),
-        "-maxrate", process.env.FFMPEG_VIDEO_MAXRATE || "14M",
-        "-bufsize", process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
-        "-x264-params","threads=2:lookahead-threads=1",
-      );
-    }
-    args.push(
-      "-threads:v","2","-threads:a","1","-max_muxing_queue_size","128",
-      "-tag:v", "avc1",
-      "-c:a", "aac",
-      "-b:a", "192k",
-      "-movflags", "+faststart+write_colr",
-      // Both streams are finite. Let independently concatenated source audio
-      // finish rather than truncating its tail to the video frame grid.
-      "-progress", "pipe:1",
-      "-nostats",
-      outputPath,
-    );
-    return args;
-  };
-
-  const expectedMicroseconds = presentationDuration(part) / PLAYBACK_RATE * 1_000_000;
-  let progressBuffer = "";
-  const renderOptions = {
-    signal,
-    filterComplexThreads:RENDER_FILTER_COMPLEX_THREADS,
-    onStdout(chunk) {
-      progressBuffer += chunk;
-      const lines = progressBuffer.split(/\r?\n/);
-      progressBuffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.startsWith("out_time_us=")) continue;
-        const current = Number(line.slice("out_time_us=".length));
-        if (Number.isFinite(current) && expectedMicroseconds > 0) onProgress(Math.min(1, current / expectedMicroseconds));
-      }
-    },
-  };
-  let encoderUsed = preferredVideoEncoder;onEncoder(encoderUsed,false);
-  try {
-    await run(ffmpeg, await buildArgs(encoderUsed), renderOptions);
-  } catch (error) {
-    signal?.throwIfAborted();
-    if (encoderUsed !== "h264_videotoolbox") throw error;
-    encoderUsed = "libx264";onEncoder(encoderUsed,true);
-    progressBuffer = "";
-    await run(ffmpeg, await buildArgs(encoderUsed), renderOptions);
-  }
-  onProgress(1);
-  return encoderUsed;
-  } finally {await rangeInput.dispose();await rm(filterGraphPath,{force:true});}
-}
-
-function exportPrefixFor(plan, source) {
-  const aliases = { de: "de", fr: "fr", ja: "jp", jp: "jp", ko: "kr", kr: "kr", en: "us", us: "us", vi: "vn", zh: "cn", es: "es", it: "it", pt: "pt", ru: "ru" };
-  const sourceLanguage = String(source.language || "").toLowerCase().split(/[-_]/)[0];
-  if (aliases[sourceLanguage]) return aliases[sourceLanguage];
-  const script = detectScript(`${plan.originalTitle} ${plan.parts.map((part) => part.title).join(" ")}`);
-  if (script === "korean") return "kr";
-  if (script === "japanese") return "jp";
-  return aliases[String(plan.language || "").toLowerCase()] || "us";
-}
-
-function reserveExportNames(plan, source) {
-  return exportNameAllocator.reserve(exportPrefixFor(plan, source), plan.parts.length);
-}
-
-async function executeRender(job, source, plan, signal) {
-  let scratch;
-  try {
-    signal?.throwIfAborted();
-    requireCurrentExportPolicy(job);
-    validateRenderPlan(plan,source);await verifySourceTeasers(plan,source,signal);job.plan=structuredClone(plan);
-    job.state = "rendering";
-    job.startedAt = new Date().toISOString();
-    const outputDirectory = path.join(source.directory, "outputs", job.id);
-    await mkdir(outputDirectory, { recursive: true });
-    scratch=await renderScratch(outputDirectory,{sourceId:source.id,jobId:job.id});
-    const exportNames = job.exportNames || await reserveExportNames(plan, source);
-    job.exportNames = exportNames;
-    await persistBatchHistory({strict:true});
-    const sceneAsset = await renderSceneOverlay({ overlays: plan.visualStyle?.overlays || [], publicRoot: path.join(projectRoot, "public"), outputPath: path.join(scratch.root, "scene-overlays.png") });
-    // One static gradient per job, shared by all parts; never rasterize per frame.
+    const overlayInput = 2; // sequential source video + finite, sample-trimmed PCM
+    // Allocate optional inputs in precisely the same order as buildArgs below.
+    let nextInput = overlayInput + 1;
+    const shineInput = needsShineInput ? nextInput++ : undefined;
+    const subtitleInput = subtitlesPath ? nextInput++ : undefined;
+    const backgroundInput = backgroundAsset ? nextInput++ : undefined;
+    const animatedSceneInput = animated && sceneAsset ? nextInput++ : undefined;
+    const vrInput = nextInput;
+    // Decode each static PNG once, then repeat that one decoded frame on the same
+    // 30fps output clock. Never use this for source video or caption sequences.
+    const staticInputFilter = "loop=loop=-1:size=1:start=0,setpts=N/(30*TB),";
+    const shineX = `(1080-${TITLE_SHINE_WIDTH})*mod(t,${TITLE_SHINE_SECONDS})/${TITLE_SHINE_SECONDS}`;
+    // Keep the existing Rec.709 limited output contract after composition.
     const background = assertRenderableBackground(plan.visualStyle?.background);
-    let backgroundAsset;
-    if (background.mode === "gradient") {
-      backgroundAsset = path.join(scratch.root, "background.png");
-      const pixels = Buffer.alloc(1080 * 1920 * 3);
-      for (let y = 0; y < 1920; y++) {
-        const row = Buffer.from(gradientRowRgb(background, y, 1920));
-        pixels.fill(row, y * 1080 * 3, (y + 1) * 1080 * 3);
+    const rgbFilter = Boolean(plan.visualStyle?.filter?.presetId) || background.mode !== "source-blur";
+    const overlayFormat = rgbFilter ? ":format=rgb" : "";
+    const outputColor = rgbFilter ? "scale=out_color_matrix=bt709:out_range=tv," : "";
+    const animationFilters = titleAnimationFilters({
+      id: plan.visualStyle?.titleAnimation,
+      titleInput: overlayInput,
+      shineInput,
+      sceneInput: animatedSceneInput,
+      overlayFormat,
+      clockRate: 1,
+      staticInputFilter,
+    });
+    const filters = [
+      `[0:v]select=concatdec_select,settb=AVTB,setpts=PTS/${PLAYBACK_RATE},fps=30:start_time=0:round=near:eof_action=round,trim=end_frame=${outputFrames}[cutv]`,
+      "[1:a]asetpts=N/SR/TB[cuta]",
+      `[cutv]${ffmpegFilterExpression(plan.visualStyle?.filter, { contrast: renderContrast, saturation: renderSaturation })}[graded]`,
+      ...(background.mode === "source-blur"
+        ? [
+            `[graded]split=2[bgsrc][mainsrc]`,
+            `color=c=black:s=1080x1920:r=30[black]`,
+            `[bgsrc]scale=270:480:force_original_aspect_ratio=increase:flags=fast_bilinear,crop=270:480,boxblur=12:2,scale=1080:1920:flags=bilinear,format=rgba,colorchannelmixer=aa=${background.opacity}[bgvideo]`,
+            `[black][bgvideo]overlay=shortest=1${overlayFormat}[bg]`,
+          ]
+        : [
+            `[graded]null[mainsrc]`,
+            background.mode === "solid"
+              ? `color=c=black:s=1080x1920:r=30,format=rgb24[bg]`
+              : `[${backgroundInput}:v]${staticInputFilter}format=rgb24[bg]`,
+          ]),
+      `[mainsrc]${foregroundFilter()}[mainUnlit]`,
+      ...(cutTransitionFilters(plan.visualStyle?.cutTransition, segments, transitionWindows, {
+        spriteInput: vrInput,
+        staticInputFilter,
+      }) || ["[mainUnlit]null[main]"]),
+      `[bg][main]overlay=0:${FOREGROUND_Y}:shortest=1${overlayFormat}[layout]`,
+      ...(animationFilters || [
+        `[${overlayInput}:v]${staticInputFilter}format=rgba[titlecard]`,
+        `[layout][titlecard]overlay=0:0:shortest=1${overlayFormat}[baseTitles]`,
+        ...(needsShineInput
+          ? [
+              `[${shineInput}:v]${staticInputFilter}format=rgba,crop=${TITLE_SHINE_WIDTH}:1920:x='${shineX}':y=0,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*max(0,1-abs(X-${TITLE_SHINE_WIDTH / 2})/${TITLE_SHINE_WIDTH / 2})'[shine]`,
+              `[baseTitles][shine]overlay=x='${shineX}':y=0:shortest=1${overlayFormat}[titled]`,
+            ]
+          : [`[baseTitles]null[titled]`]),
+      ]),
+      ...(subtitlesPath
+        ? [
+            `[${subtitleInput}:v]fps=30,format=rgba[subcard]`,
+            `[titled][subcard]overlay=0:0:eof_action=pass:repeatlast=0${overlayFormat}[subtitled]`,
+          ]
+        : []),
+      `[${subtitlesPath ? "subtitled" : "titled"}]${outputColor}format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,trim=end_frame=${outputFrames}[vout]`,
+      `[cuta]atempo=${PLAYBACK_RATE}[${musicAsset ? "originalaudio" : "aout"}]`,
+    ];
+
+    const buildArgs = async (videoEncoder) => {
+      const hardwareRender = videoEncoder === "h264_videotoolbox";
+      const args = ["-y", "-copyts"];
+      if (hardwareRender && hardwareDecodeCodecs.has(source.videoCodec)) {
+        args.push("-hwaccel", "videotoolbox");
       }
-      await sharp(pixels, { raw: { width: 1080, height: 1920, channels: 3 } }).png().toFile(backgroundAsset);
-    }
-    const outputDurations=plan.parts.map(part=>presentationDuration(part)/PLAYBACK_RATE),totalOutputSeconds=outputDurations.reduce((a,b)=>a+b,0);let completedSeconds=0;
-    job.totalOutputSeconds=totalOutputSeconds;
-    for (const [index, part] of plan.parts.entries()) {
-      signal?.throwIfAborted();
-      const finalDirectory=path.join(outputDirectory,`part-${part.id}`);
-      const prior=job.outputs.find(o=>o.part===part.id)||await recoverPublication({directory:finalDirectory,filename:exportNames[index],sourceId:source.id,jobId:job.id,partId:part.id,metadataPolicy:EXPORT_METADATA_POLICY});
-      const completed=await verifiedRenderOutput({file:path.join(outputDirectory,`part-${part.id}`,exportNames[index]),filename:exportNames[index],record:prior,sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
-      if(completed){if(!job.outputs.some(o=>o.part===part.id))job.outputs.push(completed);completedSeconds+=outputDurations[index];job.outputSeconds=completedSeconds;job.progress=Math.min(99,Math.floor(completedSeconds/totalOutputSeconds*100));await persistBatchHistory({strict:true});continue;}
-      // An existing unrecorded/legacy/corrupt file is never overwritten or
-      // adopted as a clean export. Keep it and require a separate new job.
-      const existingFile=path.join(outputDirectory,`part-${part.id}`,exportNames[index]);
-      const existingOutput=await lstat(existingFile).catch(error=>{if(error.code==='ENOENT')return null;throw error;});
-      if(existingOutput)throw new Error('MP4 đã tồn tại nhưng không đủ bằng chứng chính sách metadata hiện tại. Xuất thành job mới; không ghi đè/xóa file cũ.');
-      job.outputs=job.outputs.filter(o=>o.part!==part.id);
-      job.currentPart = part.id;job.phase='rendering';
-      const filename = exportNames[index];
-      const partDirectory = path.join(scratch.root, `part-${part.id}`);
-      await mkdir(partDirectory, { recursive: true });
-      const outputPath = path.join(partDirectory, filename);
-      job.encoder = await renderPart({
-        source,
-        plan,
-        part,
-        totalParts: plan.parts.length,
-        backgroundAsset,
-        sceneAsset,
+      args.push(
+        "-an",
+        "-sn",
+        "-dn",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-segment_time_metadata",
+        "1",
+        "-i",
+        rangeInput.list,
+      );
+      args.push("-f", "f32le", "-ar", "48000", "-ac", "2", "-i", rangeInput.audio);
+      args.push("-framerate", "30", "-i", titleInputPath);
+      if (needsShineInput) args.push("-framerate", "30", "-i", titleShinePath);
+      if (subtitlesPath) args.push("-f", "concat", "-safe", "0", "-i", subtitlesPath);
+      if (backgroundAsset) args.push("-framerate", "30", "-i", backgroundAsset);
+      if (animatedSceneInput !== undefined) args.push("-framerate", "30", "-i", sceneAsset);
+      if (hasTransitions)
+        args.push("-framerate", "30", "-i", path.join(projectRoot, "public", TRANSITION_SPRITE.slice(1)));
+      const renderFilters = [...filters];
+      if (musicAsset) {
+        const input = args.filter((a) => a === "-i").length;
+        args.push("-stream_loop", "-1", "-i", musicAsset.file);
+        renderFilters.push(
+          ...musicMixFilters({
+            input,
+            settings: musicSettings,
+            part,
+            activity: plan.musicSpeech,
+            duration: presentationDuration(part) / PLAYBACK_RATE,
+          }),
+        );
+      }
+      await writeFile(filterGraphPath, renderFilters.join(";"), { mode: 0o600 });
+      args.push(
+        // FFmpeg 9 reads argument files with -/option; keep large graphs off argv.
+        "-/filter_complex",
+        filterGraphPath,
+        "-map",
+        "[vout]",
+        "-map",
+        "[aout]",
+        // OUTPUT scope, after all -i inputs and before the output filename.
+        // Only rendered A/V: no source tags, chapters, subtitles/data/attachments.
+        ...EXPORT_METADATA_ARGS,
+        "-r",
+        "30",
+        "-pix_fmt",
+        "yuv420p",
+        "-color_range",
+        "tv",
+        "-colorspace",
+        "bt709",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "bt709",
+      );
+      if (hardwareRender) {
+        args.push(
+          "-c:v",
+          "h264_videotoolbox",
+          "-profile:v",
+          "high",
+          "-level:v",
+          "4.2",
+          "-b:v",
+          process.env.FFMPEG_VIDEO_BITRATE || "12M",
+          "-maxrate",
+          process.env.FFMPEG_VIDEO_MAXRATE || "14M",
+          "-bufsize",
+          process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
+          "-spatial_aq",
+          "1",
+          "-realtime",
+          "0",
+          "-allow_sw",
+          "0",
+        );
+      } else {
+        args.push(
+          "-c:v",
+          videoEncoder,
+          "-preset",
+          process.env.FFMPEG_PRESET || "medium",
+          ...(process.env.FFMPEG_CRF
+            ? ["-crf", process.env.FFMPEG_CRF]
+            : ["-b:v", process.env.FFMPEG_VIDEO_BITRATE || "12M"]),
+          "-maxrate",
+          process.env.FFMPEG_VIDEO_MAXRATE || "14M",
+          "-bufsize",
+          process.env.FFMPEG_VIDEO_BUFSIZE || "24M",
+          "-x264-params",
+          "threads=2:lookahead-threads=1",
+        );
+      }
+      args.push(
+        "-threads:v",
+        "2",
+        "-threads:a",
+        "1",
+        "-max_muxing_queue_size",
+        "128",
+        "-tag:v",
+        "avc1",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart+write_colr",
+        // Both streams are finite. Let independently concatenated source audio
+        // finish rather than truncating its tail to the video frame grid.
+        "-progress",
+        "pipe:1",
+        "-nostats",
         outputPath,
-        signal,
-        onEncoder:(encoder,fallback)=>{job.encoder=encoder;job.encoderFallback=fallback;job.resourceNotice=encoder==='libx264'?(fallback?'VideoToolbox lỗi; chuyển CPU · giới hạn 2 luồng.':'CPU · giới hạn 2 luồng (VideoToolbox chưa khả dụng).'):'Apple VideoToolbox · Balanced M2';void persistBatchHistory();},
-        onProgress: (partProgress) => {
-          job.outputSeconds=completedSeconds+partProgress*outputDurations[index];
-          job.progress=Math.max(job.progress||0,Math.min(99,Math.floor(job.outputSeconds/totalOutputSeconds*100)));
-        },
-      });
+      );
+      return args;
+    };
+
+    const expectedMicroseconds = (presentationDuration(part) / PLAYBACK_RATE) * 1_000_000;
+    let progressBuffer = "";
+    const renderOptions = {
+      signal,
+      filterComplexThreads: RENDER_FILTER_COMPLEX_THREADS,
+      onStdout(chunk) {
+        progressBuffer += chunk;
+        const lines = progressBuffer.split(/\r?\n/);
+        progressBuffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("out_time_us=")) continue;
+          const current = Number(line.slice("out_time_us=".length));
+          if (Number.isFinite(current) && expectedMicroseconds > 0)
+            onProgress(Math.min(1, current / expectedMicroseconds));
+        }
+      },
+    };
+    let encoderUsed = preferredVideoEncoder;
+    onEncoder(encoderUsed, false);
+    try {
+      await run(ffmpeg, await buildArgs(encoderUsed), renderOptions);
+    } catch (error) {
       signal?.throwIfAborted();
-      job.phase='validating';
-      const outputStat = await stat(outputPath);
-      const checked=await verifiedRenderOutput({file:outputPath,filename,record:{filename,size:outputStat.size,metadataPolicy:EXPORT_METADATA_POLICY},sourceId:source.id,jobId:job.id,partId:part.id,duration:presentationDuration(part)/PLAYBACK_RATE,probe:probeMedia});
-      if(!checked)throw Error('MP4 chưa đạt geometry/duration/audio contract; chưa publish, có thể Resume part này.');
-      job.phase='publishing';
-      await publishRender({staging:outputPath,directory:finalDirectory,filename,sourceId:source.id,jobId:job.id,partId:part.id,metadataPolicy:EXPORT_METADATA_POLICY,signal});
-      job.outputs.push({
-        part: part.id,
-        filename,
-        size: outputStat.size,
-        metadataPolicy: EXPORT_METADATA_POLICY,
-        url: `/files/${source.id}/outputs/${job.id}/part-${part.id}/${encodeURIComponent(filename)}`,
-      });
-      await persistBatchHistory({strict:true});completedSeconds+=outputDurations[index];
+      if (encoderUsed !== "h264_videotoolbox") throw error;
+      encoderUsed = "libx264";
+      onEncoder(encoderUsed, true);
+      progressBuffer = "";
+      await run(ffmpeg, await buildArgs(encoderUsed), renderOptions);
     }
-    job.progress = 100;
-    job.state = "done";
-    job.finishedAt = new Date().toISOString();
-  } catch (error) {
-    job.state = signal?.aborted ? "cancelled" : "error";
-    job.error = signal?.aborted ? null : error instanceof Error ? error.message : String(error);
-    job.finishedAt = new Date().toISOString();
-  } finally {if(scratch)await scratch.dispose().catch(()=>{});}
-}
-
-function startRender(body,parentSignal){
-  // Pending HTTP calls and already queued/running editor jobs share this key.
-  const fingerprint=createHash('sha256').update(JSON.stringify([body.sourceId,body.plan],(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v)).digest('hex');
-  const key=body.submissionId?`id:${assertId(body.submissionId)}`:`editor:${fingerprint}`;
-  if(pendingRenderSubmissions.has(key)){const pending=pendingRenderSubmissions.get(key);if(pending.sourceId!==body.sourceId)throw Object.assign(new Error('Submission belongs to another source'),{status:409});return pending.promise;}
-  if(!body.submissionId){const active=[...jobs.values()].find(j=>j.origin==='editor'&&j.submissionFingerprint===fingerprint&&['queued','rendering'].includes(j.state)&&!j.deleted);if(active)return Promise.resolve(active);}
-  const task=prepareRenderSubmission(body,parentSignal,fingerprint).finally(()=>{if(pendingRenderSubmissions.get(key)?.promise===task)pendingRenderSubmissions.delete(key);});pendingRenderSubmissions.set(key,{sourceId:body.sourceId,promise:task});return task;
-}
-async function prepareRenderSubmission(body, parentSignal, fingerprint) {
-  if (mediaLibrary.isLocked(body.sourceId)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
-  const source = await loadSource(body.sourceId, parentSignal);
-  parentSignal?.throwIfAborted();
-  body.plan = originalCutPlan(body.plan, source.id);
-  if(body.transcript!==undefined){if(typeof body.transcript!=='string'||body.transcript.length>1_000_000)throw Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; không tự bỏ phần cuối.');body.plan={...body.plan,teaserTranscriptKey:await selectionDigest(transcriptValue(body.transcript))};}
-  const captions=effectiveCaptionTrack(body.plan,source);
-  let originalPlan = structuredClone(effectiveCutPlan({...body.plan,originalTitle:source.title,...(captions?{captionCues:captions}:{})}));
-  validateRenderPlan(originalPlan,source);
-  if(body.instruction!==undefined||body.supplementalPrompt!==undefined)await assertTeaserContexts(originalPlan,source,captions?.cues||[],body.transcript||source.transcript||'',{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
-  await verifySourceTeasers(originalPlan,source,parentSignal);
-  // Rendering never selects/fills hooks. Explicit selection must finish first.
-  validateRenderPlan(originalPlan,source);
-  originalPlan = snapshotPlanVisualStyle(originalPlan);
-  if(originalPlan.subtitles.enabled&&!originalPlan.captionCues)throw Error('Tạo/duyệt phụ đề trong editor trước khi xuất; không tự thay caption track của job đã gửi.');
-  if (originalPlan.subtitles.enabled && originalPlan.captionCues) originalPlan.captionCues = sourceCaptionTrack(originalPlan.captionCues, source);
-  originalPlan.music=normalizeMusic(originalPlan.music);
-  if(originalPlan.music.enabled){for(const part of originalPlan.parts){const m=effectiveMusic(originalPlan.music,part.id);if(m.enabled)await musicLibrary.resolve(m.assetId);}
-
+    onProgress(1);
+    return encoderUsed;
+  } finally {
+    await rangeInput.dispose();
+    await rm(filterGraphPath, { force: true });
   }
-  const renderPlan = originalPlan;
-  validateRenderPlan(renderPlan, source);
-  if (mediaLibrary.isLocked(source.id)) throw Object.assign(new Error("Video đang được chuyển/xoá trong Thùng rác. Thử lại sau."), { status: 409 });
-  if(body.submissionId){assertId(body.submissionId);const existing=jobs.get(body.submissionId);if(existing){if(existing.sourceId!==source.id)throw new Error("Submission belongs to another source");requireCurrentExportPolicy(existing);validateRenderPlan(existing.plan,source);return existing;}
-    if(existsSync(path.join(source.directory,"outputs",body.submissionId)))throw new Error("Render output exists without its history; inspect it before another submission.");}
-  const job = {
-    id: body.submissionId || randomUUID(),
-    sourceId: source.id,
-    origin: parentSignal ? "batch" : "editor",
-    metadataPolicy: EXPORT_METADATA_POLICY,
-    submissionFingerprint:fingerprint,resourceProfile:RENDER_RESOURCE_PROFILE,
-    plan: originalPlan,
-    startTrimSeconds: 1,
-    state: "queued",
-    progress: 0,
-    currentPart: null,
-    outputs: [],
-    encoder: preferredVideoEncoder,
-    error: null,
-    createdAt: new Date().toISOString(),
-  };
-  jobs.set(job.id, job);
-  try{await persistBatchHistory({strict:true});}
-  catch(error){job.state='error';job.error='Không lưu được lịch sử job; chưa bắt đầu render.';job.finishedAt=new Date().toISOString();throw error;}
-  enqueueRender(job,source,renderPlan,parentSignal);
-  return job;
 }
 
-function enqueueRender(job,source,renderPlan,parentSignal){
-  const controller = new AbortController();
-  renderControllers.set(job.id, controller);
-  const abort = () => cancelRender(job);
-  const detachParent=()=>parentSignal?.removeEventListener("abort",abort);
-  renderParentCleanup.set(controller,detachParent);
-  parentSignal?.addEventListener("abort", abort, { once: true });
-  if (parentSignal?.aborted) abort();
-  const task=renderQueue.then(async()=>{
-    // A queued cancellation is already final. Its old promise must not touch a
-    // resumed job or reacquire resources when the preceding export completes.
-    if(controller.signal.aborted||renderControllers.get(job.id)!==controller)return;
-    startedRenderControllers.add(controller);
-    const signal=controller.signal;signal.throwIfAborted();job.phase='preparing';
-    let prepared=structuredClone(renderPlan);
-    // Cut compatibility was resolved before job creation; snapshots never run a second Smart Cut here.
-    if(prepared.parts.some(p=>!p.startTrimApplied||!p.smartCutApplied))throw Error('Snapshot cũ chưa chốt cut; mở trong editor và gửi job mới, không tự sửa job đã lưu.');
-    if(prepared.music?.enabled&&prepared.music.ducking)prepared.musicSpeech=await musicSpeech.detect(source,signal);
-    if(prepared.subtitles?.enabled&&!prepared.captionCues)throw Error('Tạo/duyệt phụ đề trong editor trước khi gửi job mới; không đổi track sau khi snapshot.');
-    signal.throwIfAborted();validateRenderPlan(prepared,source);job.plan=structuredClone(prepared);job.phase='rendering';
-    await mediaResources.use('render',active=>executeRender(job,source,prepared,active),signal);
-  }).catch((error) => {
-    if(renderControllers.get(job.id)!==controller)return;
-    job.state = controller.signal.aborted?"cancelled":"error";
-    job.error = controller.signal.aborted?null:error instanceof Error ? error.message : String(error);job.finishedAt=new Date().toISOString();
-  }).finally(async () => {
-    try{if(renderControllers.get(job.id)===controller){
-      renderControllers.delete(job.id);job.phase=null;
-      await persistBatchHistory({strict:true});
-    }}finally{detachParent();renderParentCleanup.delete(controller);startedRenderControllers.delete(controller);}
-  });
-  renderQueue=task.catch(error=>console.error(`Render final history write failed: ${error.code||'IO_ERROR'}`));
-}
-async function resumeRender(job,parentSignal){
-  requireCurrentExportPolicy(job);
-  if(!['error','cancelled'].includes(job.state)||renderControllers.has(job.id))throw new Error('Render still active or already complete; no duplicate submission.');
-  if(mediaLibrary.isLocked(job.sourceId))throw new Error('Source is in use/trash.');
-  const source=await loadSource(job.sourceId,parentSignal);validateRenderPlan(job.plan,source);await verifySourceTeasers(job.plan,source,parentSignal);
-  const previous={state:job.state,error:job.error,attempt:job.attempt,progress:job.progress,outputSeconds:job.outputSeconds};
-  job.state='queued';job.error=null;job.attempt=(job.attempt||1)+1;job.progress=0;job.outputSeconds=0;
-  try{await persistBatchHistory({strict:true});}catch(error){Object.assign(job,previous);throw error;}
-  enqueueRender(job,source,structuredClone(job.plan),parentSignal);return job;
+function binaryVersion(binary, args = ["--version"]) {
+  if (!binary) return null;
+  const result = spawnSync(binary, args, { encoding: "utf8", timeout: 5_000, windowsHide: true });
+  return result.status === 0 ? result.stdout.trim().split("\n")[0] : null;
 }
 
-function cancelRender(job) {
-  if (!job) return;
-  if (["done", "error", "cancelled"].includes(job.state)) return;
-  job.state = "cancelled";
-  job.error = null;
-  job.finishedAt = new Date().toISOString();
-  const controller=renderControllers.get(job.id);
-  controller?.abort();
-  // Nothing has started for this controller: no process, resource lease or
-  // output cleanup needs waiting. Do not wait for unrelated earlier exports.
-  if(controller&&!startedRenderControllers.has(controller)&&renderControllers.get(job.id)===controller){
-    renderControllers.delete(job.id);job.phase=null;
-    renderParentCleanup.get(controller)?.();renderParentCleanup.delete(controller);
-  }
-  void persistBatchHistory({immediate:true});
-}
+const versions = {
+  ffmpeg: binaryVersion(ffmpeg, ["-version"])?.replace(/^ffmpeg version\s+/, "") || null,
+  ffprobe: binaryVersion(ffprobe, ["-version"])?.replace(/^ffprobe version\s+/, "") || null,
+  ytDlp: binaryVersion(ytDlp),
+};
+const {
+  analyzeWithChatGPTPlan,
+  finalizeImportedTeasers,
+  hookSourceFingerprint,
+  mainAnalysisInputs,
+  planTeasers,
+  protectedAnalysisKeys,
+  repairBatchTeasers,
+  resolveEditingProvider,
+  verifySourceTeasers,
+} = createAnalysisService(() => ({
+  activeChatGPTCredentials,
+  batches,
+  chatGPTResource,
+  dataRoot,
+  jobs,
+  listChatGPTModels,
+  localSignals,
+  selectTeasers,
+  sourceContexts,
+  speech,
+}));
 
-function renderSnapshot(job) {
-  return { ...job, stopping: job.state === "cancelled" && renderControllers.has(job.id) };
-}
+const selectTeasers = createTeaserSelector({
+  cacheRoot: path.join(dataRoot, "cache", "teaser-hooks"),
+  fingerprint: hookSourceFingerprint,
+  resolveProvider: (signal) => resolveEditingProvider(signal, "teaser"),
+});
+const musicLibrary = createMusicLibrary({ root: path.join(dataRoot, "music"), ffmpeg, ffprobe, run });
+const musicSpeech = createMusicSpeech({
+  root: path.join(dataRoot, "cache", "music-speech"),
+  ffmpeg,
+  run,
+  fingerprint: hookSourceFingerprint,
+  protectedKeys: protectedAnalysisKeys,
+  resources: mediaResources,
+});
+const musicPreview = createMusicPreview({
+  root: path.join(dataRoot, "cache", "music-preview"),
+  ffmpeg,
+  run,
+  musicLibrary,
+  musicSpeech,
+  fingerprint: hookSourceFingerprint,
+  resources: mediaResources,
+});
+const localSignals = createLocalSignalAnalyzer({
+  ffmpeg,
+  run,
+  fingerprint: hookSourceFingerprint,
+  cacheRoot: path.join(dataRoot, "cache", "local-signals"),
+  protectedKeys: protectedAnalysisKeys,
+});
+const mainContent = createMainContentSelector({
+  cacheRoot: path.join(dataRoot, "cache", "main-content"),
+  fingerprint: hookSourceFingerprint,
+  resolveProvider: resolveEditingProvider,
+  protectedKeys: protectedAnalysisKeys,
+});
+
+const webAiVideos = createWebAiVideo({
+  root: path.join(dataRoot, "cache", "web-ai-video"),
+  youtube,
+  ffmpeg,
+  run,
+  probeMedia,
+  fingerprint: hookSourceFingerprint,
+  isLocked: (id) => mediaLibrary.isLocked(id),
+});
+const sourceReuse = createSourceReuse({
+  sourcesRoot,
+  load: loadSource,
+  download: downloadYouTubeSource,
+  metadata: (url, signal) => youtube.context(url, signal),
+  isLocked: (id) => mediaLibrary.isLocked(id),
+});
+
+const processBatch = createBatchProcessor({
+  acquire: async (url, signal, onProgress) => {
+    const stop = youtube.subscribeProgress(url, onProgress);
+    try {
+      return await importYouTube(url, signal);
+    } finally {
+      stop();
+    }
+  },
+  load: loadSource,
+  analyze: (source, body, signal) => analyzeSource(source, body, signal),
+  repairTeasers: repairBatchTeasers,
+  render: startRender,
+  resumeRender: resumeRender,
+  getJob: (id) => jobs.get(id),
+  persist: () => persistBatchHistory({ strict: true }),
+});
+const autoCutWorkflow = createAutoCutWorkflow({
+  externalSnapshots: createExternalPromptSnapshots(path.join(dataRoot, "cache", "external-prompt-snapshots")),
+  prepareInputs: mainAnalysisInputs,
+  mainContent,
+  selectHooks: planTeasers,
+  verifyPreservedTeasers: verifySourceTeasers,
+  describeWebVideo: (source, signal) => webAiVideos.describe(source, signal),
+});
+const analyzeSource = (source, body, signal) =>
+  withAiOperation("generate", () => autoCutWorkflow(source, body, signal));
 
 function cancelBatch(batch) {
   batchControllers.get(batch.id)?.abort();
   for (const item of batch.items) {
     if (item.jobId) cancelRender(jobs.get(item.jobId));
-    if (!["done", "error"].includes(item.state)) { item.state = "cancelled"; item.error = null; }
+    if (!["done", "error"].includes(item.state)) {
+      item.state = "cancelled";
+      item.error = null;
+    }
   }
 }
 
-async function prepareBatch(batch,body,items){return processBatch(batch,body,items,batchControllers.get(batch.id).signal);}
+async function prepareBatch(batch, body, items) {
+  return processBatch(batch, body, items, batchControllers.get(batch.id).signal);
+}
 
 function batchSnapshot(batch) {
-  const items = batch.items.filter((item) => !item.deleted).map((item) => {
-    const storedJob = item.jobId ? jobs.get(item.jobId) : null;
-    const job=storedJob?renderSnapshot(storedJob):null;
-    return { ...item, state: job?.state || item.state, error: job?.error || item.error, job };
-  });
-  return { id: batch.id, items, finished: items.every((item) => ["done", "error", "cancelled", "paused", "awaiting-import", "review-required"].includes(item.state)) };
-}
-
-async function serveAiOperation(request,response,body,kind,work){
-  const streamed=body.progress===true;
-  const write=value=>{if(response.destroyed||response.writableEnded)return;if(value.type==='progress'&&response.writableLength>16384)return;response.write(JSON.stringify(value)+'\n');};
-  if(streamed)response.writeHead(200,{...corsHeaders(request),'Content-Type':'application/x-ndjson; charset=utf-8','Cache-Control':'no-store','X-Accel-Buffering':'no'});
-  try{
-    const result=await withAiOperation(kind,work,streamed?diagnostics=>write({type:'progress',diagnostics}):undefined);
-    if(streamed){write({type:'result',...result});response.end();}
-    else sendJson(request,response,200,result);
-  }catch(error){
-    if(streamed){write({type:'error',error:error.message,diagnostics:error.diagnostics});response.end();}
-    else sendJson(request,response,error.status||500,{error:error.message,diagnostics:error.diagnostics});
-  }
-}
-
-function mediaContentType(target) {
-  return {
-    ".mp4": "video/mp4", ".flac":"audio/flac", ".m4a":"audio/mp4", ".mp3":"audio/mpeg", ".wav":"audio/wav", ".aac":"audio/aac", ".ogg":"audio/ogg", ".opus":"audio/ogg",
-    ".m4v": "video/mp4",
-    ".mov": "video/quicktime",
-    ".webm": "video/webm",
-    ".mkv": "video/x-matroska",
-    ".avi": "video/x-msvideo",
-  }[path.extname(target).toLowerCase()] || "application/octet-stream";
-}
-
-async function serveMediaPath(request, response, target, { download = false, filename = path.basename(target), signal, onProgress } = {}) {
-  signal?.throwIfAborted();
-  const fileStat = await stat(target);
-  if(!fileStat.isFile())throw Object.assign(Error('Không tìm thấy media.'),{status:404});
-  const transmit=async(start,end,total)=>{
-    signal?.throwIfAborted();
-    const input=createReadStream(target,{start,end});
-    if(!onProgress){await pipeline(input,response,{signal});return;}
-    // This counts actual bytes passed through the HTTP pipeline with normal
-    // backpressure; it is not a claim that the browser saved a file to disk.
-    let completed=0;
-    const report=()=>{try{onProgress(completed,total);}catch{/* Telemetry cannot own transfer. */}};
-    const meter=new Transform({transform(chunk,encoding,callback){completed+=chunk.length;report();callback(null,chunk);}});
-    report();await pipeline(input,meter,response,{signal});
-  };
-  const range = request.headers.range;
-  const baseHeaders = {
-    ...corsHeaders(request),
-    "Content-Type": mediaContentType(target),
-    "Accept-Ranges": "bytes",
-    "Cache-Control": "private, max-age=0, must-revalidate",
-    ...(download ? { "Content-Disposition": `attachment; filename="video.mp4"; filename*=UTF-8''${encodeURIComponent(filename).replace(/'/g, "%27")}` } : {}),
-  };
-  if (range) {
-    const selected=mediaByteRange(range,fileStat.size);
-    if (!selected) {
-      if(onProgress)throw Object.assign(Error('Khoảng byte tải video không hợp lệ.'),{status:416});
-      response.writeHead(416, { ...baseHeaders, "Content-Range": `bytes */${fileStat.size}` });
-      response.end();
-      return;
-    }
-    const {start,end}=selected;
-    response.writeHead(206, {
-      ...baseHeaders,
-      "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
-      "Content-Length": end - start + 1,
+  const items = batch.items
+    .filter((item) => !item.deleted)
+    .map((item) => {
+      const storedJob = item.jobId ? jobs.get(item.jobId) : null;
+      const job = storedJob ? renderSnapshot(storedJob) : null;
+      return { ...item, state: job?.state || item.state, error: job?.error || item.error, job };
     });
-    if (request.method === "HEAD") {
-      response.end();
-      return;
-    }
-    await transmit(start,end,end-start+1);
-    return;
-  }
-  response.writeHead(200, { ...baseHeaders, "Content-Length": fileStat.size });
-  if (request.method === "HEAD") {
-    response.end();
-    return;
-  }
-  await transmit(undefined,undefined,fileStat.size);
-}
-
-async function serveFile(request, response, pathname, { download = true } = {}) {
-  const relative = decodeURIComponent(pathname.slice("/files/".length));
-  const target = path.resolve(sourcesRoot, relative);
-  if (!target.startsWith(`${sourcesRoot}${path.sep}`) || !existsSync(target) || !statSync(target).isFile()) {
-    sendJson(request, response, 404, { error: "Không tìm thấy output." });
-    return;
-  }
-  await serveMediaPath(request, response, target, { download });
-}
-
-async function serveSourceMedia(request, response, sourceId) {
-  const source = await loadSource(sourceId);
-  await serveMediaPath(request, response, source.mediaPath);
+  return {
+    id: batch.id,
+    items,
+    finished: items.every((item) =>
+      ["done", "error", "cancelled", "paused", "awaiting-import", "review-required"].includes(item.state),
+    ),
+  };
 }
 
 await mkdir(sourcesRoot, { recursive: true });
 
-const server = createServer(async (request, response) => {
-  try {
-    const requestUrl = new URL(request.url || "/", `http://${host}:${port}`);
-    requestOrigins.assert(request,requestUrl.pathname);
-    if(request.method==='OPTIONS'){
-      response.writeHead(204,corsHeaders(request));response.end();return;
-    }
-    const rawUpload=['/api/sources/upload','/api/music/import'].includes(requestUrl.pathname);
-    const bodyPresent=Number(request.headers['content-length'])>0||Boolean(request.headers['transfer-encoding']);
-    if(!rawUpload&&!['GET','HEAD'].includes(request.method)&&bodyPresent&&request.headers['content-type']?.split(';')[0].trim().toLowerCase()!=='application/json'){
-      sendJson(request,response,415,{error:'Thao tác này yêu cầu JSON từ app.'});return;
-    }
-    if(request.method==='POST'&&requestUrl.pathname==='/api/editor/source-lease'){
-      const body=await readJson(request,4096);
-      sendJson(request,response,200,editorSourceLeases.retain(body,id=>mediaLibrary.isLocked(id)));return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/health") {
-      sendJson(request, response, 200, {
-        ok: Boolean(ffmpeg && ffprobe),
-        readyForYouTube: Boolean(ffmpeg && ffprobe),
-        chatGPTAuthAvailable: chatGPTStore.available,
-        tools: versions,
-        render: {
-          playbackRate: PLAYBACK_RATE, foregroundScale: FOREGROUND_SCALE,
-          contrast: renderContrast, saturation: renderSaturation,
-          encoder: preferredVideoEncoder,
-          hardwareAccelerated: preferredVideoEncoder === "h264_videotoolbox",
-          videoBitrate:process.env.FFMPEG_VIDEO_BITRATE||'12M',videoMaxrate:process.env.FFMPEG_VIDEO_MAXRATE||'14M',videoBufsize:process.env.FFMPEG_VIDEO_BUFSIZE||'24M',
-          label: preferredVideoEncoder === "h264_videotoolbox" ? "Apple VideoToolbox" : preferredVideoEncoder,
-          colorSpace: "Rec.709",resources:{...mediaResources.state(),renderBusy:exportBusy()},
-        },
-        dataRoot,
-      });
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/auth/callback") {
-      const state = requestUrl.searchParams.get("state") || "";
-      const attempt = pendingChatGPTAuth.get(state);
-      if (!attempt) {
-        sendHtml(request, response, 400, "ChatGPT sign-in expired", "Quay lại ShortCut Studio và bấm Continue with ChatGPT lần nữa.");
-        return;
-      }
-      try {
-        pendingChatGPTAuth.take(state);
-        const credentials = await exchangeChatGPTCode(attempt, requestUrl);
-        pendingChatGPTAuth.finish(state, "connected");
-        const sharingMessage = credentials.scopes.includes("chatgpt.tokens.use.direct")
-          ? "Đã kết nối ChatGPT plan. Cửa sổ này sẽ tự đóng."
-          : "Đã đăng nhập, nhưng ChatGPT plan usage chưa được cấp quyền.";
-        sendHtml(request, response, 200, "ChatGPT connected", sharingMessage);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Không đăng nhập được ChatGPT.";
-        pendingChatGPTAuth.finish(state, "failed", message);
-        sendHtml(request, response, 400, "Không kết nối được ChatGPT", message);
-      }
-      return;
-    }
-    if (requestUrl.pathname.startsWith("/api/gemini/")) {
-      sendJson(request, response, 400, { error: "Gemini Pro dùng chế độ copy/dán JSON trong tab chỉnh từng video. Không còn kết nối Antigravity hoặc gọi Gemini CLI/API." }); return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/api/chatgpt/session") {
-      let credentials = readChatGPTCredentials(), error;
-      if (credentials?.scopes?.includes("chatgpt.tokens.use.direct") && Date.parse(credentials.expires_at || "") - Date.now() < 90_000) {
-        try { credentials = await activeChatGPTCredentials(); } catch (e) { error = e.status === 401 ? "Phiên đã bị thu hồi/hết hạn. Kết nối lại ChatGPT." : "Không refresh được phiên. Kiểm tra mạng và thử lại sau."; }
-      }
-      sendJson(request, response, 200, { session: { ...publicChatGPTSession(credentials), ...(error ? { sharing: false, error, needsSignIn: true } : {}) } });
-      return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/chatgpt/auth/start") {
-      const attempt = await startChatGPTAuthorization();
-      sendJson(request, response, 200, attempt);
-      return;
-    }
-    if (requestUrl.pathname === "/api/chatgpt/auth/status" && ["GET", "DELETE"].includes(request.method)) {
-      const id = requestUrl.searchParams.get("attemptId");
-      if (request.method === "DELETE") pendingChatGPTAuth.cancel(id);
-      sendJson(request, response, 200, pendingChatGPTAuth.public(id)); return;
-    }
-    if (request.method === "DELETE" && requestUrl.pathname === "/api/chatgpt/session") {
-      pendingChatGPTAuth.cancelAll();
-      deleteChatGPTCredentials();
-      await rm(chatGPTRegistrationPath, { force: true });
-      sendJson(request, response, 200, { session: publicChatGPTSession(null) });
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/api/chatgpt/models") {
-      const models = await listChatGPTModels();
-      sendJson(request, response, 200, { models });
-      return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/chatgpt/analyze") {
-      const body = await readJson(request);
-      const controller=new AbortController(),abort=()=>controller.abort(new Error('Analysis cancelled'));response.once('close',abort);
-      try{await serveAiOperation(request,response,body,'legacy-analysis',()=>analyzeWithChatGPTPlan(body,AbortSignal.any([controller.signal,AbortSignal.timeout(240_000)])));}
-      finally{response.removeListener('close',abort);}
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/api/youtube/metadata") {
-      const controller=new AbortController(),abort=()=>controller.abort(new Error("Metadata client disconnected"));response.once("close",abort);
-      try{sendJson(request,response,200,await youtube.metadata(requestUrl.searchParams.get("url")||"",controller.signal));}
-      finally{response.removeListener("close",abort);}return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/sources/youtube") {
-      const body = await readJson(request);
-      const controller=new AbortController(),abort=()=>controller.abort(new Error("Source import cancelled"));response.once("close",abort);
-      let unsubscribe;
-      const streamed = body.progress === true;
-      const write = value => {
-        if (response.destroyed || response.writableEnded) return;
-        // Progress is optional and bounded; a slow UI must not buffer endlessly.
-        if (value.type === 'progress' && response.writableLength > 16384) return;
-        response.write(JSON.stringify(value) + '\n');
-      };
-      try {
-        if (streamed) {
-          unsubscribe = youtube.subscribeProgress(String(body.url || '').trim(), progress => write({ type: 'progress', ...progress }));
-          response.writeHead(200, { ...corsHeaders(request), 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
-          write({ type: 'progress', phase: 'metadata', percent: null });
-        }
-        const source = await importYouTube(String(body.url || '').trim(), controller.signal);
-        if (streamed) { write({ type: 'result', source: publicSource(source) }); response.end(); }
-        else sendJson(request, response, 201, { source: publicSource(source) });
-      } catch (error) {
-        if (!streamed || !response.headersSent) throw error;
-        if (!controller.signal.aborted) write({ type: 'error', error: error instanceof Error ? error.message : 'Không chuẩn bị được nguồn.' });
-        response.end();
-      } finally { unsubscribe?.(); response.removeListener('close', abort); }
-      return;
-    }
-    if(request.method==='POST'&&requestUrl.pathname==='/api/music/preview'){
-      const body=await readJson(request),source=await loadSource(body.sourceId);if(mediaLibrary.isLocked(source.id))throw Error('Source is busy in Trash.');validatePlan(body.plan,source,{teasers:false});const controller=new AbortController(),abort=()=>controller.abort(new Error('Audio preview cancelled'));response.once('close',abort);try{sendJson(request,response,200,await musicPreview.prepare(source,body.plan,body.partId,body.sessionId,controller.signal));}finally{response.removeListener('close',abort);}return;
-    }
-    const musicPreviewFile=requestUrl.pathname.match(/^\/api\/music\/preview\/([a-f0-9]{64})\/media$/);
-    if(['GET','HEAD'].includes(request.method)&&musicPreviewFile){await serveMediaPath(request,response,await musicPreview.resolve(musicPreviewFile[1]),{download:false});return;}
-    if(request.method==='GET'&&requestUrl.pathname==='/api/music'){sendJson(request,response,200,{assets:await musicLibrary.list(),catalog:MUSIC_CATALOG});return;}
-    if(request.method==='POST'&&requestUrl.pathname==='/api/music/import'){
-      const controller=new AbortController(),abort=()=>controller.abort(new Error('Music import cancelled'));response.once('close',abort);
-      try{const asset=await musicLibrary.import(request,{filename:decodeURIComponent(String(request.headers['x-filename']||'music.mp3')),catalogId:MUSIC_CATALOG.some(t=>t.id===request.headers['x-catalog-id'])?request.headers['x-catalog-id']:undefined,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(120000)])});const{file,...metadata}=asset;void file;sendJson(request,response,201,{asset:metadata});}finally{response.removeListener('close',abort);}return;
-    }
-    const musicFile=requestUrl.pathname.match(/^\/api\/music\/([a-f0-9]{64})\/media$/);
-    if(['GET','HEAD'].includes(request.method)&&musicFile){const asset=await musicLibrary.resolve(musicFile[1]);await serveMediaPath(request,response,asset.file,{download:false});return;}
-    const musicDetect=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/music-speech$/i);
-    if(request.method==='POST'&&musicDetect){await readJson(request);const source=await loadSource(musicDetect[1]);const controller=new AbortController(),abort=()=>controller.abort(new Error('Speech detection cancelled'));response.once('close',abort);try{sendJson(request,response,200,await musicSpeech.detect(source,controller.signal));}finally{response.removeListener('close',abort);}return;}
-    if (request.method === "GET" && requestUrl.pathname === "/api/speech/status") {
-      sendJson(request, response, 200, await speech.status()); return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/speech/model") {
-      await readJson(request); await speech.installModel();
-      sendJson(request, response, 200, await speech.status()); return;
-    }
-    const sourceMetadataMatch=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})$/i);
-    if(request.method==='GET'&&sourceMetadataMatch){sendJson(request,response,200,{source:publicSource(await loadSource(sourceMetadataMatch[1]))});return;}
-    const manualStatus=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/manual-video-status\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i);
-    if(['GET','DELETE'].includes(request.method)&&manualStatus){
-      const [,sourceId,downloadId]=manualStatus,key=manualDownloadKey(sourceId,downloadId);
-      pruneManualDownloads();let item=manualVideoDownloads.get(key);
-      if(request.method==='DELETE'){
-        // A fast Cancel can arrive before the iframe's GET. A bounded terminal
-        // tombstone prevents that later request from starting preparation.
-        if(!item)item=createManualDownload(sourceId,downloadId,{phase:'cancelled',state:'cancelled',percent:null});
-        else if(item.progress.state==='running')item.cancel?.();
-        else if(item.progress.interrupted){item.updatedAt=Date.now();item.progress={phase:'cancelled',state:'cancelled',percent:null,updatedAt:item.updatedAt};}
-        sendJson(request,response,200,{progress:item.progress});return;
-      }
-      if(!item){sendJson(request,response,404,{error:'Lượt tải chưa bắt đầu hoặc worker đã khởi động lại.'});return;}
-      sendJson(request,response,200,{progress:item.progress});return;
-    }
-    const manualMedia=requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/manual-video$/i);
-    if(['GET','HEAD'].includes(request.method)&&manualMedia){
-      const rendition=requestUrl.searchParams.get('rendition')||'original';
-      if(!['original','480p'].includes(rendition))throw Object.assign(Error('Lựa chọn tải video không hợp lệ.'),{status:400});
-      const downloadId=requestUrl.searchParams.get('downloadId');
-      if(downloadId!==null&&(request.method!=='GET'||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(downloadId)))throw Object.assign(Error('Định danh lượt tải video không hợp lệ.'),{status:400});
-      let tracked;
-      if(downloadId!==null){
-        const key=manualDownloadKey(manualMedia[1],downloadId);pruneManualDownloads();
-        if(manualVideoDownloads.has(key))throw Object.assign(Error('Lượt tải này đã được tạo hoặc dừng; bấm Tải video để bắt đầu lượt mới.'),{status:409});
-        tracked=createManualDownload(manualMedia[1],downloadId,{phase:'identity',state:'running',percent:null});
-      }
-      const controller=new AbortController();let transferring=false,unsubscribe;
-      const cancel=()=>{
-        manualDownloadProgress(tracked,{phase:'cancelled',state:'cancelled',percent:null});
-        controller.abort(new DOMException('Đã dừng truyền video web.','AbortError'));
-        if(!response.destroyed&&!response.writableFinished)response.destroy();
-      };
-      if(tracked)tracked.cancel=cancel;
-      const abort=()=>{if(!response.writableFinished){
-        // A browser/network disconnect is observable; its user's intent is not.
-        // Explicit DELETE already records cancelled and cannot be overwritten.
-        manualDownloadProgress(tracked,{phase:'error',state:'error',percent:null,interrupted:true,error:'Kết nối tải video đã ngắt. Bấm Tải video để thử lại.'});
-        controller.abort(new DOMException('Kết nối tải video đã ngắt.','AbortError'));
-      }};
-      response.once('close',abort);
-      try{
-        const expectedVariant=requestUrl.searchParams.get('variant');
-        if(expectedVariant!==null&&!/^[a-f0-9]{64}$/.test(expectedVariant))throw Object.assign(Error('Định danh bản video gửi web không hợp lệ.'),{status:400});
-        const expectedSource=requestUrl.searchParams.get('source');
-        if(expectedSource!==null&&!/^[a-f0-9]{64}$/.test(expectedSource))throw Object.assign(Error('Định danh nguồn video gửi web không hợp lệ.'),{status:400});
-        const source=await loadSource(manualMedia[1],controller.signal);
-        if(tracked&&rendition==='480p')unsubscribe=webAiVideos.subscribeProgress(source.id,event=>{
-          if(transferring||tracked.progress.state!=='running'||['error','cancelled'].includes(event.phase))return;
-          const progress={phase:event.phase==='ready'?'validating':event.phase,state:'running',percent:event.phase==='ready'?null:event.percent};
-          for(const key of ['completedSeconds','totalSeconds','attempt','maxAttempts'])if(Number.isFinite(event[key])&&event[key]>=0)progress[key]=event[key];
-          if(typeof event.cacheHit==='boolean')progress.cacheHit=event.cacheHit;
-          manualDownloadProgress(tracked,progress);
-        });
-        const assertDownloadSource=async()=>{if(expectedSource!==null&&(await webAiVideos.describe(source,controller.signal)).sourceKey!==expectedSource)throw Object.assign(Error('Nguồn đã đổi từ lúc tạo TXT; chưa tải video của lượt cũ.'),{status:409,code:'WEB_VIDEO_SOURCE_CHANGED'});};
-        await assertDownloadSource();
-        const useVideo=rendition==='original'?webAiVideos.usingOriginal:webAiVideos.using;
-        await useVideo(source,controller.signal,async prepared=>{
-          if(rendition==='480p'&&expectedVariant!==null&&prepared.manifest.variantKey!==expectedVariant)throw Object.assign(Error('Bản video hoặc nguồn đã đổi; chưa truyền video của lượt cũ.'),{status:409,code:'WEB_VIDEO_VARIANT_CHANGED'});
-          await assertDownloadSource();
-          transferring=true;unsubscribe?.();unsubscribe=undefined;
-          let lastUpdate=0,latestBytes=0,latestTotal=0;const transferStart=performance.now();
-          manualDownloadProgress(tracked,{phase:'transferring',state:'running',percent:0,completedBytes:0,totalBytes:prepared.manifest.bytes});
-          await serveMediaPath(request,response,prepared.file,{download:true,filename:prepared.manifest.filename,signal:controller.signal,...(tracked?{onProgress:(completedBytes,totalBytes)=>{
-            latestBytes=completedBytes;latestTotal=totalBytes;const now=performance.now();
-            if(now-lastUpdate<150&&completedBytes<totalBytes)return;lastUpdate=now;
-            const elapsed=(now-transferStart)/1000,bytesPerSecond=elapsed>=.5?completedBytes/elapsed:undefined;
-            manualDownloadProgress(tracked,{phase:'transferring',state:'running',percent:totalBytes>0?Math.min(99,completedBytes/totalBytes*100):null,completedBytes,totalBytes,
-              ...(bytesPerSecond>0?{bytesPerSecond,etaSeconds:Math.max(0,(totalBytes-completedBytes)/bytesPerSecond)}:{})});
-          }}:{})});
-          if(tracked){controller.signal.throwIfAborted();manualDownloadProgress(tracked,{phase:'completed',state:'done',percent:100,completedBytes:latestBytes,totalBytes:latestTotal});}
-        });
-      }catch(error){
-        const errorCode=typeof error.code==='string'&&/^[A-Z0-9_]{1,80}$/.test(error.code)?error.code:Number.isInteger(error.status)?`HTTP_${error.status}`:'WEB_VIDEO_PREPARATION_FAILED';
-        manualDownloadProgress(tracked,{phase:controller.signal.aborted?'cancelled':'error',state:controller.signal.aborted?'cancelled':'error',percent:null,...(!controller.signal.aborted?{error:manualDownloadError(error),errorCode}:{})});
-        throw error;
-      }finally{unsubscribe?.();response.off('close',abort);if(tracked)tracked.cancel=null;}return;
-    }
-    const mainSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/auto-cut$/i);
-    if (request.method === "POST" && mainSource) {
-      const controller = new AbortController(), abort = () => controller.abort(new Error("Analysis cancelled"));
-      response.once("close", abort);
-      try {
-        const body = await readJson(request);
-        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(['context','import'].includes(body.mode)?20*60_000:600000)]);
-        await serveAiOperation(request,response,body,'generate',async()=>{
-          const source=await measureAiStage('preparation',()=>loadSource(mainSource[1],signal));
-          return analyzeSource(source,body,signal);
-        });
-      } finally { response.removeListener("close",abort); }
-      return;
-    }
-    const speechSource = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]+)\/(smart-cut|captions|teaser-hooks)$/i);
-    if (request.method === "POST" && speechSource) {
-      const body = await readJson(request);
-      if (mediaLibrary.isLocked(speechSource[1])) throw new Error("Source đang được chuyển vào thùng rác.");
-      const loading=new AbortController(),abortLoading=()=>loading.abort(new Error('Analysis cancelled'));response.once('close',abortLoading);
-      let source;
-      try{source=await loadSource(speechSource[1],loading.signal);}finally{response.removeListener('close',abortLoading);}
-      if (speechSource[2] === "captions") {
-        const controller=new AbortController(),abort=()=>controller.abort(new Error("Caption client disconnected"));response.once("close",abort);
-        try{sendJson(request,response,200,await speech.captions(source,controller.signal,{regenerate:body.regenerate===true,provider:body.provider||'auto',language:body.language||'auto'}));}
-        finally{response.removeListener("close",abort);}return;
-      }
-      validatePlan(body.plan, source, {teasers:false});
-      if (speechSource[2] === "teaser-hooks") {
-        const controller = new AbortController(), abort = () => controller.abort(new Error("Hook client disconnected"));
-        response.once("close", abort);
-        try {
-          if (body.transcript !== undefined && (typeof body.transcript !== "string" || body.transcript.length > 1_000_000)) throw new Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; chưa gọi AI, không tự bỏ phần cuối.');
-          if(body.partId!==undefined&&!body.plan.parts.some(p=>p.id===body.partId))throw Error("Invalid hook part ID.");
-          if(body.customInstruction!==undefined&&(body.partId===undefined||parseCustomTeaser(body.customInstruction).mode!=='description'))throw Error('Custom description cần part cụ thể và mô tả hợp lệ; timestamp không gọi AI.');
-          if(body.mode==='validate-import'){
-            const next=await finalizeImportedTeasers(body.plan,source,String(body.transcript||''),controller.signal,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
-            sendJson(request,response,200,{plan:next});return;
-          }
-          if(body.mode!==undefined)throw Error('Invalid teaser operation.');
-          if(body.previousRanges!==undefined&&(body.partId===undefined||!Array.isArray(body.previousRanges)||body.previousRanges.length>26||body.previousRanges.some(r=>!r||!Number.isFinite(r.start)||!Number.isFinite(r.end)||r.start<0||r.end<=r.start||r.end>source.duration)))throw Error('Danh sách teaser trước không đúng source/range.');
-          await serveAiOperation(request,response,body,'teaser-retry',async()=>{
-            const next = await planTeasers(body.plan, source, AbortSignal.any([controller.signal, AbortSignal.timeout(240_000)]), body.transcript,{targetPartId:body.partId,maxAttempts:1,previousRanges:body.previousRanges,customInstruction:body.customInstruction,instruction:body.instruction,supplementalPrompt:body.supplementalPrompt,forceRefresh:true});
-            await measureAiStage('validation',()=>{validatePlan(next, source, {teasers:false});for(const part of next.parts)if(body.partId===undefined||part.id===body.partId)if(part.teaserEnabled!==false)validateTeaser(part,source.duration,source.id);});
-            return {plan:next};
-          });
-        } finally { response.removeListener("close", abort); }
-        return;
-      }
-      const next = smartCutPlan(effectiveCutPlan(body.plan), await speech.boundaries(source), source.duration);
-      validatePlan(next, source); sendJson(request, response, 200, { plan: next }); return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/youtube/transcript") {
-      const body = await readJson(request);
-      const controller=new AbortController(),abort=()=>controller.abort(new Error("Transcript client disconnected"));response.once("close",abort);
-      try{sendJson(request,response,200,await fetchYouTubeTranscript(String(body.url||"").trim(),controller.signal));}
-      finally{response.removeListener("close",abort);}return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/sources/upload") {
-      const source = await importUpload(request, requestUrl, response);
-      sendJson(request, response, 201, { source });
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/api/batches") {
-      sendJson(request, response, 200, { batches: [...batches.values()].reverse().map(batchSnapshot).filter((batch) => batch.items.length) });
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/api/storage") {
-      sendJson(request, response, 200, { library: await mediaLibrary.list() });
-      return;
-    }
-    const storageMediaMatch = requestUrl.pathname.match(/^\/api\/storage\/media\/([^/]+)$/);
-    if (["GET", "HEAD"].includes(request.method || "") && storageMediaMatch) {
-      const target = await mediaLibrary.media(decodeURIComponent(storageMediaMatch[1]));
-      await serveMediaPath(request, response, target, { download: requestUrl.searchParams.get("download") === "1" });
-      return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/storage/trash") {
-      const body = await readJson(request);
-      sendJson(request, response, 200, await mediaLibrary.move(body.id));
-      return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/storage/restore") {
-      const body = await readJson(request);
-      sendJson(request, response, 200, await mediaLibrary.restore(body.id));
-      return;
-    }
-    if (request.method === "DELETE" && requestUrl.pathname === "/api/storage/trash") {
-      const body = await readJson(request);
-      sendJson(request, response, 200, await mediaLibrary.purge(body.ids));
-      return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/batches") {
-      const body = await readJson(request);
-      if (body.provider && !["chatgpt","gemini","muse","chatgpt-web"].includes(body.provider)) {
-        sendJson(request, response, 400, { error: "Hàng loạt tự động chỉ dùng ChatGPT Auto. Các provider web thủ công cần copy/dán JSON từng video." });
-        return;
-      }
-      if (!Array.isArray(body.urls) || body.urls.length < 1 || body.urls.length > 20) {
-        sendJson(request, response, 400, { error: "Nhập từ 1 đến 20 link YouTube cùng cấu hình chia part." });
-        return;
-      }
-      const urls = [...new Set(body.urls.map((value) => String(value).trim()))];
-      for (const value of urls) {
-        youtubeUrl(value);
-        const url = new URL(value);
-        if (!["https:", "http:"].includes(url.protocol) || !/^(www\.|m\.)?(youtube\.com|youtu\.be)$/.test(url.hostname)) {
-          sendJson(request, response, 400, { error: `Không phải link YouTube: ${value}` });
-          return;
-        }
-      }
-      if (body.batchId !== undefined) body.batchId = assertId(body.batchId);
-      if(!body.provider||body.provider==="chatgpt")await activeChatGPTCredentials();
-      let batch;
-      try {
-        batch = batchPreparationQueue.submit({ ...body, urls,provider:body.provider||"chatgpt",resumeVersion:1 });
-      } catch (error) {
-        if (!error.status) throw error;
-        sendJson(request, response, error.status, { error: error.message });
-        return;
-      }
-      await persistBatchHistory({strict:true});
-      sendJson(request, response, 202, { batch: batchSnapshot(batch) });
-      return;
-    }
-    const resumeBatchMatch=requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/resume$/i);
-    if(request.method==='POST'&&resumeBatchMatch){
-      const body=await readJson(request),id=assertId(resumeBatchMatch[1]),batch=batches.get(id);
-      if(!batch)throw new Error('Queue not found');
-      const targets=batch.items.filter(i=>!i.deleted&&(!body.itemIds||body.itemIds.includes(i.id)));
-      if(targets.some(i=>i.jobId&&renderControllers.has(i.jobId)))throw new Error('Wait for stopping renders before resume.');
-      for(const item of targets){const saved=item.jobId?jobs.get(item.jobId):null;if(saved?.state==='done')continue;const plan=saved?.plan||item.plan;if(plan){const source=await loadSource(saved?.sourceId||item.sourceId);if(!saved&&(item.needsAnalysis||item.needsTeasers))validatePlan(plan,source,{teasers:false});else{validateRenderPlan(plan,source);await verifySourceTeasers(plan,source);}}}
-      if(targets.some(i=>(i.needsAnalysis||i.needsTeasers)&&i.settings?.provider==='chatgpt'))await activeChatGPTCredentials();
-      const resumed=batchPreparationQueue.resume(id,body.itemIds);await persistBatchHistory({strict:true});sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
-    }
-    const batchPlanMatch=requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})\/plan$/i);
-    if(request.method==='POST'&&batchPlanMatch){
-      const body=await readJson(request),batch=batches.get(assertId(batchPlanMatch[1])),item=batch?.items.find(i=>i.id===assertId(batchPlanMatch[2])&&!i.deleted);
-      if(body.transcript!==undefined&&(typeof body.transcript!=='string'||body.transcript.length>1_000_000))throw Error('Transcript vượt giới hạn 1 triệu ký tự hoặc sai định dạng; không tự bỏ phần cuối.');
-      if(!item||!item.sourceId)throw new Error('Prepared item not found');
-      if(item.jobId||!['awaiting-import','review-required','paused','error','cancelled'].includes(item.state))throw new Error('Render/preparation snapshot is immutable while submitted; finish/stop it first.');
-      if(body.sourceId!==item.sourceId)throw new Error('Plan belongs to another source');
-      const source=await loadSource(item.sourceId);
-      if(body.plan.parts?.some(p=>p.teaserEnabled!==false&&p.teaser?.selection==='external-import'))body.plan=await finalizeImportedTeasers(body.plan,source,String(body.transcript||''),undefined,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});
-      if(body.transcript!==undefined){body.plan.teaserTranscriptKey=await selectionDigest(transcriptValue(body.transcript));await assertTeaserContexts(body.plan,source,effectiveCaptionTrack(body.plan,source)?.cues||[],body.transcript,{instruction:body.instruction,supplementalPrompt:body.supplementalPrompt});}
-      validateRenderPlan(body.plan,source);await verifySourceTeasers(body.plan,source);
-
-      item.plan=snapshotPlanVisualStyle(body.plan);item.settings={...item.settings,...(['gemini','muse','chatgpt-web','chatgpt'].includes(item.plan.providerUsed)?{provider:item.plan.providerUsed}:{}),instruction:String(body.instruction||''),supplementalPrompt:String(body.supplementalPrompt||''),visualStyle:item.plan.visualStyle,subtitles:item.plan.subtitles};
-      item.transcript=String(body.transcript||source.transcript||'');
-      item.approved=true;item.needsAnalysis=false;item.needsTeasers=false;item.state='render-ready';item.checkpoint='plan';item.error=null;
-      await persistBatchHistory({strict:true});const resumed=batchPreparationQueue.resume(batch.id,[item.id]);await persistBatchHistory({strict:true});sendJson(request,response,202,{batch:batchSnapshot(resumed)});return;
-    }
-    const deleteBatchItemMatch = requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/items\/([a-f0-9-]{16,64})$/i);
-    if (request.method === "DELETE" && deleteBatchItemMatch) {
-      const batch = batches.get(assertId(deleteBatchItemMatch[1]));
-      if (!batch) { sendJson(request, response, 404, { error: "Hàng đợi không tồn tại." }); return; }
-      try {
-        const item = batch.items.find((item) => item.id === deleteBatchItemMatch[2]);
-        if (mediaLibrary.isLocked(item?.sourceId || jobs.get(item?.jobId)?.sourceId)) throw Object.assign(new Error("Video đang được xử lý trong Thùng rác. Thử lại sau."), { status: 409 });
-        const result = await removeBatchItem({ batch, itemId: assertId(deleteBatchItemMatch[2]), jobs, renderControllers, dataRoot });
-        await persistBatchHistory({strict:true});
-        sendJson(request, response, 200, { batch: batchSnapshot(batch), ...result });
-      } catch (error) {
-        sendJson(request, response, error.status || 500, { error: error.message });
-      }
-      return;
-    }
-    const cancelBatchMatch = requestUrl.pathname.match(/^\/api\/batches\/([a-f0-9-]{16,64})\/cancel$/i);
-    if (request.method === "POST" && cancelBatchMatch) {
-      const batch = batches.get(assertId(cancelBatchMatch[1]));
-      if (!batch) { sendJson(request, response, 404, { error: "Hàng đợi không tồn tại." }); return; }
-      cancelBatch(batch);await persistBatchHistory({strict:true});
-      sendJson(request, response, 200, { batch: batchSnapshot(batch) });
-      return;
-    }
-    const cancelJobMatch = requestUrl.pathname.match(/^\/api\/jobs\/([a-f0-9-]{16,64})\/cancel$/i);
-    if (request.method === "POST" && cancelJobMatch) {
-      const job = jobs.get(assertId(cancelJobMatch[1]));
-      if (!job) { sendJson(request, response, 404, { error: "Render job không tồn tại." }); return; }
-      cancelRender(job);await persistBatchHistory({strict:true});
-      sendJson(request, response, 200, { job: renderSnapshot(job) });
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname.startsWith("/api/batches/")) {
-      const batch = batches.get(assertId(requestUrl.pathname.slice("/api/batches/".length)));
-      sendJson(request, response, batch ? 200 : 404, batch ? { batch: batchSnapshot(batch) } : { error: "Hàng đợi không còn tồn tại (worker đã restart)." });
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/api/editor-renders") {
-      sendJson(request, response, 200, { jobs: [...jobs.values()].filter((job) => job.origin === "editor" && !job.deleted).reverse().map(renderSnapshot) });
-      return;
-    }
-    const deleteEditorMatch = requestUrl.pathname.match(/^\/api\/editor-renders\/([a-f0-9-]{16,64})$/i);
-    if (request.method === "DELETE" && deleteEditorMatch) {
-      const job = jobs.get(assertId(deleteEditorMatch[1]));
-      if (!job || job.origin !== "editor") { sendJson(request, response, 404, { error: "Không tìm thấy render trong tab chỉnh từng video." }); return; }
-      if (job.deleted) { sendJson(request, response, 200, { removed: true, trashId: null }); return; }
-      if (!["done", "error", "cancelled"].includes(job.state) || renderControllers.has(job.id)) {
-        sendJson(request, response, 409, { error: "Huỷ render và chờ tác vụ dừng hẳn trước khi xoá." }); return;
-      }
-      const result = await mediaLibrary.moveRender({ sourceId: job.sourceId, jobId: job.id });
-      job.deleted = true; job.outputs = [];
-      await persistBatchHistory({strict:true});
-      sendJson(request, response, 200, result);
-      return;
-    }
-    if (request.method === "POST" && requestUrl.pathname === "/api/render") {
-      const body = await readJson(request);
-      const job = await startRender(body);
-      sendJson(request, response, 202, { job });
-      return;
-    }
-    if (request.method === "GET" && requestUrl.pathname.startsWith("/api/jobs/")) {
-      const jobId = assertId(requestUrl.pathname.slice("/api/jobs/".length));
-      const job = jobs.get(jobId);
-      if (!job) {
-        sendJson(request, response, 404, { error: "Render job không tồn tại hoặc worker đã restart." });
-        return;
-      }
-      sendJson(request, response, 200, { job:renderSnapshot(job) });
-      return;
-    }
-    const sourceMediaMatch = requestUrl.pathname.match(/^\/api\/sources\/([a-f0-9-]{16,64})\/media$/i);
-    if (["GET", "HEAD"].includes(request.method || "") && sourceMediaMatch) {
-      await serveSourceMedia(request, response, sourceMediaMatch[1]);
-      return;
-    }
-    if (["GET", "HEAD"].includes(request.method || "") && requestUrl.pathname.startsWith("/files/")) {
-      await serveFile(request, response, requestUrl.pathname, { download: requestUrl.searchParams.get("preview") !== "1" });
-      return;
-    }
-    sendJson(request, response, 404, { error: "Route không tồn tại." });
-  } catch (error) {
-    // Streaming may already have sent headers or the client may have gone away.
-    // Never attempt a second JSON response; pipeline has closed owned streams.
-    if(response.destroyed||response.writableEnded)return;
-    if(response.headersSent){response.destroy();return;}
-    const message = error instanceof Error ? error.message : String(error);
-    const status = error.status || (message.startsWith("AUTH_REQUIRED") || message.startsWith("AUTH_EXPIRED") ? 401
-      : message.startsWith("PLAN_USAGE_DISABLED") ? 403
-        : message.startsWith("PLAN_LIMIT_REACHED") || message.startsWith("RATE_LIMITED") ? 429
-          : message.startsWith("MODEL_UNAVAILABLE") ? 503
-            : error.code === "ENOENT" ? 404 : error.code==='ERR_INVALID_URL'||error instanceof URIError?400:500);
-    sendJson(request, response, status, { error: message });
-  }
-});
+const dispatchRoutes = createRouter(
+  [
+    createSourcesRoutes({
+      analyzeSource,
+      assertId,
+      cancelRender,
+      corsHeaders,
+      createManualDownload,
+      editorSourceLeases,
+      effectiveCutPlan,
+      fetchYouTubeTranscript,
+      finalizeImportedTeasers,
+      importUpload,
+      importYouTube,
+      jobs,
+      loadSource,
+      manualDownloadError,
+      manualDownloadKey,
+      manualDownloadProgress,
+      manualVideoDownloads,
+      measureAiStage,
+      mediaLibrary,
+      musicLibrary,
+      musicPreview,
+      musicSpeech,
+      parseCustomTeaser,
+      persistBatchHistory,
+      planTeasers,
+      pruneManualDownloads,
+      publicSource,
+      readJson,
+      renderControllers,
+      renderSnapshot,
+      sendJson,
+      serveAiOperation,
+      serveFile,
+      serveMediaPath,
+      serveSourceMedia,
+      smartCutPlan,
+      speech,
+      validatePlan,
+      validateTeaser,
+      webAiVideos,
+      youtube,
+    }),
+    createHealthRoutes({
+      FOREGROUND_SCALE,
+      PLAYBACK_RATE,
+      chatGPTStore,
+      dataRoot,
+      exportBusy,
+      ffmpeg,
+      ffprobe,
+      mediaResources,
+      preferredVideoEncoder,
+      renderContrast,
+      renderSaturation,
+      sendJson,
+      versions,
+    }),
+    createAuthRoutes({
+      activeChatGPTCredentials,
+      analyzeWithChatGPTPlan,
+      chatGPTRegistrationPath,
+      deleteChatGPTCredentials,
+      exchangeChatGPTCode,
+      listChatGPTModels,
+      pendingChatGPTAuth,
+      publicChatGPTSession,
+      readChatGPTCredentials,
+      readJson,
+      rm,
+      sendHtml,
+      sendJson,
+      serveAiOperation,
+      startChatGPTAuthorization,
+    }),
+    createMusicRoutes({
+      MUSIC_CATALOG,
+      loadSource,
+      mediaLibrary,
+      musicLibrary,
+      musicPreview,
+      readJson,
+      sendJson,
+      validatePlan,
+    }),
+    createBatchRoutes({
+      activeChatGPTCredentials,
+      assertId,
+      assertTeaserContexts,
+      batchPreparationQueue,
+      batchSnapshot,
+      batches,
+      cancelBatch,
+      dataRoot,
+      effectiveCaptionTrack,
+      finalizeImportedTeasers,
+      jobs,
+      loadSource,
+      mediaLibrary,
+      persistBatchHistory,
+      readJson,
+      removeBatchItem,
+      renderControllers,
+      selectionDigest,
+      sendJson,
+      snapshotPlanVisualStyle,
+      transcriptValue,
+      validatePlan,
+      validateRenderPlan,
+      verifySourceTeasers,
+      youtubeUrl,
+    }),
+    createStorageRoutes({ mediaLibrary, readJson, sendJson, serveMediaPath }),
+    createRenderRoutes({ assertId, jobs, readJson, renderSnapshot, sendJson, startRender }),
+  ].flat(),
+);
+const server = createServer(
+  createRequestHandler({ host, port, requestOrigins, corsHeaders, dispatchRoutes, sendJson }),
+);
 
 for (const name of ["SIGTERM", "SIGINT"]) {
   process.once(name, () => {
     console.log(`Media worker shutdown requested (${name}); stopping owned commands.`);
-    void commandLifecycle.stop({
-      onStart() {
-        for (const controller of [...batchControllers.values(), ...renderControllers.values()]) controller.abort();
-        pendingChatGPTAuth.cancelAll();
-        server.close();
-        server.closeAllConnections();
-      },
-      onStopped: ()=>persistBatchHistory({strict:true}),
-    }).finally(() => process.exit(0));
+    void commandLifecycle
+      .stop({
+        onStart() {
+          for (const controller of [...batchControllers.values(), ...renderControllers.values()]) controller.abort();
+          pendingChatGPTAuth.cancelAll();
+          server.close();
+          server.closeAllConnections();
+        },
+        onStopped: () => persistBatchHistory({ strict: true }),
+      })
+      .finally(() => process.exit(0));
   });
 }
 await restoreBatchHistory();

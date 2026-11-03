@@ -38,7 +38,9 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    "worker/request-origin.mjs",
+    "worker/plan-validation.mjs"
   ],
   "exclude": [
     "node_modules",
