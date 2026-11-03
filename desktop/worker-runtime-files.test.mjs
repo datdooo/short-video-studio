@@ -16,6 +16,6 @@ test('macOS and Windows shared runtime manifest includes the entire worker relat
  assert.ok(seen.has(path.join(app,'worker/source-context.mjs')));
  assert.ok(seen.has(path.join(app,'worker/shared-operation.mjs')));
  assert.ok(seen.has(path.join(app,'worker/chatgpt-auth-state.mjs')));
- for(const file of ['chatgpt-auth.mjs','analysis-service.mjs','source-service.mjs','command-runner.mjs','http-responses.mjs','queue-history.mjs','routes/router.mjs','routes/http-handler.mjs','routes/sources.mjs'])assert.ok(seen.has(path.join(app,'worker',file)),file);
+ for(const file of ['chatgpt-auth.mjs','analysis-service.mjs','source-service.mjs','command-runner.mjs','http-responses.mjs','queue-history.mjs','routes/router.mjs','routes/http-handler.mjs','routes/sources.mjs','routes/index.mjs','render/composition.mjs','render/coordinator.mjs','library-service.mjs','batch-service.mjs','runtime-tools.mjs'])assert.ok(seen.has(path.join(app,'worker',file)),file);
  for(const platform of ['macos','windows'])assert.match(await readFile(path.join(project,`scripts/package-${platform}.mjs`),'utf8'),/await copyWorkerLibraries\(/);
 });

@@ -172,3 +172,10 @@ test("HTTP boundary enforces Host/Origin before mutation and OAuth exception, ke
     assert.equal(r.status, 404);
     assert.equal(JSON.parse(r.body).error, "Route không tồn tại.");
   }));
+
+test('composed worker routes retain shared dependencies and representative terminal handlers',async()=>{
+ const {createWorkerRoutes}=await import('./routes/index.mjs');const capture=result(),calls=[];const dispatch=createWorkerRoutes({sendJson:capture.send.bind(capture),assertId:id=>id,jobs:new Map(),pendingChatGPTAuth:{cancel:id=>calls.push(id),public:id=>({id,status:'cancelled'})}});
+ await dispatch({method:'GET'},{},new URL('http://localhost/api/jobs/11111111-1111-4111-8111-111111111111'));assert.equal(capture.status,404);assert.match(capture.body.error,/không tồn tại/);
+ await dispatch({method:'DELETE'},{},new URL('http://localhost/api/chatgpt/auth/status?attemptId=composed'));assert.deepEqual(calls,['composed']);assert.equal(capture.status,200);assert.equal(capture.body.status,'cancelled');
+ assert.equal(await dispatch({method:'GET'},{},new URL('http://localhost/not-a-route')),false);
+});
