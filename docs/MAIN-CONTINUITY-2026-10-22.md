@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # MAIN — tiếp nối hai part và bảo toàn phần đuôi
 
 Lượt điều tra ban đầu chỉ đọc source/cache/plan và sửa source, không gọi AI/test/render hoặc thay plan/draft/cache/media đang lưu. Sau đó người dùng đã cho phép một lượt package; kết quả cập nhật app DEV nằm ở mục cuối tài liệu này.

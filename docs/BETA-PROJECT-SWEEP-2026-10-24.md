@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Beta project sweep — source fixes, 2026-10-24
 
 Checkout: `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`.

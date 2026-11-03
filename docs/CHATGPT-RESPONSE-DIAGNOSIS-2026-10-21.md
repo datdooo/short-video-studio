@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Điều tra lỗi ChatGPT — 21/10/2026, source only
 
 Đọc log hiện có `~/Library/Logs/ShortCut Studio Dev/launcher.log`, không gọi AI.

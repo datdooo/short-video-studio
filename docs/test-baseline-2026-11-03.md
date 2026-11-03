@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Beta final local verification — 2026-11-03
 
 Completion follow-up supersedes earlier acceptance and blocked-render records. Original review baseline `8c2d05aa4dff8bec10761077f31e67bc20c1f121`; follow-up starts at `1e506396bfa441d16b8be675e4b55822cc0e7c95`; branch `beta/maintenance`. Source checkpoint `8908ad1`.

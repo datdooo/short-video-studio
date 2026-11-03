@@ -1,3 +1,20 @@
+# Hiện hành — web thủ công và Codex CLI (2026-11-04)
+
+Ba chế độ thủ công Gemini, ChatGPT web, Muse vẫn dùng tải TXT/video, gửi trên
+website rồi nhập JSON. TXT hiện tại là **v24** (`lib/txt-signals.mjs`): chuỗi số
+dạng cột, `cutPoints`, `timeMap`, `signalAvailability`; v19–v23 vẫn import được.
+Xem [web handoff](CHATGPT-WEB-HANDOFF.md) cho cách tải nguồn/480p.
+
+ChatGPT Auto · Sol low dùng `codex exec`, model `gpt-6.1-sol`, reasoning `low`,
+qua Codex CLI cài riêng và `codex login` ngoài app. MAIN nhận text + tối đa 24
+khung hình lấy mẫu đều phủ toàn video; teaser vẫn chỉ text. Không xem video liên
+tục và không có âm thanh. Xem [AI providers](AI_PROVIDERS.md) cho cấu hình và trạng thái.
+
+Phần dưới ghi nhận triển khai ngày 2026-10-21; mô tả text-only, không đính kèm
+và OAuth thuộc lịch sử, không phải workflow hiện hành.
+
+---
+
 # Gemini/Muse: text copy–paste (source implementation, not runtime acceptance)
 
 2026-10-21. Owner explicitly requires TEXT ONLY: no automatic messaging, files,

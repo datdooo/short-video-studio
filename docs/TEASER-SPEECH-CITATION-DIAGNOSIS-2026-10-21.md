@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Điều tra HOOK_MISSING_LOCAL_SPEECH_END_EVIDENCE
 
 ## Bằng chứng lượt thực tế

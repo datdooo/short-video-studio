@@ -1,3 +1,19 @@
+# Hiện hành — Codex CLI và TXT v24 (2026-11-04)
+
+ChatGPT Auto · Sol low dùng Codex CLI cài riêng, đăng nhập bằng `codex login`
+ngoài app và gọi `codex exec` qua `worker/codex-cli.mjs`, model `gpt-6.1-sol`,
+reasoning `low`. Không còn đăng nhập OAuth trong app. MAIN nhận text + tối đa 24
+khung hình lấy mẫu đều phủ toàn video; teaser vẫn text-only. Khung hình thưa không
+phải xem video liên tục và không có âm thanh. Xem [AI providers](AI_PROVIDERS.md).
+
+Ba chế độ thủ công Gemini, ChatGPT web, Muse giữ nguyên workflow tải TXT/video
+và nhập JSON. TXT hiện tại là **v24** (`lib/txt-signals.mjs`), gồm chuỗi số dạng
+cột, `cutPoints`, `timeMap`, `signalAvailability`; v19–v23 vẫn import được.
+Chính sách tải nguồn mặc định và bản 480p tùy chọn bên dưới vẫn áp dụng; các số
+phiên bản prompt cũ và mô tả Auto text-only thuộc lịch sử.
+
+---
+
 # Hiện hành — tải nguồn mặc định, 480p tùy chọn (2026-11-01)
 
 - Nút **Tải video** tải đúng file nguồn local ở bước chuẩn bị (thường1080p), không chạy FFmpeg, hash toàn file, tải mạng hoặc đổi source.

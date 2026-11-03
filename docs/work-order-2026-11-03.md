@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Beta work order — 2026-11-03
 
 Review baseline: `8c2d05aa4dff8bec10761077f31e67bc20c1f121`. Checkout: `beta/maintenance`.

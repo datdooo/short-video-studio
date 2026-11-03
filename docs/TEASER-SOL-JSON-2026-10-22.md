@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Teaser Sol / JSON
 
 Teaser provider riêng gpt-6.1-sol reasoning low; main provider gpt-6-luna none giữ nguyên. Memo/provider cache phân biệt task/model/reasoning; selector giữ text-only, criteria, pipeline và request/repair limits cũ. Không tăng inference requests.

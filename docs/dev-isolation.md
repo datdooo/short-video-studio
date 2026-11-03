@@ -22,7 +22,7 @@ stopping their owners. Stop it with Ctrl+C; only its own child process groups st
 | Worker | http://127.0.0.1:8787 | http://127.0.0.1:8887 |
 | Media | Existing worker-data when configured, otherwise stable Application Support/media | ~/Library/Application Support/ShortCut Studio Dev/media |
 | Legacy lookup | Existing behavior | Disabled with MEDIA_WORKER_DISABLE_LEGACY=1 |
-| ChatGPT Keychain service | ShortCut Studio ChatGPT | ShortCut Studio Dev ChatGPT |
+| ChatGPT Auto | User-installed Codex CLI; `codex login` outside the app | User-installed Codex CLI; no app-managed ChatGPT credential store |
 | Package output | release/ShortCut Studio.app | release/dev/ShortCut Studio Dev.app |
 | Launcher log | ~/Library/Logs/ShortCut Studio/launcher.log | ~/Library/Logs/ShortCut Studio Dev/launcher.log |
 
@@ -33,17 +33,13 @@ startup to fail without following them.
 
 Media/tool processes use a private HOME, XDG cache/config/data directories, and TMPDIR
 under `~/Library/Application Support/ShortCut Studio Dev/`. Inherited credential,
-API key, cookie, legacy-root, and fontconfig settings are removed. Antigravity's
-login command retains that private environment. Sign in separately when needed;
-DEV does not import stable sessions. Exception: only the `/usr/bin/security`
-credential subprocess resolves HOME/CFFIXED_USER_HOME from the logged-in macOS
-account (`os.userInfo().homedir`). The isolated HOME has no default Keychain;
-using it caused "Keychain Not Found" on secure save. This exception does not
-change the worker environment or Keychain default/search list, and credentials
-remain scoped to `ShortCut Studio Dev ChatGPT` / account `default`. Before a
-write, a read-only default-keychain probe fails cleanly rather than triggering a
-create/reset dialog. No production service or credential fallback is read. Browser storage is separate because the web
-origin uses a different port.
+API key, cookie, legacy-root, and fontconfig settings are removed. ChatGPT Auto
+now uses the user's separately installed Codex CLI and its existing login through
+`worker/codex-cli.mjs`; run `codex login` outside the app. The former ChatGPT
+Keychain/DPAPI store, credential helper and OAuth callback are removed. This is
+not a separate app-managed DEV ChatGPT session; do not copy credentials between
+profiles. Browser storage remains separate because the web origin uses a different
+port. See [AI providers](AI_PROVIDERS.md) for CLI settings and status endpoints.
 
 The frontend uses the framework's build-time `NEXT_PUBLIC_MEDIA_WORKER_ORIGIN`.
 Both DEV commands supply `http://127.0.0.1:8887` before the framework starts/builds.
@@ -98,10 +94,12 @@ npx tsc --noEmit
 curl --fail http://127.0.0.1:8887/health
 ```
 
-Filesystem tests use temporary mock home directories. Keychain tests mock the
-security executable and never access real credentials. For a browser smoke test,
+Filesystem tests use temporary mock home directories. Codex CLI checks should use
+a fake CLI and never access real credentials or call AI. For a browser smoke test,
 confirm its network requests use 8887, production ports receive no requests, and
 `/api/storage` lists only `current` storage. Production can remain open throughout.
+
+Historical verification before the Codex CLI migration (not a current CLI qualification):
 
 Verified on 2026-10-16: all 115 tests passed (15 in `test:isolation`), lint and
 TypeScript passed, and the DEV package built and passed deep/strict codesign

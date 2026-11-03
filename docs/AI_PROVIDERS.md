@@ -1,17 +1,22 @@
 # AI providers
 
-## ChatGPT plan
+## Codex CLI
 
-ShortCut Studio dùng luồng **Sign in with ChatGPT** dành cho app open-source/local. Giao diện gọi media worker trên `127.0.0.1:8787`; worker tạo host ID ổn định, mở Authorization Code flow với PKCE, xác thực chữ ký ID token bằng OpenAI JWKS và lưu credential vào macOS Keychain.
+**ChatGPT Auto · Sol low** chạy qua Codex CLI do người dùng tự cài riêng, không đóng gói trong app. Sau khi cài, chạy `codex login` trong Terminal. `worker/codex-cli.mjs` gọi `codex exec` với model `gpt-6.1-sol`, reasoning `low`; nếu model bị từ chối thì báo lỗi, không tự đổi model. Không cần API key riêng cho luồng này. Quyền sử dụng và quota phụ thuộc tài khoản Codex.
 
-- Không cần OpenAI API key hoặc client secret.
-- Phải cấp scope `chatgpt.tokens.use.direct` thì AI plan mới chạy.
-- Request dùng public Responses API với `store: false` và `stream: true`.
-- Model được chọn từ catalog của chính account đã đăng nhập.
-- Access token được refresh trước khi hết hạn; refresh token mới thay thế token cũ trong Keychain.
-- Disconnect xóa credential local. Có thể quản lý/revoke quyền phía server trong ChatGPT Settings.
+- `SHORTCUT_CODEX_BIN`: đường dẫn tuyệt đối tới binary `codex`; dùng khi worker không tìm thấy CLI.
+- `SHORTCUT_CODEX_TIMEOUT_MS`: thời gian chờ tối đa mỗi lần gọi, tính bằng mili giây.
+- `SHORTCUT_CODEX_FRAMES`: `0` tắt khung hình; `1`–`24` đặt số khung hình lấy mẫu.
+- MAIN nhận text và tối đa 24 khung hình lấy mẫu đều phủ toàn video qua `worker/coverage-frames.mjs` và `lib/frame-rules.mjs`. Teaser vẫn text-only. Khung hình thưa không phải xem video liên tục; không có âm thanh.
+- Mỗi lần gọi tốn khoảng **10–15k token nền** của Codex, chưa gồm dữ liệu tác vụ và kết quả; đây không phải tổng token cố định cho mỗi video.
 
-ChatGPT Plus / Pro eligibility, workspace policy và usage limit do OpenAI quyết định. App không tự chuyển sang billing/API key khác khi plan usage hết hạn hoặc chạm limit.
+Trạng thái: `GET /api/codex/status`; `GET /api/chatgpt/session` giữ hình dạng cũ để tương thích. `GET /health` có trường `codex`.
+
+OAuth trong app đã được gỡ: không còn callback `:8987/auth/callback`, kho credential ChatGPT Keychain/DPAPI, `chatgpt-credential-store.exe`, `/api/chatgpt/auth/*`, `/api/chatgpt/models` hay `DELETE /api/chatgpt/session`. App không còn đọc credential OAuth cũ và không tự xoá dữ liệu đó. Nếu muốn tự dọn, người dùng có thể xoá đúng mục ChatGPT cũ của ShortCut Studio trong Keychain Access (macOS), hoặc đúng file credential DPAPI cũ trong thư mục media của profile tương ứng (Windows); giữ dữ liệu đăng nhập Codex và các dữ liệu khác.
+
+## Web thủ công và TXT
+
+Ba chế độ Gemini, ChatGPT web, Muse giữ nguyên thao tác tải TXT/video, gửi trên website và nhập JSON. TXT hiện tại là **v24** (`lib/txt-signals.mjs`): chuỗi số dạng cột, `cutPoints`, `timeMap`, `signalAvailability`; v19–v23 vẫn import được. Đăng nhập website do người dùng tự thực hiện ngoài app.
 
 ## Mock và Manual cut
 
@@ -19,9 +24,11 @@ Mock tạo plan mẫu trên máy, không gọi AI. Manual cut bỏ qua toàn b�
 
 ## Troubleshooting
 
-- **Worker offline**: chạy `npm run personal`.
-- **AUTH_REQUIRED / AUTH_EXPIRED**: bấm **Continue with ChatGPT** để đăng nhập lại.
-- **PLAN_USAGE_DISABLED**: kết nối lại và cấp quyền dùng ChatGPT plan.
-- **PLAN_LIMIT_REACHED**: kiểm tra usage trong ChatGPT Settings; app không bypass quota.
+- **Worker offline**: chạy worker của đúng profile đang dùng.
+- **CODEX_NOT_FOUND**: cài Codex CLI hoặc đặt `SHORTCUT_CODEX_BIN` thành đường dẫn tuyệt đối tới `codex`.
+- **CODEX_NOT_LOGGED_IN**: chạy `codex login` trong Terminal.
+- **CODEX_MODEL_REJECTED**: kiểm tra quyền dùng `gpt-6.1-sol`; app không tự chuyển model.
+- **CODEX_TIMEOUT**: kiểm tra tác vụ và cấu hình `SHORTCUT_CODEX_TIMEOUT_MS` nếu cần.
+- **CODEX_OUTPUT_INVALID / CODEX_ABORTED**: kết quả không hợp lệ hoặc tác vụ đã bị huỷ; kiểm tra thông báo trước khi thử lại.
 - **Video không phát**: bấm **Chuẩn bị source để render** trước. Player cần worker đang chạy và đọc source qua endpoint hỗ trợ HTTP Range.
 - **Render báo timestamp vượt source**: sửa timestamp hoặc Generate plan lại cho video đang mở.

@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Beta maintenance / DEV handoff
 
 Baseline DEV checkpoint: `cf14ba4202eb25f1ecba5033c969d12797cbff9b`, local tag `checkpoint/dev-beta-base-2026-10-22`. Source matched the last packaged DEV source hashes before checkpoint. Parent was `865f75dd69893b9718a2590fb35243d0f2079b77`. No media, credentials, dependencies, app or cache was staged. DEV keeps its directory, branch name, app, configuration and user data.

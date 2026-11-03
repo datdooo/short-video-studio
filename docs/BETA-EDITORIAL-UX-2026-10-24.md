@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Beta editorial / teaser reselection — 2026-10-24
 
 Scope: Beta maintenance only, based on `f5f5d5a99cac30008f67095a365c94b90f5e1042`, branch `beta/maintenance`. DEV is untouched. Target macOS version `1.1.0-beta.1`, build **1103**, fixed app `release/beta/ShortCut Studio Beta.app`. Packaging records its exact source commit in Resources/config.json. Windows remains build 1101 and is not rebuilt.

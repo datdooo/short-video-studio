@@ -1,3 +1,9 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
+Hiện hành trong checkout Beta: ChatGPT Auto dùng `codex exec` qua `worker/codex-cli.mjs`, model `gpt-6.1-sol`, reasoning `low`; cài CLI riêng và chạy `codex login` ngoài app. MAIN nhận text + tối đa 24 khung hình lấy mẫu đều phủ toàn video; teaser chỉ nhận text. Không xem video liên tục, không có âm thanh. Xem [AI providers](AI_PROVIDERS.md) về biến môi trường và trạng thái. Các mốc DEV, đăng nhập, kho credential và kết quả QA bên dưới là lịch sử, không phải hướng dẫn OAuth hiện hành hay bằng chứng nghiệm thu Codex CLI.
+
+---
+
 # Active checkpoint — canonical Custom Time and gentle music (2026-10-20)
 
 Branch `recovery/visual-dev-reconstructed`, clean starting HEAD

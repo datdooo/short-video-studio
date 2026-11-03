@@ -1,3 +1,5 @@
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+
 # Teaser: text-only và kiểm tra duration
 
 ## Phạm vi đã chốt cuối cùng
