@@ -1,68 +1,105 @@
 # Beta work order — 2026-11-03
 
-Baseline review: `8c2d05aa4dff8bec10761077f31e67bc20c1f121`.
-Phase 1 checkpoint: `820b3985ecbeae66dfd930e73b1656db46d21c72`.
-Work is local to `beta/maintenance`; installed apps, DEV, production and user data are untouched.
+Review baseline: `8c2d05aa4dff8bec10761077f31e67bc20c1f121`. Checkout: `beta/maintenance`.
+Node 22.23.3, Beta frontend 5373 / worker 8987. Work is local; no push, installed-app update, real AI/provider/ASR/source download, user media, credentials, DEV or production access.
 
-## Phase 1 / 2 evidence so far
+## Acceptance by phase
 
-- Node 22.23.3, Beta 5373 frontend, worker 8987 intercepted by browser fixtures. No real worker/API/AI/ASR/media requests.
-- 359 local tests pass, 0 fail/skip. Focused auth/transition/AI decoder: 29 pass. JSON, chunked NDJSON, unavailable, selected and stale editable drafts are covered without a new semantic gate.
-- Lint: 0 errors, 45 warnings (baseline 50). TypeScript: 0 errors. Build succeeds. Native dialogs in app/components replaced by the existing Radix primitives, with a single confirmation provider and cancellation/focus return. Unsaved replacement has Save/discard/stay choices. Save failure returns false and leaves the current editor. An additional ownership check after awaited confirmation prevents stale source/batch replacement.
-- Sonner follows actual copy/save/queue/trash success. Trash undo uses the existing per-ID restore route. Visibility/close background saves do not toast.
-- Render and web JSON Apply have visible disabled reasons and aria-describedby. Existing disclosure keeps children mounted; button type and accessible-name rules are enabled. Shortcut help honors inputs and IME. Dim hardcoded UI text uses palette tokens; UI micro text is at least 12px. Preview canvas typography is not changed.
-- Dark-only design remains deliberate. No light theme or new layout engine.
-- WebVTT deferred: current caption overlay already uses CaptionTrack; no second subtitle source was introduced.
+| Scope | Status | Evidence / remaining limit |
+| --- | --- | --- |
+| A / Phase 1 | Local gates complete | 374 tests pass, 0 fail/cancel/skip; lint 0 errors / 28 warnings; TypeScript 0 errors; build and diff check pass. Three-OS CI remains unrun. |
+| B / Phase 2 | Implemented, synthetic browser acceptance | Radix confirmation, save/discard/stay, safe save failure, Sonner, shortcut help, labels/disabled reasons, contrast/type sizing, compact preview and candidate alignment. Five viewport mock captures and component fixtures; no real provider/media workflow claim. |
+| C / Phase 3 | Complete locally | Package renamed; 51 dead UI components / 13 dependencies removed after import closure review. Hosting D1/Drizzle retained because opt-in build consumes it. Historical docs archived with index/links. CJK lazy network behavior observed. |
+| D / Phase 4 | Complete locally | Format-only checkpoint first; typed worker transport, state/lifecycle/action domain hooks, workspace views. Page 542 lines, no line over 160. Controls retain mounted identity, draft/undo/timecode and cancellation semantics. |
+| E / Phase 5 routes/auth/services | Complete locally | 46 ordered routes + HTTP boundary, OAuth module, source/analysis/command/history/response services, JSDoc and checked Origin/plan modules. Package import closure, HTTP guard/response and bootstrap checks pass. |
+| E / Phase 5 render extraction / server size | **Blocked, extraction not retained** | Actual argv and graph match in the attempted extraction, decoded hashes do not. Original render composition/coordinator functions were restored. Server is 1666 formatted lines; the ~500-line target is not met while render stays here. |
 
-### Browser evidence and limits
+Optional WebVTT was not added: existing CaptionTrack preview remains the single subtitle data source. No persisted format, editorial/model/provider/AI request policy or renderer-engine change was made.
 
-` .isolation-verification/work-order-complete/` is ignored. `scripts/qa-beta-work-order.mjs` visits Editor/Batch/Kho at 1440×900, 1280×720, 1024×768, 768×1024 and 390×844; source advanced disclosure, narrow drawer Escape/focus return, shortcut dialog and forced-colors/reduced-motion are exercised. Screenshot files and `ui/result.json` are there. Current fixtures show no page errors or root horizontal overflow. These are empty/offline/long-input states, not evidence for every loaded media state.
+## Checkpoints
 
-`scripts/qa-beta-interactions.mjs` bundles the real React controls into an isolated synthetic host. It checks dialog choices/Escape/focus, stale clipboard completion suppression, incomplete timecode and composition retention, and A→B→A download ownership/cancellation. These are component integrations, not complete end-to-end editor playback tests.
+- `820b398`: Phase 1 auth regression, baseline tests, type/lifecycle repairs.
+- `f5b0ed5`: Phase 2 dialogs, feedback and accessibility.
+- `b206751`: Phase 3 import/dependency and historical-document cleanup.
+- `6eaa8e8`: format-only app/components checkpoint, 120-column target.
+- `ee5c030`: Phase 4 Editor domain separation.
+- `c5161f3`: worker route/OAuth/service separation and package/HTTP contract checks; render extraction held back.
+- `e95d4d4`: final UI/lifecycle repairs, remaining dead Progress wrapper removal and synthetic acceptance fixtures.
+- A documentation-only acceptance checkpoint follows; its exact ID is in the review manifest.
 
-Existing `qa-template-ui` / `qa-editor-preview` still reference obsolete ports, production runtime paths and retired UI labels. They must be adapted before they can safely qualify the current Beta. Do not run those scripts against installed apps.
+## Confirmed changes and boundaries
 
-### Exhaustive-deps review
+`worker/batch-pipeline.mjs` handles the actual `provider-auth-unavailable` code. The first item retains its pre-existing source/draft/plan/manual locks/settings/checkpoint, the next ChatGPT item pauses before acquire/analyze, reconnect does not resume, explicit resume reuses the source and submits once. Ordinary failures, cancellation, completed siblings and other providers retain separate behavior.
 
-Six warnings removed by making dependency use explicit: stable plan setter callbacks; caption selector takes only the field it consumes; deck restore uses its duration dependency; subtitle language is explicit; legacy teaser draft identity is computed once as a semantic key. Remaining warnings are tracked, not suppressed:
+Transition tests inspect actual atlas black/white pixels, Dip Black multiply versus Flash White screen blend, exact boundary window and ordinary None cuts. AI JSON/CRLF NDJSON decoders check unknown structure, unavailable and stale-but-editable manual data, cancellation and truncated streams without adding a semantic acceptance gate.
 
-- Initial restore is guarded once by hydration; adding an unstable restore function would cause repeat setup (requires domain hook extraction).
-- Source request Sets and audition/load counters are stable ref containers; cleanup intentionally changes the live counter or removes its own controller. Do not copy a numeric counter into cleanup and lose invalidation.
-- Timing/teaser memo intentionally keys semantic cut/caption fields to avoid remounting playback for style changes. The whole plan is still referenced in implementations; domain selectors should make this explicit during extraction.
-- Cut-history clear function is stable, but property access creates an object warning; destructure in extraction.
-- Candidate saved choices update only when IDs/scope differ; guard prevents loops. Preserve ordering and active choices.
-- Preview key listener currently reattaches with the newest closure; no stale callback, but a stable layout-updated action ref can avoid repeated listener churn.
+`components/confirmation-provider.tsx` owns one Radix confirmation request. Escape cancels and focus returns. Save/discard/stay replacement only proceeds on the selected successful path; save/archive failure keeps the editor. A source/session epoch check after awaited confirmation rejects stale replacement. Toasts follow successful copy/save/queue/trash; restore undo uses the existing per-ID route, not synthetic success.
 
-CI matrix source has been reviewed; no runner was dispatched. Windows audit uses real runner Node/compiled helper/native npm resources, not an installer qualification. No Windows/macOS/Linux CI pass is claimed.
+`lib/api/worker-client.ts` centralizes origin, typed DTOs, raw Response/stream transport, error mapping and AbortSignal. Domain hooks under `components/editor/` own source, plan/history, batch, render, session, playback, ChatGPT and subtitle lifecycles. Event wrappers use layout-committed state readers. The ephemeral history scope clears obsolete undo history without changing persisted draft format. Main-range capture now receives only the fields its implementation consumes; its declaration reflects that structural contract. Source request cleanup removes its own controller from the captured Set, rather than an unrelated later ref value. Hidden-tab health/render polls pause and visibility refresh remains deduplicated.
 
-## Outstanding work
+UI controls retain charcoal/orange dark-only styling. Common control strings are in `lib/ui-strings.ts`; preset/provider names and source text stay unchanged. Action labels include Vietnamese copy/undo/redo/Inspector controls, and blocked TXT/video/Apply/render controls expose a short visible reason with aria-describedby. Body text target is 12px; render-canvas typography is unchanged. Contrast calculation for muted #8f867c on #100e0c is 5.3836:1. Narrow candidate timecodes no longer break character-by-character; compact preview uses the start of its scrollable area instead of clipping content above its origin. No new resize handles or main-panel relocation.
 
-Phase 2 full loaded/loading/error screenshot matrix and playback/source-lease end-to-end fixtures remain to qualify. Phase 3–5 continue after these checkpoints; extraction is not considered done merely by moving a monolith. Render extraction requires the specified synthetic argv/frame hash baseline first.
+## Worker extraction evidence
 
-## Phase 3 dependency review
+- `worker/routes/{health,auth,music,storage,batch,render,sources}.mjs` contains the original branch bodies. `router.mjs` sorts original priorities; handled undefined/streaming responses stop dispatch. `http-handler.mjs` keeps Host/Origin, OAuth GET Host guard, OPTIONS and JSON/raw-upload policy before dispatch, plus existing status/error body behavior.
+- `worker/chatgpt-auth.mjs` owns attempts, refresh coordination/JWK state and the existing credential store. The optional constructor dependency is only for a fake store in tests; production defaults to the same store/namespace. Tests verify redaction, no store reads on unavailable login, actual current credential identity and single-use attempts. No real token/network operation ran.
+- `worker/{source-service,analysis-service,command-runner,http-responses,queue-history}.mjs` splits bounded domains instead of relocating the whole monolith. Shared services are read at operation entry, allowing existing initialization order without eager TDZ access. Private caches/maps stay worker-owned.
+- A compiled comparison of **84 original named function bodies** against checkpoint `ee5c030` matches after excluding only injected dependency destructures and formatting. This is code-preservation evidence, not runtime equivalence.
+- Runtime import closure stages both packagers' manifest and walks actual AST import/export/dynamic/require expressions. A new regression distinguishes JSDoc type imports from runtime imports; the previous regex misclassified `import(...).EditPlan` in a comment. No runtime dependency was omitted or guard removed. The final closure audit also found the last unused UI Progress wrapper; it was removed (51 UI files total), while Radix remains for live controls.
+- `worker/request-origin.mjs` and `worker/plan-validation.mjs` use @ts-check/JSDoc and are explicit roots of the normal TypeScript check. Existing EditPlan/Caption types are reused. Render-config receives incremental parameter JSDoc; it is not claimed fully checkJs-migrated. Existing source/range/manual/teaser guards remain authoritative.
 
-- Renamed the package to `shortcut-studio`; npm regenerated its lock metadata. Removed 50 unreachable UI components after the static closure audit (literal imports/reexports/dynamic imports/require and repository script references). The audit script is repeatable; original graph is retained in ignored `ui-dependencies.log`.
-- Removed 13 packages consumed only by those dead components. Sonner, Radix, Zod and all media/runtime dependencies remain. The obsolete resizable-panel localStorage cleanup strings are migrations, not runtime imports; kept them.
-- `db/index.ts`, the D1 example, Drizzle configuration and build plugin remain: the opt-in hosting build still consumes the schema/migrations. No active data or runtime was deleted. `CLAUDE.md` is already only `@AGENTS.md`.
-- Earlier build 1102/1104–1106 and historical Phase 3–9 qualification reports moved to `docs/archive`; local Markdown links and repository path references were updated. They are not evidence for this work order.
-- CJK font faces already use local URLs and `font-display:swap`. Browser loading is demand-driven; declarations are not preloads. All renderer font files retained. The synthetic visual fixture deliberately types Japanese/Korean; network requests from that state must not be described as a Latin-only cold load. No glyph subsetting applied.
+### Render safety gate — unresolved
 
-## Phase 4 checkpoint
+The pre-extraction exploratory capture remains in `render-equivalence/before/`. Correction to the earlier provisional note: that capture recorded the run() argument boundary and actually selected VideoToolbox; an environment variable did not force software encoding. It is not presented as qualified actual-spawn/software evidence.
 
-`app/page.tsx` is now 542 lines with no line over 160 characters. Domain state hooks own source preparation, plan/history, batch queue/download lifecycle, render polling, session saving, playback and ChatGPT session. Additional hooks isolate existing caption requests, draft hydration/restore, source metadata, context validation, title measurement and preview deck/key lifecycles. Workspace views and Inspector controls retain their mounted control identity. No single replacement controller contains the old page.
+The preserved `ee5c030:worker/server.mjs` was then replayed in an isolated synthetic copy, with libx264 forced **only inside that copy**, capturing `child.spawnargs` after resource flags. `software-before/` and `software-after/` have the same fixed fixture SHA, executable/options and filter graph (only owned temp roots/mkdtemp suffixes normalized), but decoded frame SHA-256 records differ. Titles PNG hashes match. The cause of pixel nondeterminism/difference is not established; graph equality alone does not meet the requested gate. Neither pass nor a renderer regression is inferred.
 
-`lib/api/worker-client.ts` centralizes the Beta origin, raw fetch/stream transport, error mapping and typed DTOs. Existing request paths, bodies, signals and stream parsers are preserved. Three transport tests cover the raw Response/AbortSignal, safe failure and chunked source progress. The runtime-origin test now verifies the client module actually imported by the page.
+Therefore the attempted composition/coordinator extraction was **not retained**. Their original definitions remain in server.mjs and match the pre-refactor compiled bodies. `comparison.json` records the failed gate. No claim of hardware/BGM/template/real-media equivalence. A later render extraction needs a reproducible baseline and matching after hashes; no renderer algorithm was changed to force this check.
 
-Action implementations are separated by domain. Event wrappers read the latest committed state reader through a layout-updated ref; implementation bodies retain their source/epoch checks after asynchronous work. Before lifecycle corrections, compiled comparison of 30 extracted actions matched the old implementations after the transport substitution. Subsequent intentional differences: source epoch also has a render-state revision; history context acknowledgement is ephemeral reducer state; ref snapshots are committed in layout effects. These are not persisted plan/draft schema changes. Three reducer tests cover exact timestamps, undo/redo, manual flags, context clearing and appearance changes.
+`qa-render-refactor.mjs after --bootstrap-only` additionally initializes the current worker prefix without listener, credential store, network, history restore or rendering, using an ignored Beta support root. That passes and catches factory initialization/order issues; it is not a production-worker smoke test.
 
-Health/render polling pauses while the document is hidden and refreshes on visibility, retaining in-flight deduplication. No SSE, AI retry, model, prompt, ranking or render-engine change was introduced.
+## Final commands and evidence
 
-After this checkpoint: 365 tests pass, 0 fail/skip; lint 0 errors / 49 warnings; TypeScript 0 errors; build succeeds. These figures are local only and will be rerun after worker changes.
+All commands run in this checkout with `/opt/homebrew/opt/node@22/bin` first on PATH:
 
-Browser scripts run in explicitly isolated `QA_BETA_MOCK=1` mode through `qa-template-ui` and `qa-editor-preview`; legacy assertions remain intact behind an explicit legacy guard and were not executed. The current mode uses the new Beta fixtures rather than obsolete production runtime paths. Empty/offline fixtures, loaded synthetic source/manual plan, long Vietnamese/CJK names and completed/rendering/error jobs produced 31 base screenshots plus disclosure/help/forced-color captures. No page errors or horizontal root overflow were observed. Main draft survives workspace round-trip; exact main undo/redo and a manual teaser outside its main were exercised. Component integrations separately cover clipboard staleness, partial timecode/IME, dialog focus and download A→B→A cancellation. This is not qualification of real provider/download/ASR/render workflows.
+```sh
+node --test desktop/worker-runtime-files.test.mjs lib/preview-decks.test.mjs worker/routes.test.mjs worker/chatgpt-auth.test.mjs
+npm test
+npm run lint
+npx --no-install tsc --noEmit
+npm run build
+git diff --check
+QA_BETA_MOCK=1 QA_PLAYWRIGHT_MODULE=/private/tmp/marketing-slide-tools/node_modules/playwright/index.mjs node scripts/qa-template-ui.mjs
+QA_BETA_MOCK=1 QA_PLAYWRIGHT_MODULE=/private/tmp/marketing-slide-tools/node_modules/playwright/index.mjs node scripts/qa-editor-preview.mjs
+node scripts/qa-beta-interactions.mjs
+node scripts/qa-beta-lifecycle.mjs
+node scripts/qa-render-refactor.mjs after --bootstrap-only
+node scripts/audit-ui-dependencies.mjs
+```
 
-Loaded narrow-screen screenshots exposed two existing CSS issues: a candidate row broke individual timecodes; compact preview inherited vertical centering which clipped overflowing content above its scroll origin. Candidate status now wraps below its timestamp at narrow card widths; compact preview starts at the beginning of its scrollable content. Both fixes preserve the main panel layout.
+Final logs and review artifacts are ignored under `.isolation-verification/work-order-complete/`:
 
-## Render extraction safety baseline
+- `tests-final.log`: **374 pass / 0 fail / 0 cancel / 0 skip**. Focused domain tests: **10 pass**. Original baseline was 344 tests / 277 pass / 67 fail; Phase 1 checkpoint was 358 pass.
+- `lint-final.log`: **0 errors / 28 warnings**; `tsc-final.log` empty success; `build-final.log` standalone build success; `diff-check-final.log` empty success.
+- `ui/`: Editor/Batch/Kho empty states at all five viewports, source advanced disclosure, Kho loading/error at each viewport, narrow focus/drawer, shortcut, forced-colors/reduced-motion. Results include no page error/root horizontal overflow. Representative 390px Editor/Inspector/forced-colors and 1440px Batch captures were also inspected visually; screenshot generation is not a pixel-level audit of every control. Latin-only cold load requests no JP/KR font; typing CJK loads those local faces.
+- `loaded-ui/`: 15 loaded workspace captures plus 15 Inspector appearance/text/music disclosure captures at 1440×900, 1280×720, 1024×768, 768×1024, 390×844. Long Vietnamese/CJK, complete/validating/error jobs. Tests exercise exact main undo/redo, manual teaser outside own main, incomplete timecode across workspace, source lease, save failure blocking batch replacement, then successful manual save retaining unfinished input.
+- `interactions/`: real React controls in a bundled synthetic host; confirmation choices/Escape/focus, stale clipboard completion suppression, IME/partial timecode and A→B→A download cancellation.
+- `lifecycle/`: real MusicPanel and source-lease hook with controlled audio promises and HTTP interception; suspend/unmount releases pending audition, source A→B keeps one owner with unique revisions, final release wins even if messages arrive out of order. The mock uses the actual worker lease reducer.
+- `worker-body-comparison.json`, `worker-bootstrap.log`, `render-equivalence/comparison.json`, `ui-dependencies.json`: additional static/synthetic evidence.
+- `review.patch`, `review-files.json`, `git-status.txt`: complete baseline-to-final diff including new source files, SHA/size and final Git status. Logs/media/build/cache are excluded from Git.
 
-Before any worker render extraction, `scripts/qa-render-refactor.mjs before` recorded the actual renderer's FFmpeg argv/filter graph and 48 lossless decoded-frame SHA-256 records from a fixed synthetic clip. Files: `.isolation-verification/work-order-complete/render-equivalence/before/`. No HTTP listener, auth/credential access or network was used; the test copy explicitly disables the credential store and fetch. The test used the installed FFmpeg and software encoder for deterministic comparison; it does not qualify hardware encoding, BGM, all templates or an installer. Fontconfig emitted a missing-default-config warning in the isolated HOME; explicit bundled font registration was retained and the render completed. The after-extraction run must match before any render equivalence claim.
+The old qa-template-ui/editor-preview production paths/assertions are retained behind an explicit legacy guard. Only the current `QA_BETA_MOCK=1` fixtures ran; passing these does not claim the legacy full media workflow passed.
+
+## Warning review and limits
+
+Warnings are not disabled: 21 unused variable/import advisories, 6 exhaustive-deps advisories and 1 image optimization advisory. Remaining hook warnings were reviewed: layout-updated history action and latest preview key handler reattach safely; source duration is a deliberate semantic memo refresh; library/teaser cleanup counters must invalidate the current generation; candidate catalog intentionally synchronizes by IDs/context while preserving saved evidence. No missing mutable external value was silently asserted stable. Stable subtitle setters/refs, source request Set ownership, source identity and one-time hydration dependencies were made explicit. No timer/microtask was added to evade lint.
+
+Three-OS GitHub Actions is source-reviewed, **not run**. Windows PE audit is configured for real runner Node, compiled helper and native npm modules; it is not a full installer audit. No installer/package/codesign/installed app was built or updated in this work order. Real provider, ASR, downloads, hardware render and editorial quality remain unverified. Synthetic screenshots/assertions cannot establish smoothness or production correctness on all machines.
+
+## Short manual review
+
+1. Open an existing draft, edit a partial timecode, change workspace/part, Save and reload; verify exact draft/locks/undo.
+2. Open a Batch item with unsaved changes: cancel/discard/save; simulate full browser storage and verify the old editor remains.
+3. Start preview/music/teaser, switch source/part/workspace during preparation; verify no late autoplay and source audio restored.
+4. Check all workspace drawers, keyboard focus/IME and narrow progress/error/disabled controls.
+5. Review the blocked render extraction separately before any future renderer refactor. Do not interpret this build as main/teaser editorial-quality acceptance.

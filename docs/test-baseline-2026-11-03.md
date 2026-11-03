@@ -1,3 +1,29 @@
+# Beta final local verification — 2026-11-03
+
+Current continuation supersedes the historical records below. Review baseline `8c2d05aa4dff8bec10761077f31e67bc20c1f121`; branch `beta/maintenance`. Local checkpoints now exist; HEAD is no longer the baseline SHA.
+
+| Final check | Result |
+| --- | --- |
+| Focused worker/import/deck/OAuth tests | 10 pass / 0 fail / 0 skip |
+| `npm test` on Node 22.23.3 | **374 pass / 0 fail / 0 cancel / 0 skip** |
+| `npm run lint` | **0 errors / 28 warnings** |
+| `npx --no-install tsc --noEmit` | **0 errors** |
+| `npm run build` | **success**, standalone build only |
+| `git diff --check` | **success** |
+| Current Beta browser fixtures | five viewports, loaded/empty/loading/error/disclosures, interaction and lifecycle fixtures pass; synthetic only |
+| Worker extraction render gate | **not met**: actual argv/graph equal, decoded hashes differ; render extraction not retained |
+| CI matrix / Windows installer | **not run** |
+
+The 28 warnings comprise 21 unused-variable/import, 6 exhaustive-deps and 1 image advisory. No rules were disabled. Details, exact commands, screenshots, failed intermediate attempts, safe logs and full baseline diff: [current work-order report](work-order-2026-11-03.md), ignored `.isolation-verification/work-order-complete/`.
+
+The runtime closure test initially failed because a regex treated a new JSDoc type import as executable. It now uses TypeScript AST and has a regression for static/side-effect/export/dynamic/require versus comment imports. It still stages the real worker manifest and checks every runtime relative dependency. Music/lease harness initially used an invalid fixture asset ID and assumed network arrival order; corrected to the real ID contract and actual revision-aware lease reducer, without weakening ownership assertions.
+
+No installed-app/package update, push, provider/ASR/source download, user-media operation or three-OS CI claim. Phases 1–4 and independent Phase 5 work are locally checked; render extraction/server-size target remain blocked as documented.
+
+---
+
+## Historical Phase 1 acceptance record
+
 # Phase 1 local acceptance — 2026-11-03
 
 **Current status: local Phase 1 gates pass.** Tests have no failures, lint has no errors and typecheck has no errors. This supersedes the historical blocker/stop records retained below. CI on macOS/Windows/Linux has **not** been run; this is not three-OS acceptance or runtime/UI qualification.
