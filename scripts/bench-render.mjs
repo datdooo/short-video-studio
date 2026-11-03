@@ -1,7 +1,7 @@
 // Offline render benchmark using the app's real filter graph. READ-ONLY on user data; writes only to a temp directory.
 //   node scripts/bench-render.mjs <label> <inputThreads> <filterThreads> <complexThreads> <encodeThreads> <nice> [sourceId jobId]
 // Pick a done job whose source media still exists. Main is shortened to ~90 source seconds.
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { setPriority, tmpdir } from "node:os";
 import path from "node:path";
@@ -44,11 +44,12 @@ function run(binary, args, options = {}) {
   return new Promise((resolve, reject) => {
     const started = performance.now();
     const child = spawn(binary, result, { stdio: ["ignore", "pipe", "pipe"] });
-    try { setPriority(child.pid, Number(nice)); } catch {}
+    try { setPriority(child.pid, Number(nice)); } catch { /* priority is best effort */ }
     let stderr = "";
     child.stdout.on("data", (b) => options.onStdout?.(b.toString()));
     child.stderr.on("data", (b) => { stderr = (stderr + b).slice(-4000); });
-    child.on("close", (code) => { ffmpegWall += performance.now() - started; code === 0 ? resolve({ stdout: "", stderr }) : reject(new Error(stderr)); });
+    child.on("close", (code) => { ffmpegWall += performance.now() - started; if (code === 0) resolve({ stdout: "", stderr });
+      else reject(new Error(stderr)); });
   });
 }
 const dir = await mkdtemp(path.join(tmpdir(), `bench-${label}-`));
