@@ -8,7 +8,7 @@ Work is local to `beta/maintenance`; installed apps, DEV, production and user da
 
 - Node 22.23.3, Beta 5373 frontend, worker 8987 intercepted by browser fixtures. No real worker/API/AI/ASR/media requests.
 - 359 local tests pass, 0 fail/skip. Focused auth/transition/AI decoder: 29 pass. JSON, chunked NDJSON, unavailable, selected and stale editable drafts are covered without a new semantic gate.
-- Lint: 0 errors, 44 warnings (baseline 50). TypeScript: 0 errors. Build succeeds. Native dialogs in app/components replaced by the existing Radix primitives, with a single confirmation provider and cancellation/focus return. Unsaved replacement has Save/discard/stay choices. Save failure returns false and leaves the current editor. An additional ownership check after awaited confirmation prevents stale source/batch replacement.
+- Lint: 0 errors, 45 warnings (baseline 50). TypeScript: 0 errors. Build succeeds. Native dialogs in app/components replaced by the existing Radix primitives, with a single confirmation provider and cancellation/focus return. Unsaved replacement has Save/discard/stay choices. Save failure returns false and leaves the current editor. An additional ownership check after awaited confirmation prevents stale source/batch replacement.
 - Sonner follows actual copy/save/queue/trash success. Trash undo uses the existing per-ID restore route. Visibility/close background saves do not toast.
 - Render and web JSON Apply have visible disabled reasons and aria-describedby. Existing disclosure keeps children mounted; button type and accessible-name rules are enabled. Shortcut help honors inputs and IME. Dim hardcoded UI text uses palette tokens; UI micro text is at least 12px. Preview canvas typography is not changed.
 - Dark-only design remains deliberate. No light theme or new layout engine.
@@ -38,3 +38,11 @@ CI matrix source has been reviewed; no runner was dispatched. Windows audit uses
 ## Outstanding work
 
 Phase 2 full loaded/loading/error screenshot matrix and playback/source-lease end-to-end fixtures remain to qualify. Phase 3–5 continue after these checkpoints; extraction is not considered done merely by moving a monolith. Render extraction requires the specified synthetic argv/frame hash baseline first.
+
+## Phase 3 dependency review
+
+- Renamed the package to `shortcut-studio`; npm regenerated its lock metadata. Removed 50 unreachable UI components after the static closure audit (literal imports/reexports/dynamic imports/require and repository script references). The audit script is repeatable; original graph is retained in ignored `ui-dependencies.log`.
+- Removed 13 packages consumed only by those dead components. Sonner, Radix, Zod and all media/runtime dependencies remain. The obsolete resizable-panel localStorage cleanup strings are migrations, not runtime imports; kept them.
+- `db/index.ts`, the D1 example, Drizzle configuration and build plugin remain: the opt-in hosting build still consumes the schema/migrations. No active data or runtime was deleted. `CLAUDE.md` is already only `@AGENTS.md`.
+- Earlier build 1102/1104–1106 and historical Phase 3–9 qualification reports moved to `docs/archive`; local Markdown links and repository path references were updated. They are not evidence for this work order.
+- CJK font faces already use local URLs and `font-display:swap`. Browser loading is demand-driven; declarations are not preloads. All renderer font files retained. The synthetic visual fixture deliberately types Japanese/Korean; network requests from that state must not be described as a Latin-only cold load. No glyph subsetting applied.

@@ -152,5 +152,5 @@ checking each filter's actual matrix contribution and brightness/contrast/chroma
 direction. Raw errors remain reported; decoding/encoding/color management are
 not represented as exact parity. No subjective quality is inferred from tests.
 
-See [phase4-qualification.md](phase4-qualification.md) for final results, artifacts,
+See [phase4-qualification.md](archive/phase4-qualification.md) for final results, artifacts,
 limits and package evidence. Phase 5 is not authorized by these documents.

@@ -48,7 +48,7 @@ scene input from moving text. There is no per-frame PNG sequence or second rende
 Active graphs use a precise time base before that adjustment and explicit final
 30 fps sampling to avoid CFR timestamp rounding stretching the entrance. None
 bypasses every new filter/input/timing branch and retains the old scene/title
-flattening optimization. Exact mappings: [text-animations.md](text-animations.md).
+flattening optimization. Exact mappings: [text-animations.md](../text-animations.md).
 
 ## Templates, content and snapshots
 

@@ -7,7 +7,7 @@ No competing bridge/editor run was active when Phase 9 began. Node 22.23.3.
 
 This report belongs to the separate `feat(transitions): add curated cut transitions`
 commit. Resolve its complete SHA with
-`git log -1 --format=%H -- docs/phase9-qualification.md`; the delivery response also
+`git log -1 --format=%H -- docs/archive/phase9-qualification.md`; the delivery response also
 records that SHA. Prior phase commits were not amended/reset.
 
 ## Delivered schema, registry and timing
@@ -210,7 +210,7 @@ filename reset. Evidence: `phase9-editor.log`,
 
 Short artifact names are inside `.isolation-verification/`. Ignored fixtures and
 the uninstalled bundle are local evidence, not checked-in assets. Reproduction
-commands and exact mapping are in [cut-transitions.md](cut-transitions.md).
+commands and exact mapping are in [cut-transitions.md](../cut-transitions.md).
 
 | Check | Result / artifact |
 | --- | --- |

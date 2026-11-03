@@ -18,7 +18,7 @@ Baseline: `beta/maintenance` at `e351d95d25267ab1d2606df3bdffefcb304adf7f`.
 - Undo preserves current title/hashtags, appearance, captions, music, render settings and Custom Teaser input text. Cut provenance/evidence is restored together with the exact stored source timestamps; existing preview/export validators still apply.
 - Source/reset/restore and changed source duration/transcript/cues/request/provider clear history. Auto/import or another plan replacement that changes cuts also clears history. Appearance/music/tab/part changes preserve it.
 - First Manual cut creates a baseline, rather than an Undo entry returning to the mock placeholder. Later Manual cut applications record cut changes; titles remain outside cut history.
-- Redo is discarded after another valid cut. History is memory-only; the resulting plan uses the current session-save policy (manual Save/Cmd/Ctrl+S plus a hide/exit checkpoint, with no editing/playback save timer). Reload restores the saved plan, not the Undo stack. See [session saving](./BETA-SESSION-SAVING-2026-11-03.md).
+- Redo is discarded after another valid cut. History is memory-only; the resulting plan uses the current session-save policy (manual Save/Cmd/Ctrl+S plus a hide/exit checkpoint, with no editing/playback save timer). Reload restores the saved plan, not the Undo stack. See [session saving](BETA-SESSION-SAVING-2026-11-03.md).
 
 ## Manual acceptance
 

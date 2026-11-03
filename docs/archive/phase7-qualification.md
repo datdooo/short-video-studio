@@ -30,7 +30,7 @@ No component registry, renderer, FFmpeg composition, VisualStyle normalization
 boundary or schema version changed. The only worker-file change is a batch test.
 The editor delegates to existing Phase 3–6 application helpers and stores the
 resulting normalized VisualStyle. There is no template metadata in jobs/plans.
-Detailed architecture and precedence: [visual-templates.md](visual-templates.md).
+Detailed architecture and precedence: [visual-templates.md](../visual-templates.md).
 
 Application starts from the canonical shipped canvas, applies text/font/filter/
 background/overlay, and preserves normalized subtitle enabled/source. All subtitle

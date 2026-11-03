@@ -28,6 +28,7 @@ try{
  });
  const page=await context.newPage();page.on('request',request=>{if(/NotoSans(?:JP|KR)/.test(request.url()))fonts.push(new URL(request.url()).pathname);});page.on('pageerror',e=>errors.push(e.message));
  await page.goto('http://127.0.0.1:5373/',{waitUntil:'networkidle'});
+ const initialFonts=[...fonts];
  for(const [width,height]of [[1440,900],[1280,720],[1024,768],[768,1024],[390,844]]){
   await page.setViewportSize({width,height});
   for(const name of ['Editor','Batch','Kho']){
@@ -53,6 +54,6 @@ try{
  await page.getByRole('button',{name:'Phím tắt',exact:true}).click();await page.getByRole('dialog').waitFor();await page.screenshot({path:path.join(root,'390-shortcuts.png'),fullPage:true});await page.keyboard.press('Escape');
  assert.equal(await page.getByRole('button',{name:'Phím tắt',exact:true}).evaluate(n=>n===document.activeElement),true);
  await page.emulateMedia({reducedMotion:'reduce',forcedColors:'active'});await page.screenshot({path:path.join(root,'390-forced-colors-reduced-motion.png'),fullPage:true});
- await writeFile(path.join(root,'result.json'),JSON.stringify({results,errors,blocked,fonts,fixture:'empty/offline worker mocked; no real data'},null,2));
+ await writeFile(path.join(root,'result.json'),JSON.stringify({results,errors,blocked,initialFonts,fonts,fixture:'empty/offline worker mocked; no real data'},null,2));
  assert.deepEqual(errors,[]);console.log(JSON.stringify({screenshots:results.length+1,errors,overflow:results.filter(r=>r.overflow)}));
 }finally{await browser.close();}

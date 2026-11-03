@@ -125,5 +125,5 @@ trusted placement recipes, custom-asset resolution or animated kinds. Those
 extensions require deliberate validation/rendering work; they are not enabled
 by accepting a URL, video kind, arbitrary transform or timeline today.
 
-See [phase6-qualification.md](phase6-qualification.md) for objective parity,
+See [phase6-qualification.md](archive/phase6-qualification.md) for objective parity,
 performance, compatibility and limitations.

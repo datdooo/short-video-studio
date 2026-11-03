@@ -107,7 +107,7 @@ Viral Shorts job stays Viral Shorts after selecting Farming JP, and both remain
 independent of later customization or registry getter mutations. Workers receive
 ordinary VisualStyle, requiring no knowledge of template names.
 
-See [phase7-qualification.md](phase7-qualification.md) for measured render, browser,
+See [phase7-qualification.md](archive/phase7-qualification.md) for measured render, browser,
 snapshot and compatibility evidence and remaining platform limits.
 
 2026-10-20 recipe update: newly selecting Bright Social reuses the existing

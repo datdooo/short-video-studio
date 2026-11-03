@@ -1,7 +1,7 @@
 # Curated title animations (Phase 8)
 
 Qualified in the isolated DEV worktree. See
-[phase8-qualification.md](phase8-qualification.md) for executed checks and limits.
+[phase8-qualification.md](archive/phase8-qualification.md) for executed checks and limits.
 
 `lib/visual-style/animations.mjs` is the immutable local registry. The compact
 labelled **Text animation** select beside text controls offers four options:

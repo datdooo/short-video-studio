@@ -2,7 +2,7 @@
 
 **Historical checkpoint, now superseded.** Phase 3 was resumed on 2026-10-16
 from the remaining tasks below. Final status and evidence are recorded in
-[`phase3-qualification.md`](phase3-qualification.md). The checkpoint details and
+[`phase3-qualification.md`](archive/phase3-qualification.md). The checkpoint details and
 earlier test results remain below for provenance. The final work adds a scoped
 measured-title-width guard and qualification coverage; it does not replace the
 font/preset/UI implementation checkpointed here. Phase 4 still requires explicit

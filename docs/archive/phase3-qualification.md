@@ -33,7 +33,7 @@ lines reflow within existing size, line and height limits, with a small width
 reserve for browser borders/rounding. Browser measurement waits for local fonts
 and rejects stale results. Worker measurement uses Sharp/Pango. Current's default
 Auto path remains unchanged. Existing shine follows fitted sizes/baselines.
-See [text-styles.md](text-styles.md) for the precise behavior.
+See [text-styles.md](../text-styles.md) for the precise behavior.
 
 ## Final verification
 

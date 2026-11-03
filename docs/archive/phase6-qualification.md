@@ -10,13 +10,13 @@ from merge/install/release approval. Stop after Phase 6; no full-template phase.
 Six choices: None, Grain, Vignette, Soft Glow, Film Frame, REC HUD. Normal blending
 only. Per-descriptor 0–1 opacity, enablement and array ordering are implemented;
 the UI selects one preset and exposes opacity. Internal multi-overlay composition
-is tested without a layer-manager UI. See [overlays.md](overlays.md) for exact
+is tested without a layer-manager UI. See [overlays.md](../overlays.md) for exact
 schema/defaults, original asset recipes, layer order, security and extension points.
 
 Five deterministic 1080×1920 RGBA PNGs total **580,472 bytes**. No downloads,
 external runtime dependency, launch-time generation or user assets. Exact IDs,
 filenames, dimensions, byte counts and SHA-256 hashes are committed in
-[`public/overlays/manifest.json`](../public/overlays/manifest.json). Generator
+[`public/overlays/manifest.json`](../../public/overlays/manifest.json). Generator
 reproduction and asset dimensions/alpha regions pass focused automated tests.
 The registry/defaults are immutable; returned objects and snapshots are copies.
 

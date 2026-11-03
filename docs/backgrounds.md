@@ -71,6 +71,6 @@ AI, caption regeneration or worker render occurs on selection.
 
 ## Qualification
 
-See [phase5-qualification.md](phase5-qualification.md). Exact Current compatibility
+See [phase5-qualification.md](archive/phase5-qualification.md). Exact Current compatibility
 is assessed separately from native browser/FFmpeg blur approximation and lossy
 YUV quantization. Static gradients require especially close measured parity.

@@ -7,7 +7,7 @@ Stop after backgrounds; Phase 6 is outside this task.
 
 ## Delivered model and rendering
 
-[backgrounds.md](backgrounds.md) records the complete schema, exact numeric values,
+[backgrounds.md](../backgrounds.md) records the complete schema, exact numeric values,
 IDs, normalization and browser/worker mappings. Six backgrounds are implemented:
 Current, Dark Blur, Light Blur, Black, Soft Gradient, Dark Gradient. Version is
 still 1; Current's legacy JSON remains unchanged. New IDs live only inside

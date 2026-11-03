@@ -176,4 +176,4 @@ PNG titles/subtitles against archived Phase 2 source using a deterministic CPU
 encoder. Passing that check does not claim pixel identity across every encoder.
 
 Final Phase 3 results, artifact paths and qualification limits are recorded in
-[`phase3-qualification.md`](phase3-qualification.md).
+[`phase3-qualification.md`](archive/phase3-qualification.md).

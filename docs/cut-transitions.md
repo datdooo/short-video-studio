@@ -151,5 +151,5 @@ QA_PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node scripts/qa-template-ui.m
 The browser fixture retains three ranges after the existing one-second trim. It
 tests both boundaries/parts, scrubbing, keyboard, running playback, 96 transition
 stress switches, mixed templates/animations, stable subtitle geometry and accepted
-render/batch snapshots. See [phase9-qualification.md](phase9-qualification.md) for
+render/batch snapshots. See [phase9-qualification.md](archive/phase9-qualification.md) for
 final executed evidence, performance and limits.

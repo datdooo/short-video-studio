@@ -1,6 +1,6 @@
 # Manual web media review — source only, 2026-11-02
 
-**Superseded by user decision:** the mandatory viewing declaration and its import gate have been removed. See [BETA-WEB-REVIEW-ROLLBACK-2026-11-02.md](./BETA-WEB-REVIEW-ROLLBACK-2026-11-02.md). The report below describes the historical build 1121, not the current source contract.
+**Superseded by user decision:** the mandatory viewing declaration and its import gate have been removed. See [BETA-WEB-REVIEW-ROLLBACK-2026-11-02.md](BETA-WEB-REVIEW-ROLLBACK-2026-11-02.md). The report below describes the historical build 1121, not the current source contract.
 
 Baseline: `beta/maintenance`, `42e221fab483d02242b17088c637b40a82be6fa9` (installed/release build 1120). This change is not packaged yet.
 
