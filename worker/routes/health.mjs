@@ -2,7 +2,7 @@
 export function createHealthRoutes({
   FOREGROUND_SCALE,
   PLAYBACK_RATE,
-  chatGPTStore,
+  codexPeek,
   dataRoot,
   exportBusy,
   ffmpeg,
@@ -24,7 +24,8 @@ export function createHealthRoutes({
           sendJson(request, response, 200, {
             ok: Boolean(ffmpeg && ffprobe),
             readyForYouTube: Boolean(ffmpeg && ffprobe),
-            chatGPTAuthAvailable: chatGPTStore.available,
+            // Never spawns the CLI here: /health is polled every few seconds.
+            codex: codexPeek(),
             tools: versions,
             render: {
               playbackRate: PLAYBACK_RATE,

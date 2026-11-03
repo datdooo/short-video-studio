@@ -6,7 +6,7 @@ import { createRouter, routeTable } from "./routes/router.mjs";
 import { createRequestHandler } from "./routes/http-handler.mjs";
 import { createRequestOriginPolicy } from "./request-origin.mjs";
 import { createHealthRoutes } from "./routes/health.mjs";
-import { createAuthRoutes } from "./routes/auth.mjs";
+import { createCodexRoutes } from "./routes/codex.mjs";
 import { createSourcesRoutes } from "./routes/sources.mjs";
 import { createMusicRoutes } from "./routes/music.mjs";
 import { createStorageRoutes } from "./routes/storage.mjs";
@@ -14,7 +14,7 @@ import { createBatchRoutes } from "./routes/batch.mjs";
 import { createRenderRoutes } from "./routes/render.mjs";
 const factories = [
   createHealthRoutes,
-  createAuthRoutes,
+  createCodexRoutes,
   createSourcesRoutes,
   createMusicRoutes,
   createStorageRoutes,
@@ -23,7 +23,7 @@ const factories = [
 ];
 test("route table preserves the captured order, exact conditions and regex matchers", async () => {
   const expected = JSON.parse(await readFile(new URL("./routes/route-table.snapshot.json", import.meta.url), "utf8"));
-  assert.equal(expected.length, 46);
+  assert.equal(expected.length, 41);
   assert.deepEqual(routeTable(factories.flatMap((f) => f({}))), expected);
   assert.throws(() => createRouter([{ order: 1 }, { order: 1 }]), /Duplicate/);
 });
@@ -65,20 +65,35 @@ function result() {
     },
   };
 }
-test("representative existing handlers keep auth cancellation and missing job error contracts", async () => {
+test("representative existing handlers keep Codex status and missing job error contracts", async () => {
   const capture = result(),
     sendJson = capture.send.bind(capture),
     calls = [];
-  const auth = createRouter(
-    createAuthRoutes({
-      pendingChatGPTAuth: { cancel: (id) => calls.push(id), public: (id) => ({ id, status: "cancelled" }) },
+  const codex = createRouter(
+    createCodexRoutes({
+      codexStatus: async (options) => {
+        calls.push(options);
+        return { installed: true, loggedIn: true, version: "9.9.9", model: "gpt-6.1-sol", reasoning: "low" };
+      },
       sendJson,
     }),
   );
-  await auth({ method: "DELETE" }, {}, new URL("http://localhost/api/chatgpt/auth/status?attemptId=synthetic"));
-  assert.deepEqual(calls, ["synthetic"]);
+  await codex({ method: "GET" }, {}, new URL("http://localhost/api/chatgpt/session?refresh=1"));
+  assert.deepEqual(calls, [{ force: true }]);
   assert.equal(capture.status, 200);
-  assert.equal(capture.body.status, "cancelled");
+  assert.deepEqual(capture.body.session, {
+    available: true, connected: true, sharing: true, installed: true, version: "9.9.9", model: "gpt-6.1-sol", reasoning: "low",
+  });
+  await codex({ method: "GET" }, {}, new URL("http://localhost/api/codex/status"));
+  assert.deepEqual(calls.at(-1), { force: false });
+  for (const gone of ["/api/chatgpt/auth/start", "/api/chatgpt/auth/status", "/api/chatgpt/models", "/auth/callback"])
+    assert.equal(await codex({ method: "POST" }, {}, new URL(`http://localhost${gone}`)), false, gone);
+  const signedOut = createRouter(
+    createCodexRoutes({ codexStatus: async () => ({ installed: true, loggedIn: false }), sendJson }),
+  );
+  await signedOut({ method: "GET" }, {}, new URL("http://localhost/api/codex/status"));
+  assert.equal(capture.body.session.sharing, false);
+  assert.match(capture.body.session.error, /codex login/);
   const render = createRouter(createRenderRoutes({ sendJson, assertId: (id) => id, jobs: new Map() }));
   await render({ method: "GET" }, {}, new URL("http://localhost/api/jobs/11111111-1111-4111-8111-111111111111"));
   assert.equal(capture.status, 404);
@@ -137,7 +152,7 @@ async function withServer(run) {
     await new Promise((resolve) => server.close(resolve));
   }
 }
-test("HTTP boundary enforces Host/Origin before mutation and OAuth exception, keeps OPTIONS and JSON/raw upload policy", async () =>
+test("HTTP boundary enforces Host/Origin before mutation, keeps OPTIONS and JSON/raw upload policy", async () =>
   withServer(async (call, hits) => {
     let r = await call("/api/storage/delete", {
       method: "POST",
@@ -149,8 +164,6 @@ test("HTTP boundary enforces Host/Origin before mutation and OAuth exception, ke
     r = await call("/auth/callback", { headers: { Host: "evil.test:8987", Origin: "https://auth.openai.com" } });
     assert.equal(r.status, 403);
     assert.equal(hits(), 0);
-    r = await call("/auth/callback", { headers: { Origin: "https://auth.openai.com" } });
-    assert.equal(r.status, 200);
     const before = hits();
     r = await call("/api/batches", { method: "OPTIONS", headers: { Origin: "http://127.0.0.1:5373" } });
     assert.equal(r.status, 204);
@@ -174,8 +187,8 @@ test("HTTP boundary enforces Host/Origin before mutation and OAuth exception, ke
   }));
 
 test('composed worker routes retain shared dependencies and representative terminal handlers',async()=>{
- const {createWorkerRoutes}=await import('./routes/index.mjs');const capture=result(),calls=[];const dispatch=createWorkerRoutes({sendJson:capture.send.bind(capture),assertId:id=>id,jobs:new Map(),pendingChatGPTAuth:{cancel:id=>calls.push(id),public:id=>({id,status:'cancelled'})}});
+ const {createWorkerRoutes}=await import('./routes/index.mjs');const capture=result();const dispatch=createWorkerRoutes({sendJson:capture.send.bind(capture),assertId:id=>id,jobs:new Map(),codexStatus:async()=>({installed:false,loggedIn:false})});
  await dispatch({method:'GET'},{},new URL('http://localhost/api/jobs/11111111-1111-4111-8111-111111111111'));assert.equal(capture.status,404);assert.match(capture.body.error,/không tồn tại/);
- await dispatch({method:'DELETE'},{},new URL('http://localhost/api/chatgpt/auth/status?attemptId=composed'));assert.deepEqual(calls,['composed']);assert.equal(capture.status,200);assert.equal(capture.body.status,'cancelled');
+ await dispatch({method:'GET'},{},new URL('http://localhost/api/codex/status'));assert.equal(capture.status,200);assert.equal(capture.body.session.installed,false);assert.match(capture.body.session.error,/Codex/);
  assert.equal(await dispatch({method:'GET'},{},new URL('http://localhost/not-a-route')),false);
 });

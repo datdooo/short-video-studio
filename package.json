@@ -20,7 +20,7 @@
     "package:mac": "node scripts/package-macos.mjs --beta",
     "setup:macos26": "node scripts/setup-macos26-runtime.mjs",
     "package:windows": "node scripts/package-windows.mjs",
-    "test:isolation": "node --test desktop/runtime-config.test.mjs worker/chatgpt-store.test.mjs",
+    "test:isolation": "node --test desktop/runtime-config.test.mjs worker/codex-cli.test.mjs",
     "package:mac:beta": "node scripts/package-macos.mjs --beta",
     "personal:beta": "node scripts/personal-dev.mjs",
     "test": "node --test lib/*.test.mjs worker/*.test.mjs desktop/*.test.mjs"

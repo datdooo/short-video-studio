@@ -24,7 +24,7 @@ import {
 import { AiProvider, EditPlan, formatTime } from "@/lib/edit-plan";
 import { explainInVietnamese } from "@/lib/explanation-language.mjs";
 import { UI_STRINGS } from "@/lib/ui-strings";
-import { Check, Download, Link2, Loader2, LogIn, Scissors, Sparkles, Square, Upload, WandSparkles } from "lucide-react";
+import { Check, Download, Link2, Loader2, RefreshCw, Scissors, Sparkles, Square, Upload, WandSparkles } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { ChangeEvent } from "react";
 
@@ -42,8 +42,7 @@ type Props = {
   batchEditing: { batchId: string; itemId: string; sourceId: string } | null;
   changeProvider: (value: string) => void;
   chatGPTSession: ChatGPTSession | null;
-  connectChatGPT: () => Promise<void>;
-  disconnectChatGPT: () => Promise<void>;
+  refreshChatGPTSession: () => Promise<void>;
   downloadWebAiPrompt: () => Promise<void>;
   editMode: "manual" | "ai";
   editSupplementalPrompt: (value: string) => void;
@@ -53,8 +52,7 @@ type Props = {
   hasEditPlan: boolean;
   invalidateAnalysis: () => void;
   isAnalyzing: boolean;
-  isChatGPTConnecting: boolean;
-  isChatGPTDisconnecting: boolean;
+  isChatGPTChecking: boolean;
   isPreparingSource: boolean;
   isStartingRender: boolean;
   isWebAi: boolean;
@@ -143,8 +141,7 @@ export function SourceView({ model }: { model: Props }) {
     batchEditing,
     changeProvider,
     chatGPTSession,
-    connectChatGPT,
-    disconnectChatGPT,
+    refreshChatGPTSession,
     downloadWebAiPrompt,
     editMode,
     editSupplementalPrompt,
@@ -154,8 +151,7 @@ export function SourceView({ model }: { model: Props }) {
     hasEditPlan,
     invalidateAnalysis,
     isAnalyzing,
-    isChatGPTConnecting,
-    isChatGPTDisconnecting,
+    isChatGPTChecking,
     isPreparingSource,
     isStartingRender,
     isWebAi,
@@ -623,45 +619,27 @@ export function SourceView({ model }: { model: Props }) {
                       <span
                         className={`size-2 rounded-full ${chatGPTSession?.sharing ? "bg-emerald-400 shadow-[0_0_10px_var(--provider-glow)]" : "bg-zinc-700"}`}
                       />
-                      {chatGPTSession?.sharing ? "ChatGPT plan connected" : "Connect your ChatGPT plan"}
+                      {chatGPTSession?.sharing ? "Codex sẵn sàng" : "Cần Codex CLI"}
                     </p>
                     <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
-                      {chatGPTSession?.connected
-                        ? chatGPTSession.email || chatGPTSession.name || "Connected account"
-                        : "Chưa đăng nhập"}
+                      {chatGPTSession?.sharing
+                        ? `ChatGPT Auto · ${chatGPTSession.model || "gpt-6.1-sol"} · ${chatGPTSession.reasoning || "low"} · text + khung hình${chatGPTSession.version ? ` · Codex ${chatGPTSession.version}` : ""}`
+                        : chatGPTSession
+                          ? "Cài Codex rồi chạy `codex login` trong Terminal"
+                          : "Chưa kiểm tra được Codex"}
                     </p>
                   </div>
-                  {chatGPTSession?.connected && (
-                    <Button variant="destructive" size="md"
-                      type="button"
-                      disabled={isChatGPTConnecting || isChatGPTDisconnecting}
-                      onClick={() => void disconnectChatGPT()}
-                      className="shrink-0 text-xs text-zinc-600 transition hover:text-zinc-300 disabled:opacity-50"
-                    >
-                      {isChatGPTDisconnecting ? "Đang ngắt…" : "Disconnect"}
-                    </Button>
-                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    disabled={isChatGPTChecking || !workerHealth?.ok}
+                    onClick={() => void refreshChatGPTSession()}
+                    className="shrink-0"
+                  >
+                    {isChatGPTChecking ? <Loader2 className="animate-spin" /> : <RefreshCw />} Kiểm tra lại
+                  </Button>
                 </div>
-                <Button
-                  variant={chatGPTSession?.sharing ? "secondary" : "primary"}
-                  onClick={() => void connectChatGPT()}
-                  disabled={isChatGPTConnecting || isChatGPTDisconnecting || !workerHealth?.chatGPTAuthAvailable}
-                  className={`mt-3 h-10 w-full rounded-xl text-xs font-bold ${chatGPTSession?.sharing ? "border-white/10 bg-white/[.03] text-zinc-200 hover:bg-white/[.07]" : "bg-white text-black hover:bg-zinc-200"}`}
-                >
-                  {isChatGPTConnecting ? (
-                    <>
-                      <Loader2 className="animate-spin" /> Waiting for ChatGPT…
-                    </>
-                  ) : chatGPTSession?.sharing ? (
-                    <>
-                      <LogIn /> Reconnect ChatGPT
-                    </>
-                  ) : (
-                    <>
-                      <LogIn /> Continue with ChatGPT
-                    </>
-                  )}
-                </Button>
                 {chatGPTSession?.error && (
                   <p role="status" className="mt-2 text-xs text-amber-300">
                     {chatGPTSession.error}

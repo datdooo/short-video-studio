@@ -11,15 +11,17 @@ import { AI_INPUT_INSTRUCTIONS, compactAiInput } from "./ai-input.mjs";
 import { aiMemo, beginAiRequest, measureAiStage, withAiOperation } from "./ai-operation.mjs";
 import { requireDiskSpace } from "./analysis-cache.mjs";
 import { validatePlan, validateRenderPlan } from "./plan-validation.mjs";
-import { providerError, readProviderOutput, safeProviderId } from "./provider-response.mjs";
+import { framedTextInstructions, coverageManifestText } from "../lib/frame-rules.mjs";
+import { CODEX_TRANSPORT } from "./codex-cli.mjs";
 import { saveSourceContext, sourceContextFor } from "./source-context.mjs";
 /** One worker-owned domain; shared services are read at operation entry. */
 export function createAnalysisService(read) {
-  async function analyzeWithChatGPTPlan(body, signal, content, reasoningPolicy) {
-    const { activeChatGPTCredentials, chatGPTResource } = read();
+  /** ChatGPT Auto transport: the local Codex CLI. Same result shape as the former OAuth call. */
+  async function analyzeWithChatGPTPlan(body, signal, content, reasoningPolicy, images = []) {
+    const { analyzeWithCodexPlan, ensureCodexReady } = read();
 
     signal?.throwIfAborted();
-    const credentials = await activeChatGPTCredentials();
+    await ensureCodexReady();
     const model = body.model || ANALYSIS_MODEL;
     if (model !== ANALYSIS_MODEL)
       throw new Error(`MODEL_UNAVAILABLE: App đã chốt ${model}; không tự chuyển model khác.`);
@@ -29,99 +31,26 @@ export function createAnalysisService(read) {
         code: "REASONING_CONFIGURATION",
       });
     const finishRequest = beginAiRequest(model, reasoning, { ...body.requestMetrics, requestedServiceTier: "default" }),
-      requestStart = performance.now();
-    let providerMs;
-    const transport = { endpoint: `${chatGPTResource}/responses`, responseKind: "not-received" };
+      requestStart = performance.now(),
+      transport = { endpoint: "codex-cli", responseKind: "file", transport: CODEX_TRANSPORT };
     try {
-      const response = await measureAiStage("provider", () =>
-        fetch(`${chatGPTResource}/responses`, {
-          signal,
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${credentials.access_token}`,
-            "Content-Type": "application/json",
-            Accept: "text/event-stream",
-          },
-          body: JSON.stringify({
-            model,
-            reasoning: { effort: reasoning.effort },
-            store: false,
-            stream: true,
-            // SIWC HTTP contract explicitly forbids max_output_tokens. The generic
-            // provider's maxTokens hint must not leak onto this OAuth route.
-            instructions:
-              body.instructions || "You are a precise short-form video editor. Return only the requested edit plan.",
-            input: [{ role: "user", content: content || String(body.input || "") }],
-            text: {
-              format: {
-                type: "json_schema",
-                name: "edit_plan",
-                strict: true,
-                schema: body.schema,
-              },
-            },
-          }),
-        }),
+      const result = await measureAiStage("provider", () =>
+        analyzeWithCodexPlan(body, signal, content, reasoning, images),
       );
-      providerMs = Math.round(performance.now() - requestStart);
-      transport.httpStatus = response.status;
-      transport.requestId =
-        safeProviderId(response.headers.get("x-request-id")) || safeProviderId(response.headers.get("request-id"));
-      // MIME and structural diagnostics are captured by the single body reader.
-      finishRequest(transport);
-      const readStart = performance.now();
-      transport.readStartedAt = readStart;
-      const { outputText, actualReasoning, actualServiceTier, usage, responseModel } = await readProviderOutput(
-        response,
-        transport,
-        signal,
-      );
-      const { readStartedAt: ignoredReadStart, ...safeTransport } = transport;
-      void ignoredReadStart;
       finishRequest({
-        ...safeTransport,
-        providerMs,
-        readMs: Math.round(performance.now() - readStart),
-        actualReasoning,
-        actualServiceTier,
-        ...(responseModel ? { responseModel } : {}),
-        ...(usage ? { usage } : {}),
+        ...transport,
+        providerMs: Math.round(performance.now() - requestStart),
+        actualReasoning: reasoning.effort,
+        ...(result.usage ? { usage: result.usage } : {}),
+        status: "completed",
       });
-      const cleaned = outputText.trim();
-      if (actualReasoning && actualReasoning !== reasoning.effort)
-        throw providerError("REASONING_CONFIGURATION", transport);
-      try {
-        const plan = await measureAiStage("validation", () => JSON.parse(cleaned));
-        finishRequest({ status: "completed" });
-        return {
-          plan,
-          model,
-          reasoning: { requested: reasoning.effort, actual: actualReasoning, source: reasoning.source },
-          serviceTier: { requested: "default", actual: actualServiceTier },
-          usage,
-        };
-      } catch {
-        throw providerError("PROVIDER_OUTPUT_JSON_INVALID", transport);
-      }
+      return result;
     } catch (error) {
-      if (
-        !signal?.aborted &&
-        (!error.code || !/^(PROVIDER_|MODEL_|REASONING_|FAST_|INVALID_RESPONSE_)/.test(error.code))
-      ) {
-        transport.networkCode = safeProviderId(error.cause?.code || error.code);
-        error = providerError(
-          error.name === "TimeoutError" ? "PROVIDER_TIMEOUT" : "PROVIDER_NETWORK",
-          transport,
-          error,
-        );
-      }
-      const { readStartedAt, ...safeTransport } = transport;
       finishRequest({
-        ...safeTransport,
-        ...(readStartedAt !== undefined ? { readMs: Math.round(performance.now() - readStartedAt) } : {}),
+        ...transport,
         errorCode: error.code || "PROVIDER_CANCELLED",
         status: signal?.aborted ? "cancelled" : "error",
-        providerMs: providerMs ?? Math.round(performance.now() - requestStart),
+        providerMs: Math.round(performance.now() - requestStart),
       });
       throw error;
     }
@@ -146,50 +75,41 @@ export function createAnalysisService(read) {
   }
 
   async function resolveEditingProvider(signal, task = "main") {
-    const { listChatGPTModels } = read();
-
     return aiMemo("editing-provider:" + task, async () => {
       signal?.throwIfAborted();
       const model = ANALYSIS_MODEL;
-      let reasoning;
-      if (task === "teaser") {
-        const models = await listChatGPTModels(null, signal),
-          entry = models.find((item) => item.slug === model);
-        if (!entry)
-          throw Object.assign(Error("MODEL_UNAVAILABLE: Catalog tài khoản không có gpt-6.1-sol; không tự đổi model."), {
-            code: "MODEL_UNAVAILABLE",
-          });
-        if (entry.supported_reasoning_efforts && !entry.supported_reasoning_efforts.includes("low"))
-          throw Object.assign(Error("REASONING_CONFIGURATION: Catalog không cho phép low cho gpt-6.1-sol."), {
-            code: "REASONING_CONFIGURATION",
-          });
-        reasoning = {
-          effort: "low",
-          source: entry.supported_reasoning_efforts ? "model-metadata" : "owner-pin-low-catalog-model-confirmed",
-          key: videoReasoning().key,
-        };
-      } else reasoning = videoReasoning();
+      const reasoning = videoReasoning();
       // Explicit owner pin: no model-list ordering or extra discovery request.
-      // Existing credential checks and provider capability errors occur on the
-      // real request. Unsupported/unavailable never falls back to another model.
+      // Codex login and capability errors occur on the real request.
+      // Unsupported/unavailable never falls back to another model.
       return {
         id: "chatgpt",
         model,
-        reasoningPolicyKey: reasoning.key,
+        reasoningPolicyKey: `${reasoning.key}:${CODEX_TRANSPORT}`,
         reasoning: reasoning.effort,
+        // Optional visual lane: evenly sampled stills (file paths) across the whole source.
+        coverageDigest: (source) => read().coverageFrames.digest(source),
+        coverageFrames: (source, signal) => read().coverageFrames.frames(source, { signal }),
         analyze: async ({ input, images = [], schema, instructions, signal, maxTokens }) => {
-          if (images.length)
-            throw Object.assign(Error("VIDEO_TEXT_ONLY: đường phân tích không nhận ảnh."), { code: "VIDEO_TEXT_ONLY" });
-          const canonical = canonicalVideoInput(input),
+          const stills = images.filter((image) => typeof image?.file === "string" && Number.isFinite(image.time));
+          if (images.length && stills.length !== images.length)
+            throw Object.assign(Error("VIDEO_TEXT_ONLY: chỉ nhận khung hình đã lấy mẫu từ nguồn."), { code: "VIDEO_TEXT_ONLY" });
+          const { visualCoverage: manifest, ...evidence } = input;
+          const canonical = canonicalVideoInput(evidence),
             packed = compactAiInput(canonical.value),
             serializedInput = packed.text;
-          const content = [{ type: "input_text", text: serializedInput }];
+          const content = [
+            {
+              type: "input_text",
+              text: stills.length && manifest ? `${serializedInput}\n\n${coverageManifestText(manifest)}` : serializedInput,
+            },
+          ];
           const requestMetrics = {
             phase: input.phase || "select-main",
             inputCharacters: serializedInput.length,
             rawInputCharacters: JSON.stringify(input).length,
             inputFormat: packed.format,
-            imageCount: 0,
+            imageCount: stills.length,
             dataCounts: canonical.counts,
             dataAvailability: canonical.availability,
             textContract: VIDEO_TEXT_VERSION,
@@ -202,7 +122,7 @@ export function createAnalysisService(read) {
               model,
               schema,
               instructions:
-                VIDEO_TEXT_INSTRUCTIONS +
+                (stills.length ? framedTextInstructions(VIDEO_TEXT_INSTRUCTIONS) : VIDEO_TEXT_INSTRUCTIONS) +
                 "\n" +
                 (packed.encoded ? AI_INPUT_INSTRUCTIONS + "\n" : "") +
                 (instructions || "You are a precise source-accurate video editor."),
@@ -212,6 +132,7 @@ export function createAnalysisService(read) {
             signal,
             content,
             reasoning,
+            stills.map((image) => image.file),
           );
           return { value: result.plan };
         },

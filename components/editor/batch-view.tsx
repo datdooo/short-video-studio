@@ -29,7 +29,7 @@ import {
 } from "@/lib/api/worker-client";
 import { AiProvider } from "@/lib/edit-plan";
 import { type SubtitleStyle } from "@/lib/subtitles.mjs";
-import { Download, Film, ListVideo, Loader2, LogIn, Play, Square, Trash2 } from "lucide-react";
+import { Download, Film, ListVideo, Loader2, Play, RefreshCw, Square, Trash2 } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 
 type Props = {
@@ -45,13 +45,12 @@ type Props = {
   changeProvider: (value: string) => void;
   changeWorkspace: (next: "editor" | "batch" | "storage") => void;
   chatGPTSession: ChatGPTSession | null;
-  connectChatGPT: () => Promise<void>;
+  refreshChatGPTSession: () => Promise<void>;
   deleteBatchVideo: (group: BatchJob, item: BatchJob["items"][number]) => Promise<void>;
   deletedBatchItems: RefObject<Set<string>>;
   deletingBatchItems: string[];
   editSupplementalPrompt: (value: string) => void;
-  isChatGPTConnecting: boolean;
-  isChatGPTDisconnecting: boolean;
+  isChatGPTChecking: boolean;
   isStartingBatch: boolean;
   isStoppingBatch: boolean;
   isWebAi: boolean;
@@ -85,13 +84,12 @@ export function BatchView({ model }: { model: Props }) {
     changeProvider,
     changeWorkspace,
     chatGPTSession,
-    connectChatGPT,
+    refreshChatGPTSession,
     deleteBatchVideo,
     deletedBatchItems,
     deletingBatchItems,
     editSupplementalPrompt,
-    isChatGPTConnecting,
-    isChatGPTDisconnecting,
+    isChatGPTChecking,
     isStartingBatch,
     isStoppingBatch,
     isWebAi,
@@ -139,15 +137,16 @@ export function BatchView({ model }: { model: Props }) {
               {isWebAi
                 ? `${webAiName} thủ công`
                 : chatGPTSession?.sharing
-                  ? "ChatGPT đã kết nối"
-                  : "Chưa kết nối ChatGPT"}
+                  ? "Codex sẵn sàng"
+                  : "Chưa có Codex"}
             </StatusChip>
             {provider === "chatgpt" && !chatGPTSession?.sharing && (
               <Button
-                onClick={() => void connectChatGPT()}
-                disabled={isChatGPTConnecting || isChatGPTDisconnecting || !workerHealth?.ok}
+                variant="secondary"
+                onClick={() => void refreshChatGPTSession()}
+                disabled={isChatGPTChecking || !workerHealth?.ok}
               >
-                <LogIn /> Kết nối ChatGPT
+                {isChatGPTChecking ? <Loader2 className="animate-spin" /> : <RefreshCw />} Kiểm tra Codex
               </Button>
             )}
             {isWebAi && (

@@ -85,7 +85,7 @@ try {
     if (url.hostname !== "127.0.0.1" || url.port !== "8887") { violations.push(url.href); return route.abort(); }
     let body = {}, status = 200;
     if (route.request().method() !== "GET") mutations.push(url.pathname);
-    if (url.pathname === "/health") body = { ok: true, readyForYouTube: true, chatGPTAuthAvailable: false, render: { contrast: 1.04, saturation: 1.06 }, tools: {} };
+    if (url.pathname === "/health") body = { ok: true, readyForYouTube: true, codex: null, render: { contrast: 1.04, saturation: 1.06 }, tools: {} };
     else if (url.pathname === "/api/chatgpt/session") body = { session: { available: true, connected: true, sharing: true } };
     else if (url.pathname === "/api/editor-renders") body = { jobs: accepted };
     else if (url.pathname === "/api/batches" && route.request().method() === "POST") {

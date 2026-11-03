@@ -8,7 +8,7 @@ const forbidden = (headers, pathname = '/api/jobs', method) => {
   assert.throws(() => policy.assert(request(headers, method), pathname), error => error.status === 403);
 };
 
-test('Host must be loopback on the configured worker port, including OAuth and static GET', () => {
+test('Host must be loopback on the configured worker port, including callback-looking paths and static GET', () => {
   for (const host of ['example.com:8987', '127.0.0.1:8787', 'localhost:5373', 'user@localhost:8987', 'localhost:8987/path']) {
     forbidden({host});
     forbidden({host}, '/auth/callback', 'GET');
@@ -39,9 +39,8 @@ test('cross-site browsers cannot omit Origin to bypass checks; local media Refer
   assert.doesNotThrow(() => policy.assert(request(), '/api/jobs')); // Native/local callers.
 });
 
-test('OAuth GET bypasses browser Origin, while POST and API lookalikes do not', () => {
+test('no OAuth exception remains: callback-looking POST and API paths are forbidden cross-site', () => {
   const headers = {origin: 'https://provider.example', 'sec-fetch-site': 'cross-site'};
-  assert.doesNotThrow(() => policy.assert(request(headers, 'GET'), '/auth/callback'));
   forbidden(headers, '/auth/callback', 'POST');
   forbidden(headers, '/api/auth/callback', 'GET');
 });

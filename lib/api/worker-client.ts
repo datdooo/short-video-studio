@@ -30,7 +30,7 @@ export const WORKER_ORIGIN = resolveWorkerOrigin(process.env.NEXT_PUBLIC_MEDIA_W
 export type WorkerHealth = {
   ok: boolean;
   readyForYouTube: boolean;
-  chatGPTAuthAvailable: boolean;
+  codex?: { installed: boolean; loggedIn: boolean; version: string | null } | null;
   tools: { ffmpeg: string | null; ffprobe: string | null; ytDlp: string | null };
   render?: {
     encoder: string;
@@ -47,9 +47,10 @@ export type ChatGPTSession = {
   available: boolean;
   connected: boolean;
   sharing: boolean;
-  email?: string | null;
-  name?: string | null;
-  expiresAt?: string | null;
+  installed?: boolean;
+  version?: string | null;
+  model?: string;
+  reasoning?: string;
   needsSignIn?: boolean;
   error?: string;
 };

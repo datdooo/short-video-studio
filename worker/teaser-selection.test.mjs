@@ -75,7 +75,7 @@ test("missing configured credentials performs no inference/frame extraction and 
   const cacheRoot = await mkdtemp(path.join(tmpdir(), "hook-auth-unit-"));t.after(()=>rm(cacheRoot,{recursive:true,force:true}));
   const select=createTeaserSelector({cacheRoot,resolveProvider:async()=>{throw new Error("AUTH_REQUIRED private-token");},fingerprint:async()=>"content",frames:()=>assert.fail("No frames should be extracted without a provider")});
   const result=await select(plan(),source);
-  assert.ok(result.parts.every(p=>p.teaser.status==="unavailable"&&p.teaser.reason.includes("hết hạn hoặc thiếu quyền")));
+  assert.ok(result.parts.every(p=>p.teaser.status==="unavailable"&&p.teaser.reason.includes("thiếu quyền")));
   assert.ok(!JSON.stringify(result).includes("private-token"));
 });
 test("hook-only Dip Black leaves ordinary None cuts unchanged; Flash choice is honored in preview and FFmpeg", async t => {
