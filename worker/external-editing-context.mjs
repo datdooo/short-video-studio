@@ -7,6 +7,7 @@ import {collectTeaserEvidence} from '../lib/teaser-evidence.mjs';
 import {hookInput} from '../lib/teaser-input.mjs';
 import {externalHookInstructions} from '../lib/teaser-import.mjs';
 import {permittedHookRanges,hookDurationLimits} from '../lib/teaser-hooks.mjs';
+import {compactTxtEvidence} from '../lib/txt-signals.mjs';
 import path from 'node:path';
 
 export const EXTERNAL_TEXT_VERSION=WEB_AI_PROMPT_VERSION;
@@ -37,7 +38,7 @@ export function buildExternalEditingContext(source,context,options,prepared,body
  }));
  const payload={version:EXTERNAL_TEXT_VERSION,sourceId:source.id,requestId:body.requestId,provider:body.provider,
   timeUnit:'source-seconds',sourceLanguage:prepared.sourceLanguage||'unknown',duration:source.duration,
-  mainInput:{...modelSelectionInput(prepared),sourceEvidence:undefined,evidenceReference:'videoEvidence',editorialRequestReference:'videoEvidence.userRequest'},videoEvidence:evidence,currentParts,
+  mainInput:{...modelSelectionInput(prepared),sourceEvidence:undefined,evidenceReference:'videoEvidence',editorialRequestReference:'videoEvidence.userRequest'},videoEvidence:compactTxtEvidence(evidence,{duration:source.duration}),currentParts,
   captionTrack:track,
   rules:{main:MAIN_INSTRUCTIONS,teaser:externalHookInstructions,durationLimits:hookDurationLimits()},
   attachments:{sourceVideo:options.webAiVideo||{id:`source-video-${source.id}`,sourceId:source.id,filename:`source-${source.id}${path.extname(source.mediaPath||'')||'.mp4'}`,duration:source.duration,bytes:options.sourceMediaBytes??null,clock:'source-seconds',playbackRate:1,coverage:[0,source.duration],representation:'original',delivery:'website-file-input',providerReceipt:'not-verified'}},
