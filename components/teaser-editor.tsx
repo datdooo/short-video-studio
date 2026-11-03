@@ -1,4 +1,5 @@
 "use client";
+import { StatusDetails } from "./status-details";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { selectionDigest } from "@/lib/teaser-context.mjs";
@@ -553,15 +554,14 @@ export function TeaserEditor({
               Part {part.id} · {mainMessage || "Teaser cần kiểm tra."}
             </span>
             {(detailMessages.length > 0 || (busy && progress)) && (
-              <details>
-                <summary>Chi tiết</summary>
+              <StatusDetails label="Chi tiết teaser">
                 {detailMessages.map((message, index) => (
                   <p key={index} className="break-words">
                     {message}
                   </p>
                 ))}
                 {busy && progress}
-              </details>
+              </StatusDetails>
             )}
           </div>,
           statusTarget,

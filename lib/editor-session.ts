@@ -180,3 +180,26 @@ export function listPreservedEditorSessions():{key:string;label:string}[]{
  try{return readPreservedSessions().entries.map(({key,label})=>({key,label}));}
  catch{return[];}
 }
+
+// Capture the exact saved copy before asking. A save in another tab while the
+// dialog is open must not turn approval for an old copy into deletion of a new one.
+export function preparePreservedEditorSessionDeletion(key: string): () => string {
+  const snapshot = readPreservedSessions().entries.find((entry) => entry.key === key);
+  if (!snapshot) throw Error("Bản nháp không còn trong danh sách.");
+  return () => {
+    try {
+      const archive = readPreservedSessions(),
+        current = archive.entries.find((entry) => entry.key === key);
+      if (!current) return "";
+      if (current.raw !== snapshot.raw || current.savedAt !== snapshot.savedAt || current.opaque !== snapshot.opaque)
+        return "Bản nháp đã thay đổi; chưa xóa. Chọn lại bản cần xóa.";
+      const json = JSON.stringify({ ...archive, entries: archive.entries.filter((entry) => entry.key !== key) });
+      localStorage.setItem(PRESERVED_SESSION_KEY, json);
+      if (localStorage.getItem(PRESERVED_SESSION_KEY) !== json)
+        return "Chưa xác nhận được việc xóa bản nháp. Kiểm tra lại danh sách.";
+      return "";
+    } catch {
+      return "Không xóa được bản nháp; bộ nhớ local không khả dụng.";
+    }
+  };
+}

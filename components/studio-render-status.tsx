@@ -1,4 +1,5 @@
 "use client";
+import { StatusDetails } from "./status-details";
 import { useId } from "react";
 import type { ReactNode } from "react";
 import { Download, Loader2, Square } from "lucide-react";
@@ -71,10 +72,12 @@ export function StudioRenderStatus({
         ) : running && job ? (
           <RenderProgress job={{ ...job, stopping: cancelling }} compact />
         ) : reason ? (
-          <details className={hasPlan ? "studio-warning" : "studio-muted"}>
-            <summary>{hasPlan ? "Cần kiểm tra trước khi xuất" : "Chưa có bản cắt"}</summary>
+          <StatusDetails
+            className={hasPlan ? "studio-warning" : "studio-muted"}
+            label={hasPlan ? "Cần kiểm tra trước khi xuất" : "Chưa có bản cắt"}
+          >
             <p>{reason}</p>
-          </details>
+          </StatusDetails>
         ) : job?.state === "error" ? (
           <span role="alert" className="studio-danger">
             Render lỗi · xem Chi tiết
@@ -87,10 +90,9 @@ export function StudioRenderStatus({
           <span className="studio-muted">Sẵn sàng xuất 2 MP4</span>
         )}
         {job?.state === "error" && (
-          <details className="studio-render-error-details">
-            <summary>Chi tiết lỗi render</summary>
+          <StatusDetails label="Chi tiết lỗi render">
             <p className="studio-danger">{job.error || "Render lỗi"}</p>
-          </details>
+          </StatusDetails>
         )}
         {!!issues.length && hasPlan && !running && (
           <span className="studio-part-fixes">
@@ -121,7 +123,7 @@ export function StudioRenderStatus({
         </button>
       )}
       {!canRender && reason && (
-        <span id={reasonId} className="studio-render-disabled-reason studio-muted">
+        <span id={reasonId} className="sr-only">
           {reason}
         </span>
       )}

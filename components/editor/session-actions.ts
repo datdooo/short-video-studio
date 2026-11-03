@@ -9,6 +9,7 @@ import { DEFAULT_REQUEST } from "@/lib/editor-defaults";
 import type { Controls } from "@/lib/editor-session";
 import {
   SESSION_KEY,
+  preparePreservedEditorSessionDeletion,
   editorSessionIdentity,
   listPreservedEditorSessions,
   preserveEditorSession,
@@ -347,6 +348,26 @@ export function createSessionActions(read: () => State) {
     });
     return choice === "save" ? saveSession() : choice === "confirm";
   }
+  async function deletePreservedDraft(key: string) {
+    const { confirm, setPreservedDrafts, setSaveError } = read();
+    try {
+      const remove = preparePreservedEditorSessionDeletion(key);
+      if (
+        (await confirm({
+          title: "Xóa bản nháp đã giữ?",
+          message: "Chỉ xóa bản lưu này. Phiên Editor đang mở và video được giữ nguyên.",
+          confirmLabel: "Xóa bản nháp",
+        })) !== "confirm"
+      )
+        return;
+      const error = remove();
+      setSaveError(error);
+      setPreservedDrafts(listPreservedEditorSessions());
+      if (!error) toast.success("Đã xóa bản nháp");
+    } catch (caught) {
+      setSaveError(caught instanceof Error ? caught.message : "Không xóa được bản nháp.");
+    }
+  }
   async function restorePreservedDraft(key: string) {
     const {
       changeWorkspace,
@@ -496,6 +517,7 @@ export function createSessionActions(read: () => State) {
     preserveCurrentDraft,
     confirmReplaceEditorDraft,
     restorePreservedDraft,
+    deletePreservedDraft,
     newSession,
   };
 }
@@ -531,6 +553,10 @@ export function useSessionActions(read: () => State) {
       createSessionActions(readerRef.current).restorePreservedDraft(...args),
     [],
   );
+  const deletePreservedDraft = useCallback(
+    (key: string) => createSessionActions(readerRef.current).deletePreservedDraft(key),
+    [],
+  );
   const newSession = useCallback(
     (...args: Parameters<ReturnType<typeof createSessionActions>["newSession"]>) =>
       createSessionActions(readerRef.current).newSession(...args),
@@ -543,6 +569,7 @@ export function useSessionActions(read: () => State) {
       preserveCurrentDraft,
       confirmReplaceEditorDraft,
       restorePreservedDraft,
+      deletePreservedDraft,
       newSession,
     }),
     [
@@ -551,6 +578,7 @@ export function useSessionActions(read: () => State) {
       preserveCurrentDraft,
       confirmReplaceEditorDraft,
       restorePreservedDraft,
+      deletePreservedDraft,
       newSession,
     ],
   );

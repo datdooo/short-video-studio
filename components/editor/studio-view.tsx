@@ -1,4 +1,5 @@
 "use client";
+import { PreservedDrafts } from "@/components/preserved-drafts";
 import { EditorDraftContext } from "@/components/editor-draft-context";
 import { EditorWorkspace } from "@/components/editor-workspace";
 import { createAutoAnalysisActions } from "@/components/editor/auto-analysis-actions";
@@ -153,6 +154,7 @@ type Props = {
   renderState: ReturnType<typeof useRenderJobs>;
   restoreBlocked: boolean;
   restorePreservedDraft: (key: string) => Promise<void>;
+  deletePreservedDraft: (key: string) => Promise<void>;
   retainedSourceId: string;
   reviewVisible: boolean;
   saveError: string;
@@ -324,6 +326,7 @@ export function StudioView({
   renderState,
   restoreBlocked,
   restorePreservedDraft,
+  deletePreservedDraft,
   retainedSourceId,
   reviewVisible,
   saveError,
@@ -453,20 +456,11 @@ export function StudioView({
               </button>
             )}
             {!!preservedDrafts.length && (
-              <select
-                aria-label="Mở bản nháp đã giữ"
-                className="studio-input min-w-0 max-w-full text-xs"
-                style={{ maxWidth: "min(100%, 28rem)" }}
-                value=""
-                onChange={(event) => restorePreservedDraft(event.target.value)}
-              >
-                <option value="">Bản nháp đã giữ ({preservedDrafts.length})</option>
-                {preservedDrafts.map((draft) => (
-                  <option key={draft.key} value={draft.key}>
-                    {draft.label}
-                  </option>
-                ))}
-              </select>
+              <PreservedDrafts
+                drafts={preservedDrafts}
+                onOpen={restorePreservedDraft}
+                onDelete={deletePreservedDraft}
+              />
             )}
           </div>
         )}
