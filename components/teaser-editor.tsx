@@ -32,15 +32,16 @@ export function TeaserEditor({statusTarget,issues=[],transition,progress,aiBusy=
  // reopening. Neither is an analysis identity. Keep restored catalogs untouched
  // until source/captions are available, then use its canonical managed media URL.
  const reviewInput=draftIdentity([reviewSourceKey,part.id,part.title,part.hook,part.segments,cues,reviewRequest]);
+ const legacyReviewInput=sourceUrl&&sourceUrl!==reviewSourceKey?draftIdentity([sourceUrl,part.id,part.title,part.hook,part.segments,cues,reviewRequest]):null;
  const[reviewRevision,setReviewRevision]=useState<{input:string;key:string;legacyKey?:string}|null>(null);
  useEffect(()=>{
   if(!reviewSourceKey)return;let current=true;
   // Preserve old catalogs only when their exact source/content/request hash
   // matches a known URL. An unknown historic blob URL is not guessed.
-  const legacyInput=sourceUrl&&sourceUrl!==reviewSourceKey?draftIdentity([sourceUrl,part.id,part.title,part.hook,part.segments,cues,reviewRequest]):null;
+  const legacyInput=legacyReviewInput;
   void Promise.all([selectionDigest(reviewInput),legacyInput?selectionDigest(legacyInput):undefined]).then(([key,legacyKey])=>{if(current)setReviewRevision({input:reviewInput,key,legacyKey});});
   return()=>{current=false;};
- },[reviewInput,reviewSourceKey,sourceUrl]);
+ },[reviewInput,reviewSourceKey,legacyReviewInput]);
  const identity=useMemo(()=>draftIdentity([part.segments,part.teaser,part.customTeaser,cues]),[part,cues]);
  const baseline=useMemo(()=>savedTimes(part),[part]);
  const[draft,setDraft]=useEditorDraft<{key:string;times:Times}|null>(`teaser-times-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'times'in v&&!!v.times&&typeof v.times==='object'&&'start'in v.times&&typeof v.times.start==='string'&&'end'in v.times&&typeof v.times.end==='string'),[inputDraft,setInputDraft]=useEditorDraft<{key:string;text:string}|null>(`teaser-input-${part.id}`,null,v=>v===null||!!v&&typeof v==='object'&&'key'in v&&typeof v.key==='string'&&'text'in v&&typeof v.text==='string');
@@ -131,7 +132,7 @@ export function TeaserEditor({statusTarget,issues=[],transition,progress,aiBusy=
    <button type="button" role="switch" aria-checked={enabled} aria-label={`Bật teaser Part ${part.id}`} className="studio-control studio-teaser-toggle" onClick={()=>{request.current?.abort();audition.current?.pause();setBusy(false);setError('');onToggle(!enabled);}}>{enabled?'Đang bật · Tắt teaser':'Đang tắt · Bật teaser'}</button>
   </div>
   <div hidden={!enabled} className="space-y-2">
-  <div className="studio-teaser-time-row"><div className="grid min-w-0 grid-cols-2 gap-1.5">{(['start','end']as const).map(boundary=><label key={boundary} className="min-w-0 text-[11px] text-zinc-400">{boundary==='start'?'Bắt đầu':'Kết thúc'}
+  <div className="studio-teaser-time-row"><div className="grid min-w-0 grid-cols-2 gap-1.5">{(['start','end']as const).map(boundary=><label key={boundary} className="min-w-0 text-xs text-zinc-400">{boundary==='start'?'Bắt đầu':'Kết thúc'}
    <input aria-label={`Teaser Part ${part.id} ${boundary==='start'?'Bắt đầu':'Kết thúc'}`} aria-invalid={Boolean(rangeError)} placeholder="00:00:00:00" autoComplete="off" spellCheck={false} inputMode="text" className="studio-input mt-1 w-full min-w-0 px-2 font-mono text-xs" value={values[boundary]} onChange={e=>edit(boundary,e.target.value)}/>
   </label>)}</div>{transition}</div>
   <label className="block min-w-0 text-zinc-400">Custom Teaser<textarea aria-label={`Custom Teaser Part ${part.id}`} className="studio-textarea mt-1 w-full min-w-0 border p-2 text-xs" rows={1} maxLength={1000} ref={inputElement} defaultValue={input} placeholder="Mô tả footage hoặc 00:01:00:00 → 00:01:10:00" onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={e=>{composing.current=false;writeInput(e.currentTarget.value);}} onChange={e=>writeInput(e.currentTarget.value)} onKeyDown={e=>{if(e.key==='Enter'&&(composing.current||e.nativeEvent.isComposing||e.nativeEvent.keyCode===229))e.stopPropagation();}} onBlur={e=>{composing.current=false;writeInput(e.currentTarget.value);}}/></label>

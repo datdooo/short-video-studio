@@ -13,7 +13,7 @@ export function BackgroundPanel({ background, onPreset }: { background: Backgrou
         <span aria-hidden="true" className="relative block h-10 overflow-hidden rounded-lg" style={backgroundCss(preset.background)}>
           {preset.background.mode === "source-blur" && <span className="absolute -inset-2" style={{ background: "linear-gradient(135deg,#789b65,#799dab,#c99b72)", filter: "blur(6px)", opacity: preset.background.opacity }} />}
         </span>
-        <span className="mt-2 flex items-center justify-between gap-1 text-[11px] font-medium">{preset.label}{selected === preset.id && <Check aria-hidden="true" className="size-3 shrink-0" />}</span>
+        <span className="mt-2 flex items-center justify-between gap-1 text-xs font-medium">{preset.label}{selected === preset.id && <Check aria-hidden="true" className="size-3 shrink-0" />}</span>
       </button>)}
     </div>
   </section>;

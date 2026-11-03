@@ -1,4 +1,5 @@
 "use client";
+import {toast} from "./confirmation-provider";
 
 import { useEffect,useLayoutEffect, useRef, useState } from "react";
 import { Check, Copy, Loader2 } from "lucide-react";
@@ -31,9 +32,9 @@ export function CopyButton({ text, label = "Copy title + hashtag", ariaLabel, cl
     setResult({ text, status: "pending" });
     try {
       await navigator.clipboard.writeText(text);
-      if (mounted.current && latestText.current === text) { setResult({ text, status: "done" }); onCopied?.(); }
+      if (mounted.current && latestText.current === text) { setResult({ text, status: "done" }); toast.success("Đã sao chép");onCopied?.(); }
     } catch {
-      if (mounted.current && latestText.current === text) { setResult({ text, status: "error" }); onError?.(); }
+      if (mounted.current && latestText.current === text) { setResult({ text, status: "error" });toast.error("Chưa sao chép được"); onError?.(); }
     } finally {
       pending.current = false;
       if (mounted.current) timer.current = setTimeout(() => setResult(null), 2500);

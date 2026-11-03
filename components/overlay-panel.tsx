@@ -20,7 +20,7 @@ export function OverlayPanel({ overlays, onPreset, onOpacity }: { overlays: Over
         <span aria-hidden="true" className="relative block h-12 overflow-hidden rounded-lg bg-zinc-600">
           {preset.overlays.map((overlay) => <span key={overlay.id} className="absolute inset-0" style={{ backgroundImage: `url("${overlayAssetUrl(overlay.assetId)}")`, backgroundSize: "100% 100%", opacity: overlay.opacity }} />)}
         </span>
-        <span className="mt-2 flex items-center justify-between gap-1 text-[11px] font-medium">{preset.label}{selected === preset.id && <Check aria-hidden="true" className="size-3 shrink-0" />}</span>
+        <span className="mt-2 flex items-center justify-between gap-1 text-xs font-medium">{preset.label}{selected === preset.id && <Check aria-hidden="true" className="size-3 shrink-0" />}</span>
       </button>)}
     </div>
     <label htmlFor="overlay-opacity" className="mt-3 flex justify-between text-xs"><span>Opacity</span><output>{Math.round((overlays[0]?.opacity ?? 0) * 100)}%</output></label>

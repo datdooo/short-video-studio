@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import {ConfirmationProvider} from "@/components/confirmation-provider";
 import { fontFaceCss } from "@/lib/visual-style/fonts.mjs";
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
-      <body className="antialiased"><style dangerouslySetInnerHTML={{ __html: fontFaceCss() }} />{children}</body>
+      <body className="antialiased"><style dangerouslySetInnerHTML={{ __html: fontFaceCss() }} /><ConfirmationProvider>{children}</ConfirmationProvider></body>
     </html>
   );
 }

@@ -23,9 +23,9 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
           <span aria-hidden="true" className="relative flex h-16 items-center justify-center overflow-hidden rounded-lg bg-black" style={backgroundCss(template.style.background)}>
             {template.style.background.mode === "source-blur" && <span className="absolute -inset-2" style={{ background: "linear-gradient(135deg,#789b65,#799dab,#c99b72)", opacity: template.style.background.opacity, filter: `${browserFilterStyle(template.style.filter, undefined, filterId)} blur(6px)` }} />}
             {template.style.overlays.map((overlay) => <span key={overlay.id} className="absolute inset-0" style={{ backgroundImage: `url("${overlayAssetUrl(overlay.assetId)}")`, backgroundSize: "100% 100%", opacity: overlay.opacity }} />)}
-            <span className="relative px-1 text-center text-[11px]" style={textPreviewCss(template.style.originalTitle, sample, 0.25)}>{sample}</span>
+            <span className="relative px-1 text-center text-xs" style={textPreviewCss(template.style.originalTitle, sample, 0.25)}>{sample}</span>
           </span>
-          <span className="mt-2 flex items-center justify-between gap-1 text-[11px] font-medium">{template.label}{selected === template.id && <Check aria-hidden="true" className="size-3 shrink-0" />}</span>
+          <span className="mt-2 flex items-center justify-between gap-1 text-xs font-medium">{template.label}{selected === template.id && <Check aria-hidden="true" className="size-3 shrink-0" />}</span>
         </button>;
       })}
     </div>

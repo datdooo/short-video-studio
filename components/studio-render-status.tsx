@@ -1,9 +1,11 @@
 'use client';
+import {useId} from 'react';
 import type {ReactNode} from 'react';
 import {Download,Loader2,Square} from 'lucide-react';
 import {RenderProgress} from './render-progress';
 type Job={id:string;state:string;progress:number;currentPart:number|null;error:string|null;resourceNotice?:string;phase?:string|null;startedAt?:string;attempt?:number;stopping?:boolean;outputs:{part:number;filename:string;url:string}[]};
 export function StudioRenderStatus({timelineNotice,timelineDraftInvalid=false,job,submitting,canRender,hasPlan,blockedReason,validation,issues,stopping,worker,onRender,onCancel,onPart,busy}: {timelineNotice?:ReactNode;timelineDraftInvalid?:boolean;job:Job|null;submitting:boolean;canRender:boolean;hasPlan:boolean;blockedReason:string;validation:string;issues:{partId:number;reason:string}[];stopping:boolean;worker:string;onRender:()=>void;onCancel:()=>void;onPart:(id:number)=>void;busy:boolean}){
+ const reasonId=useId();
  const cancelling=Boolean(job&&(stopping||job.stopping)&&['queued','rendering','cancelled'].includes(job.state));
  const running=Boolean(job&&(['queued','rendering'].includes(job.state)||cancelling));
  const reason=blockedReason||(!timelineDraftInvalid?validation:'')||(issues[0]?`Part ${issues[0].partId}: ${issues[0].reason}`:'')||(!hasPlan?'Chuẩn bị nguồn rồi Phân tích':'');
@@ -18,6 +20,7 @@ export function StudioRenderStatus({timelineNotice,timelineDraftInvalid=false,jo
    {job?.outputs.map(output=><a key={output.part} title={output.filename} href={worker+output.url}><Download size={12}/>Part {output.part}</a>)}
   </div>
   {running&&<button type="button" className="studio-cancel" disabled={cancelling} onClick={onCancel}><Square size={13} aria-hidden="true"/>{cancelling?'Đang dừng…':'Hủy'}</button>}
-  <button type="button" className="studio-primary studio-render-button" title={cancelling?'Chờ render dừng hẳn':!canRender?reason||'Chờ tác vụ đang xử lý':'Xuất effective plan đã hợp lệ'} disabled={!canRender||cancelling} onClick={onRender}>Render 2 MP4</button>
+  {!canRender&&reason&&<span id={reasonId} className="studio-render-disabled-reason studio-muted">{reason}</span>}
+  <button type="button" aria-describedby={!canRender?reasonId:undefined} className="studio-primary studio-render-button" title={cancelling?'Chờ render dừng hẳn':!canRender?reason||'Chờ tác vụ đang xử lý':'Xuất effective plan đã hợp lệ'} disabled={!canRender||cancelling} onClick={onRender}>Render 2 MP4</button>
  </>;
 }

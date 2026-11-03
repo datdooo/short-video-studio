@@ -1,0 +1,2 @@
+// Visible control copy only. Preset/provider IDs remain stable and untranslated.
+export const UI_STRINGS={localVideo:'Video từ máy',sourceUrl:'Liên kết YouTube',analyze:'Phân tích',save:'Lưu',cancel:'Hủy',apply:'Áp dụng',details:'Chi tiết',preview:'Xem trước',inspector:'Chỉnh sửa',customize:'Tùy chỉnh',textStyle:'Kiểu chữ',font:'Phông chữ',textAnimation:'Hiệu ứng chữ',backgroundMusic:'Nhạc nền'} as const;

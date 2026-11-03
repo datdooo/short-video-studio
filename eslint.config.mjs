@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {files:["app/**/*.{ts,tsx}","components/**/*.{ts,tsx}"],rules:{"react/button-has-type":"error","jsx-a11y/control-has-associated-label":"error"}},
   {
     files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
     rules: {

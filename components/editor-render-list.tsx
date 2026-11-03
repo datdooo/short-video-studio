@@ -58,8 +58,8 @@ export function EditorRenderList({ query = "", jobs, stopping, deleting, deletin
 
             </div>
             <div className="studio-action-row flex shrink-0 flex-wrap justify-end gap-2">
-              {(active || cancelling) && <button aria-label={`Huỷ render ${job.plan?.originalTitle || job.id}`} onClick={() => onStop(job)} disabled={cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 active:scale-95 disabled:opacity-50">{cancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />} {cancelling ? "Đang huỷ…" : "Huỷ render"}</button>}
-              <button aria-label={`Xoá render ${job.plan?.originalTitle || job.id}`} title={active || cancelling ? "Huỷ render và chờ dừng hẳn trước khi xoá" : "Chuyển các part vào Thùng rác; giữ video gốc"} onClick={() => onDelete(job)} disabled={active || cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-300 active:scale-95 disabled:opacity-40">{removing ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />} {removing ? "Đang xoá…" : "Xoá"}</button>
+              {(active || cancelling) && <button type="button" aria-label={`Huỷ render ${job.plan?.originalTitle || job.id}`} onClick={() => onStop(job)} disabled={cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-red-400/25 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10 active:scale-95 disabled:opacity-50">{cancelling ? <Loader2 className="size-3 animate-spin" /> : <Square className="size-3" />} {cancelling ? "Đang huỷ…" : "Huỷ render"}</button>}
+              <button type="button" aria-label={`Xoá render ${job.plan?.originalTitle || job.id}`} title={active || cancelling ? "Huỷ render và chờ dừng hẳn trước khi xoá" : "Chuyển các part vào Thùng rác; giữ video gốc"} onClick={() => onDelete(job)} disabled={active || cancelling || removing} className="flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-2 text-xs text-zinc-300 transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-300 active:scale-95 disabled:opacity-40">{removing ? <Loader2 className="size-3 animate-spin" /> : <Trash2 className="size-3" />} {removing ? "Đang xoá…" : "Xoá"}</button>
             </div>
           </div>
           <RenderProgress job={{...job,stopping:cancelling}}/>
@@ -70,7 +70,7 @@ export function EditorRenderList({ query = "", jobs, stopping, deleting, deletin
               const hashtags = part.hashtags?.join(" ") || "";
               const output = job.outputs.find((output) => output.part === part.id);
               return <div key={part.id} className="min-w-0 rounded-lg bg-black/20 p-3">
-                <p className="text-[10px] font-semibold tracking-wider text-zinc-500">TITLE SAU CÙNG · PART {part.id}</p>
+                <p className="text-xs font-semibold tracking-wider text-zinc-500">TITLE SAU CÙNG · PART {part.id}</p>
                 <p className="mt-2 select-text break-words text-sm leading-6 text-zinc-200">{title}</p>
                 <p className="mt-2 select-text text-xs leading-6 text-zinc-400 [overflow-wrap:anywhere]">{hashtags || "Chưa có hashtag (chỉnh tay)."}</p>
                 <div className="mt-3 flex flex-wrap gap-2">

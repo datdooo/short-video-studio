@@ -1,4 +1,5 @@
 "use client";
+import {useConfirm,toast} from "./confirmation-provider";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, Film, FolderOpen, Loader2, Play, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
@@ -29,6 +30,7 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
   renderCount: number; renderList: (query: string) => ReactNode;
   workerOrigin: string; ready: boolean; onMoved: (file: LibraryFile) => void; onRestored: (file: LibraryFile) => void;
 }) {
+  const confirm=useConfirm();
   const [library, setLibrary] = useState<Library | null>(null);
   const [tab, setTab] = useState<"renders" | "originals" | "parts" | "trash">("renders");
   const [search, setSearch] = useState("");
@@ -92,8 +94,9 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
       ? `Xoá VĨNH VIỄN ${files.length} mục (${sizeLabel(files.reduce((sum, file) => sum + file.size, 0))})?\n\nKhông thể khôi phục qua app. Chỉ xoá những mục này trong Thùng rác, không đụng tới Downloads hay các video đang lưu khác.`
       : kind === "restore" ? `Khôi phục “${files[0].title}” về vị trí cũ? App sẽ không ghi đè file đã tồn tại.`
         : `Chuyển ${files.length} ${tab === "originals" ? "video gốc" : "part"} vào Thùng rác?\n\nCó thể khôi phục. Video gốc và các part được quản lý riêng: xoá gốc không xoá part, xoá part không xoá gốc. Bản trong Downloads không bị ảnh hưởng.`;
-    if (!window.confirm(message)) {requestPending.current=false;setWorking(false);return;}
+    if (await confirm({message})!=='confirm') {requestPending.current=false;setWorking(false);return;}
     requestPending.current = true;loadSerial.current++; setOperation({startedAt:Date.now(),completed:0,total:files.length,label:permanent?'Xóa mục đã chọn':kind==='restore'?'Khôi phục':'Chuyển vào thùng rác'});setWorking(true); setError(""); setNotice("");
+    const moved:LibraryFile[]=[];
     let completed = 0;
     try {
       if (permanent) {
@@ -109,7 +112,7 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
           if (!response.ok) throw new Error(data.error || "Không xử lý được video.");
           completed++;setOperation(current=>current?{...current,completed}:current);
           if (kind === "move") {
-            onMoved(data.moved || file);
+            onMoved(data.moved || file);if(data.moved)moved.push(data.moved);
             setPreview((current) => current?.id === file.id ? null : current);
           } else onRestored(data.restored || file);
           setSelected((current) => { const next = new Set(current); next.delete(file.id); return next; });
@@ -117,13 +120,16 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
         setNotice(kind === "restore" ? "Đã khôi phục file về vị trí cũ." : `Đã chuyển ${completed} mục vào Thùng rác. Chưa giải phóng dung lượng; chọn Xoá vĩnh viễn nếu không cần giữ nữa.`);
       }
       setSelected(new Set());
+      if(kind==='move'&&moved.length)toast.success('Đã chuyển vào Thùng rác',{action:{label:'Hoàn tác',onClick:()=>{void (async()=>{
+       try{for(const file of moved){const response=await fetch(`${workerOrigin}/api/storage/restore`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:file.id})});const data=await response.json() as {restored?:LibraryFile};if(!response.ok||!data.restored)throw Error('Không khôi phục được');onRestored(data.restored);}await load();toast.success('Đã khôi phục');}catch{toast.error('Chưa khôi phục được; mở Thùng rác để thử lại');}
+      })();}}});
     } catch (caught) {
       setError(`${completed ? `Đã xử lý ${completed} mục. ` : ""}${caught instanceof Error ? caught.message : "Không xử lý được video."}`);
     } finally {
       try { await load(); } catch { /* The next refresh can reconnect. */ }
       requestPending.current = false; setWorking(false);setOperation(null);
     }
-  }, [editorSourceId,ensureEditorSource,workerOrigin,tab,onMoved,onRestored,load]);
+  }, [editorSourceId,ensureEditorSource,workerOrigin,tab,onMoved,onRestored,load,confirm]);
   const files = (tab === "renders" ? [] : library?.[tab] || []).filter((file) => `${file.title} ${file.filename}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
   const selectedFiles = files.filter((file) => selected.has(file.id) && !file.busy).slice(0, 500);
   const available = files.filter((file) => !file.busy).slice(0, 500);
@@ -155,14 +161,14 @@ export function MediaLibraryPanel({ editorSourceId,ensureEditorSource,workerOrig
     <div className="studio-library-content-grid mt-4 grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="studio-library-file-list max-h-[65vh] space-y-3 overflow-y-auto pr-1">
         {files.map((file) => <div key={file.id} className="studio-library-card rounded-2xl border border-white/10 bg-white/[.025] p-4">
-          <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Chọn ${file.title} ${file.filename}`} checked={selected.has(file.id)} disabled={file.busy || working} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(file.id); else next.delete(file.id); return next; })} className="mt-1 size-4 shrink-0 accent-[#ff4d2e]" /><span className="studio-library-file-icon" aria-hidden="true"><Film size={20}/></span><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold leading-6">{file.title}</p><p className="mt-1 break-all text-xs text-zinc-400">{file.kind === "original" ? "Video gốc" : file.kind === "parts" ? "Bộ Part" : `Part ${file.part}`} · {file.filename} · {sizeLabel(file.size)}</p><p className="mt-1 text-[11px] text-zinc-500">{library?.storages.find((store) => store.id === file.storageId)?.label}{file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}</p>{!file.busy&&(file.inUseByEditor||file.storageId==='current'&&file.kind==='original'&&file.sourceId===editorSourceId)&&<p className="mt-2 text-xs text-amber-200">Nguồn đang dùng trong Editor.</p>}{file.busy && <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>}</div></div>
+          <div className="flex items-start gap-3"><input type="checkbox" aria-label={`Chọn ${file.title} ${file.filename}`} checked={selected.has(file.id)} disabled={file.busy || working} onChange={(event) => setSelected((current) => { const next = new Set(current); if (event.target.checked) next.add(file.id); else next.delete(file.id); return next; })} className="mt-1 size-4 shrink-0 accent-[#ff4d2e]" /><span className="studio-library-file-icon" aria-hidden="true"><Film size={20}/></span><div className="min-w-0 flex-1"><p className="break-words text-sm font-semibold leading-6">{file.title}</p><p className="mt-1 break-all text-xs text-zinc-400">{file.kind === "original" ? "Video gốc" : file.kind === "parts" ? "Bộ Part" : `Part ${file.part}`} · {file.filename} · {sizeLabel(file.size)}</p><p className="mt-1 text-xs text-zinc-500">{library?.storages.find((store) => store.id === file.storageId)?.label}{file.deletedAt ? ` · Xoá lúc ${new Date(file.deletedAt).toLocaleString("vi-VN")}` : ""}</p>{!file.busy&&(file.inUseByEditor||file.storageId==='current'&&file.kind==='original'&&file.sourceId===editorSourceId)&&<p className="mt-2 text-xs text-amber-200">Nguồn đang dùng trong Editor.</p>}{file.busy && <p className="mt-2 text-xs text-amber-200">Đang xử lý — chưa thể xoá hoặc khôi phục.</p>}</div></div>
           <div className="mt-3 flex flex-wrap gap-2">
             {tab !== "trash" ? <><Button variant="outline" size="sm" onClick={() => { setPreview(file); setPreviewError(""); }} className="border-white/15 bg-transparent"><Play className="size-3.5" /> Xem</Button><a href={`${workerOrigin}/api/storage/media/${encodeURIComponent(file.id)}?download=1`} download={file.filename} className="studio-control studio-download flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-xs"><Download className="size-3.5" /> Tải file</a><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void handleStorageAction("move", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Chuyển vào thùng rác</Button></> : <><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void handleStorageAction("restore", [file])} className="border-emerald-400/20 bg-transparent text-emerald-300"><RotateCcw className="size-3.5" /> Khôi phục</Button><Button variant="outline" size="sm" disabled={working || file.busy} onClick={() => void handleStorageAction("purge", [file])} className="border-red-400/20 bg-transparent text-red-300"><Trash2 className="size-3.5" /> Xoá vĩnh viễn</Button></>}
           </div>
         </div>)}
         {!files.length && <p className="rounded-2xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">{loading ? "Đang đọc kho video…" : tab === "trash" ? "Thùng rác đang trống." : "Không có video phù hợp."}</p>}
       </div>
-      <aside className="rounded-2xl border border-white/10 bg-[#111216] p-4 lg:sticky lg:top-20"><p className="eyebrow">XEM TRƯỚC FILE</p>{preview ? <><video ref={bindPreviewVideo} key={preview.id} src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`} controls playsInline preload="metadata" onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")} onLoadedMetadata={() => setPreviewError("")} className="mt-3 max-h-[360px] w-full rounded-xl bg-black object-contain" /><p className="mt-3 break-words text-xs leading-5">{preview.title}</p>{previewError && <p className="mt-2 text-xs text-red-300">{previewError}</p>}</> : <p className="mt-3 text-xs leading-6 text-zinc-500">Chưa chọn video.</p>}</aside>
+      <aside className="rounded-2xl border border-white/10 bg-[#111216] p-4 lg:sticky lg:top-20"><p className="eyebrow">XEM TRƯỚC FILE</p>{preview ? <><video aria-label="Xem trước file trong kho" ref={bindPreviewVideo} key={preview.id} src={`${workerOrigin}/api/storage/media/${encodeURIComponent(preview.id)}`} controls playsInline preload="metadata" onError={() => setPreviewError("File không còn ở kho đang lưu. Làm mới danh sách để kiểm tra.")} onLoadedMetadata={() => setPreviewError("")} className="mt-3 max-h-[360px] w-full rounded-xl bg-black object-contain" /><p className="mt-3 break-words text-xs leading-5">{preview.title}</p>{previewError && <p className="mt-2 text-xs text-red-300">{previewError}</p>}</> : <p className="mt-3 text-xs leading-6 text-zinc-500">Chưa chọn video.</p>}</aside>
     </div>
     </TabsContent>
     </Tabs>

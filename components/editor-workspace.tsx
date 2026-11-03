@@ -105,7 +105,7 @@ export function EditorWorkspace({source,preview,timeline,inspector,status,visibl
    </div>
    <EditorPreviewPanel preview={preview} timeline={timeline}/>
    <div id="studio-inspector-column" ref={inspectorPanel} className="studio-side-panel studio-inspector-column" data-drawer-open={narrow&&drawer==='inspector'&&visible} inert={!inspectorOpen||!visible} aria-hidden={!inspectorOpen||!visible} role={narrow&&drawer==='inspector'&&visible?'dialog':undefined} aria-modal={narrow&&drawer==='inspector'&&visible?true:undefined} aria-labelledby={narrow&&drawer==='inspector'&&visible?'studio-inspector-drawer-title':undefined} tabIndex={-1}>
-    <div className="studio-drawer-heading"><strong id="studio-inspector-drawer-title">Inspector</strong><button ref={inspectorClose} type="button" aria-label="Đóng Inspector" onClick={closeDrawer}><X size={16}/></button></div>
+    <div className="studio-drawer-heading"><strong id="studio-inspector-drawer-title">Chỉnh sửa</strong><button ref={inspectorClose} type="button" aria-label="Đóng Inspector" onClick={closeDrawer}><X size={16}/></button></div>
     <div className="studio-inspector-scroll">{inspector}</div>
    </div>
   </div>

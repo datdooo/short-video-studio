@@ -1,4 +1,5 @@
 'use client';
+import {ShortcutHelp} from './shortcut-help';
 import {BETA_RELEASE} from '../desktop/beta-release.mjs';
 import {Cloud,CloudOff,Save,Film,LayoutGrid,FolderOpen} from 'lucide-react';
 import {useState} from 'react';
@@ -11,7 +12,7 @@ export function StudioHeader({workspace,onWorkspace,workerReady,providerLabel,pr
  return <header className="studio-header">
   <strong className="studio-brand"><img src="/favicon.svg?v=play-3" width={32} height={32} alt="Logo ShortCut Studio" className="studio-brand-logo" /> ShortCut Studio <span>BETA {BETA_RELEASE.version}</span></strong>
   <nav aria-label="Chế độ làm việc" className="studio-workspaces">{tabs.map(tab=><button type="button" key={tab.id} aria-current={workspace===tab.id?'page':undefined} onClick={()=>onWorkspace(tab.id)}>{tab.icon}{tab.label}</button>)}</nav>
-  <div className="studio-header-status">
+  <div className="studio-header-status"><ShortcutHelp/>
    <span role="status" title={workerReady?'Media worker đang kết nối':'Media worker chưa kết nối'} className={workerReady?'studio-connected':'studio-warning'}>{workerReady?<Cloud size={13}/>:<CloudOff size={13}/>}<span>{workerReady?'Worker OK':'Offline'}</span></span>
    <span className={providerReady?'studio-connected':'studio-warning'} title="Trạng thái cấu hình/đăng nhập; không đồng nghĩa đã kiểm chứng inference.">{providerLabel}</span>
    <button type="button" className="studio-session-save" data-unsaved={saveState==='dirty'||saveState==='error'} disabled={!ready||saveBlocked||saveState==='saving'||saveState==='restoring'} onClick={onSave} aria-label={saveState==='saved'?'Đã lưu phiên chỉnh sửa':'Lưu phiên chỉnh sửa'} aria-keyshortcuts="Meta+S Control+S" aria-busy={saveState==='saving'} title={saveBlocked?'Giữ bản gốc chưa đọc được trước khi lưu thay thế.':saveState==='error'?saveMessage:'Lưu · ⌘/Ctrl+S'}><Save size={13} aria-hidden="true"/>{saveState==='saved'?'Đã lưu':saveState==='saving'?'Đang lưu…':'Lưu'}</button>
