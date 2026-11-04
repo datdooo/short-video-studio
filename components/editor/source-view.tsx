@@ -24,7 +24,7 @@ import {
 import { AiProvider, EditPlan, formatTime } from "@/lib/edit-plan";
 import { explainInVietnamese } from "@/lib/explanation-language.mjs";
 import { UI_STRINGS } from "@/lib/ui-strings";
-import { Check, Download, Link2, Loader2, RefreshCw, Scissors, Sparkles, Square, Upload, WandSparkles } from "lucide-react";
+import { Check, Download, Link2, Loader2, RefreshCw, Scissors, Sparkles, Square, WandSparkles } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { ChangeEvent } from "react";
 
@@ -147,7 +147,6 @@ export function SourceView({ model }: { model: Props }) {
     editSupplementalPrompt,
     effectiveTiming,
     error,
-    handleVideoUpload,
     hasEditPlan,
     invalidateAnalysis,
     isAnalyzing,
@@ -155,7 +154,6 @@ export function SourceView({ model }: { model: Props }) {
     isPreparingSource,
     isStartingRender,
     isWebAi,
-    localFile,
     localFileName,
     manualPart1Ranges,
     manualPart1Title,
@@ -175,7 +173,6 @@ export function SourceView({ model }: { model: Props }) {
     setManualPart2Ranges,
     setManualPart2Title,
     setSourceAdvancedOpen,
-    setSourceMode,
     setSourceTitle,
     setSourceUrl,
     setWebAiResult,
@@ -219,23 +216,8 @@ export function SourceView({ model }: { model: Props }) {
           : "");
   return (
     <>
-      <Tabs
-        value={sourceMode}
-        onValueChange={(value) => {
-          resetSourceSelection();
-          setSourceMode(value as "youtube" | "local");
-        }}
-        className="mt-4"
-      >
-        <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
-          <TabsTrigger value="youtube" className="min-w-0 rounded-lg text-xs">
-            YouTube
-          </TabsTrigger>
-          <TabsTrigger value="local" className="min-w-0 rounded-lg text-xs">
-            {UI_STRINGS.localVideo}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="youtube" className="pt-3">
+      <div className="mt-4">
+        <div className="pt-3">
           <label htmlFor="youtube-url" className="field-label">
             {UI_STRINGS.sourceUrl}
           </label>
@@ -255,28 +237,15 @@ export function SourceView({ model }: { model: Props }) {
               className="studio-input studio-icon-input pl-10"
             />
           </div>
-        </TabsContent>
-        <TabsContent value="local" className="pt-3">
-          <label className="flex h-[84px] cursor-pointer items-center justify-center gap-3 rounded-xl border border-dashed border-white/12 bg-white/[.02] text-sm text-zinc-400 transition hover:border-primary/40 hover:bg-primary/5 hover:text-white">
-            <Upload className="size-4" />
-            <span className="max-w-[220px] truncate">{localFileName || "Chọn MP4, MOV hoặc WebM"}</span>
-            <input
-              aria-label="Chọn video từ máy"
-              className="sr-only"
-              type="file"
-              accept="video/*"
-              onChange={handleVideoUpload}
-            />
-          </label>
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
       <Button variant="primary" size="md"
         type="button"
         onClick={() => void prepareSource()}
         disabled={
           isPreparingSource ||
           !workerHealth?.ok ||
-          (!preparedSource && (sourceMode === "youtube" ? !sourceUrl.trim() : !localFile))
+          (!preparedSource && !sourceUrl.trim())
         }
         className={`studio-primary w-full${preparedSource && !isPreparingSource ? " studio-source-ready" : ""}`}
         aria-busy={isPreparingSource}
@@ -323,9 +292,8 @@ export function SourceView({ model }: { model: Props }) {
                 : undefined
             }
           />
-          <Button variant="ghost" size="md"
+          <Button variant="secondary" size="md"
             type="button"
-            className="studio-ghost"
             onClick={() => {
               sourcePreparation.current?.abort(new DOMException("Đã dừng chuẩn bị nguồn", "AbortError"));
               setError("Đã dừng chuẩn bị nguồn.");
@@ -392,7 +360,7 @@ export function SourceView({ model }: { model: Props }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start">
-                <SelectItem value="chatgpt">ChatGPT Auto · Sol low</SelectItem>
+                <SelectItem value="chatgpt">ChatGPT Auto · Terra high</SelectItem>
                 <SelectItem value="chatgpt-web">ChatGPT</SelectItem>
                 <SelectItem value="gemini">Gemini</SelectItem>
                 <SelectItem value="muse">Muse</SelectItem>
@@ -623,7 +591,7 @@ export function SourceView({ model }: { model: Props }) {
                     </p>
                     <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
                       {chatGPTSession?.sharing
-                        ? `ChatGPT Auto · ${chatGPTSession.model || "gpt-6.1-sol"} · ${chatGPTSession.reasoning || "low"} · text + khung hình${chatGPTSession.version ? ` · Codex ${chatGPTSession.version}` : ""}`
+                        ? `ChatGPT Auto · ${chatGPTSession.model || "gpt-6.1-terra"} · ${chatGPTSession.reasoning || "high"} · text + khung hình${chatGPTSession.version ? ` · Codex ${chatGPTSession.version}` : ""}`
                         : chatGPTSession
                           ? "Cài Codex rồi chạy `codex login` trong Terminal"
                           : "Chưa kiểm tra được Codex"}

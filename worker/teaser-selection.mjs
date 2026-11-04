@@ -7,7 +7,7 @@ import {diverseExcerpts} from "../lib/teaser-candidates.mjs";
 import { checkHookSpeechBoundaries,speechEndingOptions } from "../lib/teaser-boundaries.mjs";
 import { HOOK_SCHEMA, HOOK_INSTRUCTIONS, validateHookResponse, validateEditorialEvidence, replayEvidence } from "../lib/teaser-prompt.mjs";
 export { HOOK_SCHEMA, HOOK_INSTRUCTIONS };
-import {HOOK_WINNER_SCHEMA as WINNER_SCHEMA,HOOK_WINNER_INSTRUCTIONS as WINNER_INSTRUCTIONS} from "../lib/teaser-prompt.mjs";
+import {HOOK_WINNER_SCHEMA as WINNER_SCHEMA,AUTO_WINNER_INSTRUCTIONS as WINNER_INSTRUCTIONS} from "../lib/teaser-prompt.mjs";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -150,7 +150,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint}){
     if(previousRanges.length)input.reselection={previousRanges:previousRanges.map(({start,end})=>({start,end})),instruction:'User explicitly requests a NEW candidate. Compare different substantive moments, not cosmetic boundary variants of these excerpts. Do not return these exact ranges. If no different supported complete choice exists, return unavailable and explain; never manufacture evidence.'};
     input.speechBoundaryCues=boundaryCues.slice(0,20_000).map((c,i)=>({...c,...(boundaryCues===cues?{cueId:`cue-${i}`}:{})})).filter(c=>Number.isFinite(c.start)&&Number.isFinite(c.end)&&c.end>c.start&&c.end-c.start<=10&&String(c.text||'').trim()&&input.allowedRanges.some(r=>c.start<r.end&&c.end>r.start)).slice(0,240).map(({cueId,start,end,text,timing})=>({...((cueId&&boundaryCues===cues)?{cueId}:{}),start,end,text:clean(text,240),timing:timing||'cue'}));
     input.speechEndingOptions=speechEndingOptions(boundaryCues,input.allowedRanges,input.supporting.speechSilences).map(option=>{if(boundaryCues===cues)return option;const {cueId,...withoutGlobalId}=option;void cueId;return withoutGlobalId;});
-    const key=hash({version:HOOK_PROMPT_VERSION,evidenceVersion:TEASER_EVIDENCE_VERSION,evidenceInputHash:hash(evidence.full),sourceHash,sourceId:source.id,cuesHash:hash(cues),evidenceHash:hash(teaserEvidenceValue(source)),transcriptHash:hash(source.transcript||''),ranges:hookRangeKey(part),input,provider:provider?.id||'none',model:provider?.model||'none',reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured',selectorVersion:'paired-relative-speech-duration-v4-full-canonical-text',instructions:WINNER_INSTRUCTIONS,schema:WINNER_SCHEMA,frames:'disabled-text-only-v1'});
+    const key=hash({choices:3,version:HOOK_PROMPT_VERSION,evidenceVersion:TEASER_EVIDENCE_VERSION,evidenceInputHash:hash(evidence.full),sourceHash,sourceId:source.id,cuesHash:hash(cues),evidenceHash:hash(teaserEvidenceValue(source)),transcriptHash:hash(source.transcript||''),ranges:hookRangeKey(part),input,provider:provider?.id||'none',model:provider?.model||'none',reasoningPolicy:provider?.reasoningPolicyKey||'unconfigured',selectorVersion:'paired-relative-speech-duration-v4-full-canonical-text',instructions:WINNER_INSTRUCTIONS,schema:WINNER_SCHEMA,frames:'disabled-text-only-v1'});
     const file=path.join(cacheRoot,`${key}.json`);
     let savedDiscovery,cachedTeaser;
     try{
@@ -176,7 +176,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint}){
   async function selectPart(part,source,cues,boundaryCues,supporting,provider,sourceHash,signal,providerFailure,maxAttempts,customInstruction,forceRefresh,prepared){
     const context=prepared||await measureAiStage('preparation',()=>preparePart(part,source,cues,boundaryCues,supporting,provider,sourceHash,customInstruction,forceRefresh),{partId:part.id});
     let {input,evidence,key,file,savedDiscovery,cachedTeaser}=context;
-    if(cachedTeaser){aiEvent('cache',{partId:part.id,hit:true});return {...structuredClone(cachedTeaser),alternatives:[]};}
+    if(cachedTeaser){aiEvent('cache',{partId:part.id,hit:true});return structuredClone(cachedTeaser);}
     aiEvent('cache',{partId:part.id,hit:false});
     return structuredClone(await shared(key,async activeSignal=>{
       let result,failure=context.seedFailure||providerFailure||'provider-not-configured',rejected=context.seedFailure?[{code:context.seedFailure}]:context.discoveryFailure?[{code:context.discoveryFailure}]:[],discovery=savedDiscovery;
@@ -202,7 +202,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint}){
             input.visualCoverage={imagesProvided:0,limitation:'Text-only; numeric local signals do not prove visual actions.'};
             const phase=discovery?'finalize-moments':'select-teaser';
             finalAttempts++;
-            const response=await provider.analyze({input:{...input,phase},images:[],instructions:WINNER_INSTRUCTIONS+'\n'+TEXT_ONLY_INSTRUCTIONS+(customInstruction?'\nUSER CUSTOM REQUEST is a strict footage-search constraint, not a request to create speech/images. Select ONLY matching real footage in customTeaserRequest. If supplied transcript/text cannot establish that event, return unavailable; never substitute another attractive event. Numeric proxies do not prove visual size or completed motion.':''),maxTokens:2500,schema:WINNER_SCHEMA,signal:AbortSignal.any([activeSignal,AbortSignal.timeout(90_000)])});
+            const response=await provider.analyze({input:{...input,phase},images:[],instructions:WINNER_INSTRUCTIONS+'\n'+TEXT_ONLY_INSTRUCTIONS+(customInstruction?'\nUSER CUSTOM REQUEST is a strict footage-search constraint, not a request to create speech/images. Select ONLY matching real footage in customTeaserRequest. If supplied transcript/text cannot establish that event, return unavailable; never substitute another attractive event. Numeric proxies do not prove visual size or completed motion.':''),maxTokens:4000,schema:WINNER_SCHEMA,signal:AbortSignal.any([activeSignal,AbortSignal.timeout(180_000)])});
             const selection=await measureAiStage('validation',()=>rankedSelection(response.value,{part,source,cues,boundaryCues,input,images,provider,key,supporting}),{partId:part.id});
             rejected=selection.rejected;
             if(selection.result){result=selection.result;break;}
@@ -217,7 +217,6 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint}){
       result||=unavailableHook(part,`${hookFailureNotice(failure)}${codes.length?' Bước bị từ chối: '+codes.map(c=>rejectNotice(c)+' ('+c+')'+(c==='HOOK_DURATION_OUT_OF_BOUNDS'?' · '+rejected.filter(r=>r.code===c&&r.duration).map(r=>durationNotice(r.duration)).join('; '):'')).join('; ')+'.':''}`);
       if(result.status!=='selected'){context.failure=failure;aiEvent('error',{partId:part.id,reason:rejected[0]?.code||failure});}
       if(result.status!=='selected')console.warn('Teaser selection unavailable',{partId:part.id,code:failure,rejected:codes,duration:rejected.filter(row=>row.duration).map(row=>({rank:row.rank,...row.duration})),speechEvidence:rejected.filter(row=>row.speechEvidence).map(row=>({rank:row.rank,code:row.code,...row.speechEvidence}))});
-      if(result.status==='selected')result.alternatives=[];
       if(result.status==='selected')result.binding=await bindTeaserContext({...part,teaser:result},source,cues,source.transcript||'',sourceHash,{...source.selectionRequest,customInstruction});
       activeSignal.throwIfAborted();
       try{
@@ -262,7 +261,7 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint}){
             const response=await provider.analyze({input:{phase:'find-two-part-moments',...pairEvidence(missingDiscovery.map(part=>({...contexts.get(part.id).input,inspectionIntervals:discoveryIntervals(contexts.get(part.id).input.allowedRanges)})))},
               images:[],schema:pairSchema(missingDiscovery,MOMENT_DISCOVERY_SCHEMA,'discovery'),maxTokens:4000,
               instructions:HOOK_INSTRUCTIONS+'\n'+TEXT_ONLY_INSTRUCTIONS+'\nMOMENT DISCOVERY ONLY, independently for EACH supplied part. Compare its strongest speech/action/replay moments; return up to4 ranked inspection anchors per part: intervalId from its inspectionIntervals plus anchorTime inside that interval. These are inspection points, not final cut boundaries. Candidates are suggestions, not a closed list. Return discovery schema, not a final teaser. The app retrieves exact neighboring original cues/text evidence before selection. All reasons in Vietnamese. '+SHARED_EVIDENCE_INSTRUCTIONS,
-              signal:AbortSignal.any([active,AbortSignal.timeout(90_000)])});
+              signal:AbortSignal.any([active,AbortSignal.timeout(180_000)])});
             return{value:response.value,partImages,partInputs:targets.map(part=>({partId:part.id,input:contexts.get(part.id).input}))};
           },signal);
           for(const part of missingDiscovery){
@@ -301,9 +300,9 @@ export function createTeaserSelector({cacheRoot,resolveProvider,fingerprint}){
 
             }
             const response=await provider.analyze({input:{phase:needsDiscovery?'finalize-two-part-moments':'select-two-parts',...pairEvidence(targets.map(part=>contexts.get(part.id).input))},
-              images:[],schema:pairSchema(targets,WINNER_SCHEMA,'selection'),maxTokens:5000,
-              instructions:WINNER_INSTRUCTIONS+'\n'+TEXT_ONLY_INSTRUCTIONS+'\nCompare and choose a final ranked teaser INDEPENDENTLY for EACH supplied part, using original neighboring evidence to finish each sentence/idea cleanly. Never mix part ranges, cue evidence or explanations. Return exactly one winner per partId; alternatives must be empty. All explanations in Vietnamese. '+SHARED_EVIDENCE_INSTRUCTIONS,
-              signal:AbortSignal.any([active,AbortSignal.timeout(90_000)])});
+              images:[],schema:pairSchema(targets,WINNER_SCHEMA,'selection'),maxTokens:8000,
+              instructions:WINNER_INSTRUCTIONS+'\n'+TEXT_ONLY_INSTRUCTIONS+'\nCompare and choose a final ranked teaser INDEPENDENTLY for EACH supplied part, using original neighboring evidence to finish each sentence/idea cleanly. Never mix part ranges, cue evidence or explanations. Return exactly one winner per partId, each with exactly two alternatives (three ranked candidates per part). All explanations in Vietnamese. '+SHARED_EVIDENCE_INSTRUCTIONS,
+              signal:AbortSignal.any([active,AbortSignal.timeout(180_000)])});
             return{value:response.value,partImages,partInputs:targets.map(part=>({partId:part.id,input:contexts.get(part.id).input}))};
           },signal);
           for(const part of targets){

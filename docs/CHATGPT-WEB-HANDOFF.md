@@ -1,8 +1,8 @@
 # Hiện hành — Codex CLI và TXT v24 (2026-11-04)
 
-ChatGPT Auto · Sol low dùng Codex CLI cài riêng, đăng nhập bằng `codex login`
-ngoài app và gọi `codex exec` qua `worker/codex-cli.mjs`, model `gpt-6.1-sol`,
-reasoning `low`. Không còn đăng nhập OAuth trong app. MAIN nhận text + tối đa 24
+ChatGPT Auto · Terra high dùng Codex CLI cài riêng, đăng nhập bằng `codex login`
+ngoài app và gọi `codex exec` qua `worker/codex-cli.mjs`, model `gpt-6.1-terra`,
+reasoning `high`. Không còn đăng nhập OAuth trong app. MAIN nhận text + tối đa 24
 khung hình lấy mẫu đều phủ toàn video; teaser vẫn text-only. Khung hình thưa không
 phải xem video liên tục và không có âm thanh. Xem [AI providers](AI_PROVIDERS.md).
 

@@ -265,7 +265,7 @@ export function createCodexCli(read = () => ({}), options = {}) {
       throw new Error(`MODEL_UNAVAILABLE: App đã chốt ${ANALYSIS_MODEL}; không tự chuyển model khác.`);
     const effort = reasoningPolicy?.effort || ANALYSIS_REASONING;
     if (effort !== ANALYSIS_REASONING)
-      throw Object.assign(new Error("REASONING_CONFIGURATION: Phân tích video chỉ dùng low."), { code: "REASONING_CONFIGURATION" });
+      throw Object.assign(new Error(`REASONING_CONFIGURATION: Phân tích video chỉ dùng ${ANALYSIS_REASONING}.`), { code: "REASONING_CONFIGURATION" });
     const binary = resolve({ platform });
     if (!binary) throw Object.assign(new Error("CODEX_NOT_FOUND: Chưa tìm thấy Codex CLI."), { code: "CODEX_NOT_FOUND", status: 503 });
     const { tmp } = read() || {};

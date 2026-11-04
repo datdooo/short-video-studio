@@ -61,7 +61,7 @@ export function createMainContentSelector({ cacheRoot, resolveProvider, fingerpr
           }
           try {
             const input={...modelSelectionInput(stableInput),phase:'select-main',...(images.length?{visualCoverage:stills.manifest}:{})};
-            const response=await provider.analyze({input,images,schema,instructions:images.length?instructions:MAIN_INSTRUCTIONS,signal:AbortSignal.any([signal,AbortSignal.timeout(90000)]),maxTokens:3600});
+            const response=await provider.analyze({input,images,schema,instructions:images.length?instructions:MAIN_INSTRUCTIONS,signal:AbortSignal.any([signal,AbortSignal.timeout(180000)]),maxTokens:3600});
             localValidation=true;
             plan=await measureAiStage('validation',()=>{
               const next=selectionToPlan(prepared,response.value,{currentPlan:options.currentPlan,provider:provider.id,model:provider.model});

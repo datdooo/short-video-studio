@@ -27,7 +27,7 @@ export function createAnalysisService(read) {
       throw new Error(`MODEL_UNAVAILABLE: App đã chốt ${model}; không tự chuyển model khác.`);
     const reasoning = reasoningPolicy || videoReasoning();
     if (reasoning.effort !== ANALYSIS_REASONING)
-      throw Object.assign(Error("REASONING_CONFIGURATION: Phân tích video chỉ dùng low."), {
+      throw Object.assign(Error(`REASONING_CONFIGURATION: Phân tích video chỉ dùng ${ANALYSIS_REASONING}.`), {
         code: "REASONING_CONFIGURATION",
       });
     const finishRequest = beginAiRequest(model, reasoning, { ...body.requestMetrics, requestedServiceTier: "default" }),

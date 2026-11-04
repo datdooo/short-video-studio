@@ -2,7 +2,7 @@
 
 ## Codex CLI
 
-**ChatGPT Auto · Sol low** chạy qua Codex CLI do người dùng tự cài riêng, không đóng gói trong app. Sau khi cài, chạy `codex login` trong Terminal. `worker/codex-cli.mjs` gọi `codex exec` với model `gpt-6.1-sol`, reasoning `low`; nếu model bị từ chối thì báo lỗi, không tự đổi model. Không cần API key riêng cho luồng này. Quyền sử dụng và quota phụ thuộc tài khoản Codex.
+**ChatGPT Auto · Terra high** chạy qua Codex CLI do người dùng tự cài riêng, không đóng gói trong app. Sau khi cài, chạy `codex login` trong Terminal. `worker/codex-cli.mjs` gọi `codex exec` với model `gpt-6.1-terra`, reasoning `high`; nếu model bị từ chối thì báo lỗi, không tự đổi model. Không cần API key riêng cho luồng này. Quyền sử dụng và quota phụ thuộc tài khoản Codex.
 
 - `SHORTCUT_CODEX_BIN`: đường dẫn tuyệt đối tới binary `codex`; dùng khi worker không tìm thấy CLI.
 - `SHORTCUT_CODEX_TIMEOUT_MS`: thời gian chờ tối đa mỗi lần gọi, tính bằng mili giây.
@@ -27,7 +27,7 @@ Mock tạo plan mẫu trên máy, không gọi AI. Manual cut bỏ qua toàn b�
 - **Worker offline**: chạy worker của đúng profile đang dùng.
 - **CODEX_NOT_FOUND**: cài Codex CLI hoặc đặt `SHORTCUT_CODEX_BIN` thành đường dẫn tuyệt đối tới `codex`.
 - **CODEX_NOT_LOGGED_IN**: chạy `codex login` trong Terminal.
-- **CODEX_MODEL_REJECTED**: kiểm tra quyền dùng `gpt-6.1-sol`; app không tự chuyển model.
+- **CODEX_MODEL_REJECTED**: kiểm tra quyền dùng `gpt-6.1-terra`; app không tự chuyển model.
 - **CODEX_TIMEOUT**: kiểm tra tác vụ và cấu hình `SHORTCUT_CODEX_TIMEOUT_MS` nếu cần.
 - **CODEX_OUTPUT_INVALID / CODEX_ABORTED**: kết quả không hợp lệ hoặc tác vụ đã bị huỷ; kiểm tra thông báo trước khi thử lại.
 - **Video không phát**: bấm **Chuẩn bị source để render** trước. Player cần worker đang chạy và đọc source qua endpoint hỗ trợ HTTP Range.

@@ -73,7 +73,7 @@ test("representative existing handlers keep Codex status and missing job error c
     createCodexRoutes({
       codexStatus: async (options) => {
         calls.push(options);
-        return { installed: true, loggedIn: true, version: "9.9.9", model: "gpt-6.1-sol", reasoning: "low" };
+        return { installed: true, loggedIn: true, version: "9.9.9", model: "gpt-6.1-terra", reasoning: "high" };
       },
       sendJson,
     }),
@@ -82,7 +82,7 @@ test("representative existing handlers keep Codex status and missing job error c
   assert.deepEqual(calls, [{ force: true }]);
   assert.equal(capture.status, 200);
   assert.deepEqual(capture.body.session, {
-    available: true, connected: true, sharing: true, installed: true, version: "9.9.9", model: "gpt-6.1-sol", reasoning: "low",
+    available: true, connected: true, sharing: true, installed: true, version: "9.9.9", model: "gpt-6.1-terra", reasoning: "high",
   });
   await codex({ method: "GET" }, {}, new URL("http://localhost/api/codex/status"));
   assert.deepEqual(calls.at(-1), { force: false });

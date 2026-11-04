@@ -27,7 +27,7 @@ const kind = /^\s*Loại:\s*([^\s#]+)/im.exec(text)?.[1]?.toLowerCase();
 if (!kind) throw new Error("Task file needs a line 'Loại: <kind>'. Allowed: " + [...MECHANICAL].join(", "));
 if (CORE.has(kind) || !MECHANICAL.has(kind)) throw new Error(`Refused: kind '${kind}' is core logic or unknown. Do it directly (Claude), not through Codex.`);
 
-const effort = option("--effort", "medium");
+const effort = option("--effort", "high");
 if (!["low", "medium", "high"].includes(effort)) throw new Error("effort must be low|medium|high");
 const slug = path.basename(taskFile, path.extname(taskFile)).toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
 const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);

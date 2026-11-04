@@ -12,7 +12,7 @@ Mục tiêu: tiết kiệm quota Claude và chạy nhanh hơn, **nhưng không �
 
 ## Quy trình
 1. Viết file tác vụ ngắn, có dòng `Loại: <docs|ui|ui-css|test-scaffold|script-update|rename|cleanup>`, mục tiêu, file được phép sửa, tiêu chí xong.
-2. Chạy: `node scripts/delegate-codex.mjs docs/<task>.md [--effort medium] [--verify]`. Script tạo worktree riêng (`codex/<slug>-<ts>`), dùng `gpt-6.1-sol` + sandbox `workspace-write`, chặn loại việc lõi, và so sánh trạng thái DEV trước/sau.
+2. Chạy: `node scripts/delegate-codex.mjs docs/<task>.md [--effort high] [--verify]`. Script tạo worktree riêng (`codex/<slug>-<ts>`), dùng `gpt-6.1-sol` + sandbox `workspace-write`, chặn loại việc lõi, và so sánh trạng thái DEV trước/sau.
 3. `--full-access` chỉ khi việc thật sự cần commit hoặc mở cổng; Claude vẫn là người commit.
 4. Claude đọc `git diff`, chạy `npx tsc --noEmit`, `npm run lint`, `npm test`, QA trình duyệt nếu là UI, rồi mới commit/hợp nhất.
 

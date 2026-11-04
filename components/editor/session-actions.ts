@@ -164,7 +164,7 @@ export function createSessionActions(read: () => State) {
     setLocalVideoUrl("");
     setRestorePassive(true);
     setMusicIntent(false);
-    setSourceMode(d.sourceMode || "youtube");
+    setSourceMode("youtube");
     setSourceUrl(d.sourceUrl || "");
     setLocalFileName(d.localFileName || "");
     const restoredLocalId = d.sourceMode === "local" ? d.localDraftId || d.sourceId || crypto.randomUUID() : "";

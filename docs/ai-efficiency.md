@@ -1,7 +1,7 @@
 # Current Beta source policy — 2026-11-04
 
-ChatGPT Auto · Sol low uses `codex exec` through `worker/codex-cli.mjs`, model
-`gpt-6.1-sol`, reasoning `low`. Install Codex CLI separately and run `codex login`
+ChatGPT Auto · Terra high uses `codex exec` through `worker/codex-cli.mjs`, model
+`gpt-6.1-terra`, reasoning `high`. Install Codex CLI separately and run `codex login`
 outside the app. No in-app OAuth, ChatGPT Keychain/DPAPI store, callback or model
 catalog route remains. MAIN receives text plus up to 24 uniformly sampled frames
 covering the video (`worker/coverage-frames.mjs`, `lib/frame-rules.mjs`); teaser
