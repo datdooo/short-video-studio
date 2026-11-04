@@ -32,3 +32,12 @@ Mock tạo plan mẫu trên máy, không gọi AI. Manual cut bỏ qua toàn b�
 - **CODEX_OUTPUT_INVALID / CODEX_ABORTED**: kết quả không hợp lệ hoặc tác vụ đã bị huỷ; kiểm tra thông báo trước khi thử lại.
 - **Video không phát**: bấm **Chuẩn bị source để render** trước. Player cần worker đang chạy và đọc source qua endpoint hỗ trợ HTTP Range.
 - **Render báo timestamp vượt source**: sửa timestamp hoặc Generate plan lại cho video đang mở.
+
+## ChatGPT Auto = chế độ thủ công, tự động
+
+Trong Editor, **ChatGPT Auto** chạy đúng quy trình của chế độ web thủ công, chỉ bỏ thao tác tay:
+tạo cùng TXT (cùng prompt, tín hiệu, 3 ứng viên teaser mỗi part) → gửi nguyên văn cho Codex
+(`gpt-6.1-terra`, `high`) kèm tối đa 24 khung hình phân bố đều (Codex không nhận được file video) →
+nhận JSON thô → nhập qua đúng bộ nhập JSON thủ công (`provider: chatgpt-web`). Worker: `auto-cut` mode
+`codex-run` (`runCodexTxt` trong `worker/analysis-service.mjs`, chế độ `txtPrompt` của `worker/codex-cli.mjs`).
+Hàng loạt (Batch) vẫn dùng pipeline Auto phía worker cũ.

@@ -12,9 +12,10 @@ import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTea
 import {validatePlan} from './plan-validation.mjs';
 import {stat} from 'node:fs/promises';
 // One orchestration path for single-source Auto, external context/import and batch.
-export function createAutoCutWorkflow({prepareInputs,mainContent,selectHooks,verifyPreservedTeasers,describeWebVideo,externalSnapshots}) {
+export function createAutoCutWorkflow({prepareInputs,runCodexTxt,mainContent,selectHooks,verifyPreservedTeasers,describeWebVideo,externalSnapshots}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
+    if(body.mode==='codex-run')return runCodexTxt(source,body,signal);
     let context,options,input,snapshot;
     if(body.mode==='import'&&externalSnapshots){
       if(!['gemini','muse','chatgpt-web'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');

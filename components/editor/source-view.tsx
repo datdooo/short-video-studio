@@ -43,6 +43,7 @@ type Props = {
   chatGPTSession: ChatGPTSession | null;
   refreshChatGPTSession: () => Promise<void>;
   downloadWebAiPrompt: () => Promise<void>;
+  runCodexAuto: () => Promise<void>;
   editMode: "manual" | "ai";
   editSupplementalPrompt: (value: string) => void;
   effectiveTiming: { plan: EditPlan; error: string };
@@ -141,6 +142,7 @@ export function SourceView({ model }: { model: Props }) {
     chatGPTSession,
     refreshChatGPTSession,
     downloadWebAiPrompt,
+    runCodexAuto,
     editMode,
     editSupplementalPrompt,
     effectiveTiming,
@@ -496,6 +498,7 @@ export function SourceView({ model }: { model: Props }) {
           }
           onClick={() => {
             if (isWebAi) void downloadWebAiPrompt();
+            else if (provider === "chatgpt") void runCodexAuto();
             else void analyze();
           }}
         >
@@ -503,7 +506,24 @@ export function SourceView({ model }: { model: Props }) {
           {isAnalyzing ? "Đang phân tích…" : isWebAi ? `Tạo prompt ${webAiName}` : "Phân tích"}
         </Button>
       )}
-      {isAnalyzing && webAiPhase !== "prompt" && (
+      {provider === "chatgpt" && webAiPhase && (
+        <TaskProgress
+          indeterminate
+          label={webAiPhase === "import" ? "Kiểm tra và áp dụng JSON" : webAiPreparationLabel}
+          startedAt={webAiStartedAt}
+        />
+      )}
+      {provider === "chatgpt" && webAiError && (
+        <p role="alert" className="studio-inline-error">
+          {webAiError}
+        </p>
+      )}
+      {provider === "chatgpt" && webAiNotice && (
+        <p role="status" className="studio-inline-notice">
+          {webAiNotice}
+        </p>
+      )}
+      {isAnalyzing && (webAiPhase !== "prompt" || provider === "chatgpt") && (
         <Button
           variant="secondary"
           onClick={() => {

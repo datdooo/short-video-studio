@@ -404,7 +404,8 @@ export default function Home() {
     : supplementalPrompt;
 
   const isWebAi = provider === "muse" || provider === "gemini" || provider === "chatgpt-web";
-  const webAiName = provider === "gemini" ? "Gemini" : provider === "chatgpt-web" ? "ChatGPT" : "Muse";
+  const webAiName =
+    provider === "gemini" ? "Gemini" : provider === "chatgpt-web" || provider === "chatgpt" ? "ChatGPT" : "Muse";
 
   // Transcript retrieval / editing rules cannot change the identity of a video.
   // The imported JSON's sourceId is validated separately by parseMusePlan.

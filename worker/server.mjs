@@ -247,6 +247,7 @@ const versions = {
 };
 const {
   analyzeWithChatGPTPlan,
+  runCodexTxt,
   finalizeImportedTeasers,
   hookSourceFingerprint,
   mainAnalysisInputs,
@@ -342,6 +343,7 @@ const processBatch = createBatchProcessor({
 const autoCutWorkflow = createAutoCutWorkflow({
   externalSnapshots: createExternalPromptSnapshots(path.join(dataRoot, "cache", "external-prompt-snapshots")),
   prepareInputs: mainAnalysisInputs,
+  runCodexTxt,
   mainContent,
   selectHooks: planTeasers,
   verifyPreservedTeasers: verifySourceTeasers,

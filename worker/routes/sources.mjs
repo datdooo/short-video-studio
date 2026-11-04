@@ -461,7 +461,7 @@ export function createSourcesRoutes({
             const body = await readJson(request);
             const signal = AbortSignal.any([
               controller.signal,
-              AbortSignal.timeout(["context", "import"].includes(body.mode) ? 20 * 60_000 : 600000),
+              AbortSignal.timeout(["context", "import", "codex-run"].includes(body.mode) ? 20 * 60_000 : 600000),
             ]);
             await serveAiOperation(request, response, body, "generate", async () => {
               const source = await measureAiStage("preparation", () => loadSource(mainSource[1], signal));

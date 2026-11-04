@@ -208,3 +208,26 @@ test("failure classification never copies raw text", () => {
   ];
   for (const [input, expected] of cases) assert.equal(classifyCodexFailure(input), expected, JSON.stringify(input));
 });
+
+test("TXT mode sends the manual prompt as-is, adds no output schema and returns the raw reply", async () => {
+  const f = await fixture();
+  try {
+    const result = await f.bridge().analyzeWithCodexPlan(
+      { txtPrompt: "HELLO from the TXT file", stillsNote: "24 stills attached" },
+      undefined,
+      undefined,
+      { effort: "high", source: "owner-pin" },
+      [],
+    );
+    assert.equal(result.plan, undefined);
+    assert.equal(JSON.parse(result.text).answer, true);
+    const [call] = (await f.calls()).filter((c) => c.argv[0] === "exec");
+    assert.ok(!call.argv.includes("--output-schema"));
+    const prompt = await readFile(path.join(f.dir, "stdin.txt"), "utf8");
+    assert.match(prompt, /HELLO from the TXT file/);
+    assert.match(prompt, /24 stills attached/);
+    assert.ok(!call.argv.join(" ").includes("HELLO"), "prompt must not appear in argv");
+  } finally {
+    await f.cleanup();
+  }
+});

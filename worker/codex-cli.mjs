@@ -94,7 +94,7 @@ export function codexArguments({ model = ANALYSIS_MODEL, effort = ANALYSIS_REASO
     "--ignore-rules",
     "--color", "never",
     "-C", cwd,
-    "--output-schema", schemaFile,
+    ...(schemaFile ? ["--output-schema", schemaFile] : []),
     "-o", outputFile,
     ...images.map((file) => `--image=${file}`),
     "-",
@@ -200,6 +200,19 @@ export function codexPromptText({ instructions, content }) {
   ].join("\n");
 }
 
+/** Manual-flow TXT sent as-is: the same prompt a person would paste, answered with the same JSON. */
+export function codexTxtPromptText({ prompt, stillsNote = "" }) {
+  return [
+    "You are answering the editing request below exactly as you would in a web chat.",
+    "Do not run commands, edit files, browse or use any tool. Use only the text below and any attached images.",
+    ...(stillsNote ? [stillsNote] : []),
+    "Reply with the final JSON only, exactly in the format the request asks for.",
+    "",
+    "REQUEST:",
+    String(prompt ?? ""),
+  ].join("\n");
+}
+
 /** One worker-owned domain; mirrors the former ChatGPT transport contract. */
 export function createCodexCli(read = () => ({}), options = {}) {
   const { platform = process.platform, run = runProcess, resolve = resolveCodexBinary, now = Date.now } = options;
@@ -272,11 +285,14 @@ export function createCodexCli(read = () => ({}), options = {}) {
     const jobDir = await mkdtemp(path.join(tmp || tmpdir(), "codex-job-"));
     const started = performance.now();
     try {
-      const schemaFile = path.join(jobDir, "schema.json"), outputFile = path.join(jobDir, "out.json");
-      await writeFile(schemaFile, JSON.stringify(body.schema), { mode: 0o600 });
+      const rawTxt = typeof body.txtPrompt === "string";
+      const schemaFile = rawTxt ? undefined : path.join(jobDir, "schema.json"), outputFile = path.join(jobDir, "out.json");
+      if (schemaFile) await writeFile(schemaFile, JSON.stringify(body.schema), { mode: 0o600 });
       const args = codexArguments({ model, effort, schemaFile, outputFile, images, cwd: jobDir });
       const result = await run(binary, args, {
-        input: codexPromptText({ instructions: body.instructions, content: content || body.input }),
+        input: rawTxt
+          ? codexTxtPromptText({ prompt: body.txtPrompt, stillsNote: body.stillsNote })
+          : codexPromptText({ instructions: body.instructions, content: content || body.input }),
         cwd: jobDir,
         env: environment(),
         signal,
@@ -292,13 +308,17 @@ export function createCodexCli(read = () => ({}), options = {}) {
         throw providerError("PROVIDER_OUTPUT_JSON_INVALID", meta);
       }
       let plan;
-      try {
-        plan = JSON.parse(text.trim());
-      } catch {
-        throw providerError("PROVIDER_OUTPUT_JSON_INVALID", meta);
+      if (rawTxt) {
+        if (!text.trim()) throw providerError("PROVIDER_OUTPUT_JSON_INVALID", meta);
+      } else {
+        try {
+          plan = JSON.parse(text.trim());
+        } catch {
+          throw providerError("PROVIDER_OUTPUT_JSON_INVALID", meta);
+        }
       }
       return {
-        plan,
+        ...(rawTxt ? { text: text.trim() } : { plan }),
         model,
         reasoning: { requested: effort, actual: effort, source: reasoningPolicy?.source || "owner-pin" },
         serviceTier: { requested: "default", actual: "default" },

@@ -56,6 +56,29 @@ export function createAnalysisService(read) {
     }
   }
 
+  /**
+   * ChatGPT Auto = the manual web flow without the hands: the exact TXT the person would
+   * attach is sent to Codex (with evenly sampled stills standing in for the video) and the
+   * raw reply goes back to the same JSON importer. Nothing is interpreted here.
+   */
+  async function runCodexTxt(source, body, signal) {
+    signal?.throwIfAborted();
+    if (typeof body.prompt !== "string" || !body.prompt.trim() || body.prompt.length > 3_000_000)
+      throw Error("Thiếu hoặc quá lớn nội dung TXT gửi Codex.");
+    let stills;
+    try {
+      stills = await read().coverageFrames.frames(source, { signal });
+    } catch {
+      signal?.throwIfAborted();
+    }
+    const images = stills?.images?.map((image) => image.file) || [];
+    const stillsNote = stills?.manifest
+      ? `The video itself cannot be attached here. ${coverageManifestText(stills.manifest)}`
+      : "The video cannot be attached here and no stills were available: work from the text evidence only.";
+    const result = await analyzeWithChatGPTPlan({ txtPrompt: body.prompt, stillsNote }, signal, undefined, undefined, images);
+    return { text: result.text, model: result.model, usage: result.usage, stills: images.length };
+  }
+
   const sourceDigests = new Map();
 
   async function hookSourceFingerprint(source, signal) {
@@ -398,6 +421,7 @@ export function createAnalysisService(read) {
   }
   return {
     analyzeWithChatGPTPlan,
+    runCodexTxt,
     finalizeImportedTeasers,
     hookSourceFingerprint,
     mainAnalysisInputs,

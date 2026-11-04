@@ -11,6 +11,8 @@ import { effectiveCaptionTrack, type CaptionTrack } from "@/lib/subtitles.mjs";
 import { effectiveCutPlan } from "@/worker/part-start.mjs";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+/** ChatGPT Auto runs the ChatGPT web flow itself, so it speaks as the web provider. */
+const webProviderOf = (provider: AiProvider): AiProvider => (provider === "chatgpt" ? "chatgpt-web" : provider);
 type State = {
   analysisRequests: RefObject<{
     begin(): { serial: number; controller: AbortController };
@@ -120,7 +122,7 @@ export function createWebAiActions(read: () => State) {
 
     const requestedRevision = currentWebRevision.current;
     const selectionEpoch = sourceSelectionEpoch.current;
-    if (!isWebAi || webAiPending.current) {
+    if ((!isWebAi && provider !== "chatgpt") || webAiPending.current) {
       if (throwOnError) throw Error("Đang có tác vụ chuẩn bị khác.");
       return;
     }
@@ -154,7 +156,7 @@ export function createWebAiActions(read: () => State) {
           mode: "context",
           progress: true,
           requestId,
-          provider,
+          provider: webProviderOf(provider),
           transcript: content,
           instruction,
           supplementalPrompt,
@@ -214,7 +216,7 @@ export function createWebAiActions(read: () => State) {
         transcript: content,
         instruction,
         supplementalPrompt,
-        provider,
+        provider: webProviderOf(provider),
         requestId,
         analysisKey: prepared.analysisKey,
         lockedPlan,
@@ -241,7 +243,7 @@ export function createWebAiActions(read: () => State) {
       }
     }
   }
-  async function applyWebAiResult() {
+  async function applyWebAiResult(auto?: { context: WebAiContext; raw: string }) {
     const {
       analysisRequests,
       currentWebRevision,
@@ -283,9 +285,14 @@ export function createWebAiActions(read: () => State) {
     setIsAnalyzing(true);
     try {
       if (!preparedSource) throw new Error("Chuẩn bị source của video trước khi nhập JSON.");
-      const context = webAiContext;
-      const raw = webAiResult;
-      if (!context || !webAiPromptIsCurrent || context.sourceId !== preparedSource.id || context.provider !== provider)
+      const context = auto?.context ?? webAiContext;
+      const raw = auto?.raw ?? webAiResult;
+      if (
+        !context ||
+        (!auto && !webAiPromptIsCurrent) ||
+        context.sourceId !== preparedSource.id ||
+        context.provider !== webProviderOf(provider)
+      )
         throw new Error(webAiContextIssue || "Source/provider không khớp lượt TXT hiện tại.");
       if (!context.media) throw Error("Thiếu định danh video nguồn của lượt phân tích.");
       const identity = hookIdentity;
@@ -295,7 +302,7 @@ export function createWebAiActions(read: () => State) {
         analysisKey: context.analysisKey,
         lockedPlan: context.lockedPlan,
       });
-      const normalized = normalizePlan(imported, provider);
+      const normalized = normalizePlan(imported, webProviderOf(provider));
       const refined = {
         ...normalized,
         parts: normalized.parts.map((p, i) => {
@@ -470,7 +477,56 @@ export function createWebAiActions(read: () => State) {
       );
     }
   }
-  return { changeProvider, editSupplementalPrompt, createWebAiPrompt, applyWebAiResult, downloadWebAiPrompt };
+  /** Same steps as the manual flow: build the TXT, hand it to the AI, import the JSON reply. */
+  async function runCodexAuto() {
+    const { analysisRequests, preparedSource, setIsAnalyzing, setWebAiError, setWebAiNotice, setWebAiPhase, setWebAiPreparationLabel, setWebAiStartedAt, sourceSelectionEpoch, webAiPending } =
+      read();
+    if (webAiPending.current) return;
+    const made = await createWebAiPrompt(true).catch((error: unknown) => {
+      setWebAiError(error instanceof Error ? error.message : "Không tạo được TXT.");
+      return undefined;
+    });
+    const source = read().preparedSource || preparedSource;
+    if (!made || !source) return;
+    const selectionEpoch = sourceSelectionEpoch.current;
+    const ticket = analysisRequests.current.begin();
+    const signal = ticket.controller.signal;
+    webAiPending.current = true;
+    setWebAiPhase("prompt");
+    setWebAiStartedAt(Date.now());
+    setWebAiPreparationLabel("Gửi TXT + khung hình cho Codex");
+    setWebAiError("");
+    setWebAiNotice("");
+    setIsAnalyzing(true);
+    let raw = "";
+    try {
+      const response = await workerFetch(`/api/sources/${source.id}/auto-cut`, {
+        method: "POST",
+        signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "codex-run", progress: true, requestId: made.context.requestId, prompt: made.prompt }),
+      });
+      const data = await readAiOperation<{ text?: string }>(
+        response,
+        () => undefined,
+        (value) => ({ text: typeof value.text === "string" ? value.text : undefined }),
+      );
+      if (!response.ok || !data.text) throw new Error(data.error || "Codex không trả về kết quả.");
+      raw = data.text;
+    } catch (caughtError) {
+      if (analysisRequests.current.isCurrent(ticket) && selectionEpoch === sourceSelectionEpoch.current)
+        setWebAiError(caughtError instanceof Error ? caughtError.message : "Codex không trả về kết quả.");
+    } finally {
+      if (analysisRequests.current.isCurrent(ticket)) {
+        webAiPending.current = false;
+        setWebAiPhase(null);
+        setIsAnalyzing(false);
+        analysisRequests.current.finish(ticket);
+      }
+    }
+    if (raw && selectionEpoch === sourceSelectionEpoch.current) await applyWebAiResult({ context: made.context, raw });
+  }
+  return { changeProvider, editSupplementalPrompt, createWebAiPrompt, applyWebAiResult, downloadWebAiPrompt, runCodexAuto };
 }
 
 /** Event handlers read the latest committed reader, never refs during render. */
@@ -504,8 +560,13 @@ export function useWebAiActions(read: () => State) {
       createWebAiActions(readerRef.current).downloadWebAiPrompt(...args),
     [],
   );
+  const runCodexAuto = useCallback(
+    (...args: Parameters<ReturnType<typeof createWebAiActions>["runCodexAuto"]>) =>
+      createWebAiActions(readerRef.current).runCodexAuto(...args),
+    [],
+  );
   return useMemo(
-    () => ({ changeProvider, editSupplementalPrompt, createWebAiPrompt, applyWebAiResult, downloadWebAiPrompt }),
-    [changeProvider, editSupplementalPrompt, createWebAiPrompt, applyWebAiResult, downloadWebAiPrompt],
+    () => ({ changeProvider, editSupplementalPrompt, createWebAiPrompt, applyWebAiResult, downloadWebAiPrompt, runCodexAuto }),
+    [changeProvider, editSupplementalPrompt, createWebAiPrompt, applyWebAiResult, downloadWebAiPrompt, runCodexAuto],
   );
 }
