@@ -156,6 +156,7 @@ type Props = {
   restoreBlocked: boolean;
   restorePreservedDraft: (key: string) => Promise<void>;
   deletePreservedDraft: (key: string) => Promise<void>;
+  clearPreservedDrafts: () => Promise<void>;
   retainedSourceId: string;
   reviewVisible: boolean;
   saveError: string;
@@ -326,6 +327,7 @@ export function StudioView({
   restoreBlocked,
   restorePreservedDraft,
   deletePreservedDraft,
+  clearPreservedDrafts,
   retainedSourceId,
   reviewVisible,
   saveError,
@@ -416,6 +418,7 @@ export function StudioView({
               drafts={preservedDrafts}
               onOpen={restorePreservedDraft}
               onDelete={deletePreservedDraft}
+              onClearAll={clearPreservedDrafts}
               disabled={!sessionReady}
             />
           }

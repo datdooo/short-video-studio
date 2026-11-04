@@ -7,29 +7,32 @@ export function PreservedDrafts({
   drafts,
   onOpen,
   onDelete,
+  onClearAll,
   disabled = false,
 }: {
   drafts: { key: string; label: string }[];
   onOpen: (key: string) => Promise<void>;
   onDelete: (key: string) => Promise<void>;
+  onClearAll: () => Promise<void>;
   disabled?: boolean;
 }) {
   const pending = useRef(false);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
-  async function act(key: string, remove: boolean) {
+  async function run(action: () => Promise<void>, reopen: boolean) {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
     setOpen(false);
     try {
-      await (remove ? onDelete(key) : onOpen(key));
+      await action();
     } finally {
       pending.current = false;
       setBusy(false);
-      if (remove) setOpen(true);
+      if (reopen) setOpen(true);
     }
   }
+  const act = (key: string, remove: boolean) => run(() => (remove ? onDelete(key) : onOpen(key)), remove);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -38,7 +41,7 @@ export function PreservedDrafts({
           className="studio-session-drafts"
           disabled={disabled || busy}
           aria-label={`Bản nháp đã giữ (${drafts.length})`}
-          title="Mở hoặc xóa bản nháp đã giữ"
+          title="Mở, xóa hoặc xóa tất cả bản nháp đã giữ"
         >
           <Files size={14} aria-hidden="true" />
           Bản nháp
@@ -75,6 +78,19 @@ export function PreservedDrafts({
               </li>
             ))}
           </ul>
+        )}
+        {drafts.length > 0 && (
+          <div className="studio-preserved-drafts-footer">
+            <Button
+              variant="destructive"
+              type="button"
+              disabled={busy}
+              onClick={() => void run(onClearAll, true)}
+            >
+              <Trash2 size={14} aria-hidden="true" />
+              Xóa tất cả ({drafts.length})
+            </Button>
+          </div>
         )}
       </PopoverContent>
     </Popover>

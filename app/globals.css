@@ -4061,6 +4061,13 @@ textarea {
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
+.studio-preserved-drafts-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
 .studio-preserved-drafts button {
   display: inline-flex;
   align-items: center;

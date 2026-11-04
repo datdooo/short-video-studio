@@ -203,3 +203,26 @@ export function preparePreservedEditorSessionDeletion(key: string): () => string
     }
   };
 }
+
+// Clear-all uses the same rule as single deletion: capture the exact archive before asking, and refuse
+// if anything was added or changed (for example from another tab) while the dialog was open.
+export function preparePreservedEditorSessionsClear(): { count: number; clear: () => string } {
+  const snapshot = readPreservedSessions().entries.map((entry) => JSON.stringify(entry));
+  return {
+    count: snapshot.length,
+    clear: () => {
+      try {
+        const archive = readPreservedSessions();
+        if (archive.entries.length !== snapshot.length || archive.entries.some((entry, index) => JSON.stringify(entry) !== snapshot[index]))
+          return "Kho bản nháp đã thay đổi; chưa xóa. Mở lại danh sách rồi thử lại.";
+        const json = JSON.stringify({ ...archive, entries: [] });
+        localStorage.setItem(PRESERVED_SESSION_KEY, json);
+        if (localStorage.getItem(PRESERVED_SESSION_KEY) !== json)
+          return "Chưa xác nhận được việc xóa bản nháp. Kiểm tra lại danh sách.";
+        return "";
+      } catch {
+        return "Không xóa được bản nháp; bộ nhớ local không khả dụng.";
+      }
+    },
+  };
+}
