@@ -1,4 +1,4 @@
-Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/CODEX-CLI-AUTO-PROMPT.md.
+Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/AI_PROVIDERS.md.
 
 # Teaser: evidence, xếp hạng và quyền chỉnh tay — 2026-10-21
 
