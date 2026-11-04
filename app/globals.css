@@ -1915,8 +1915,9 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 .studio-main-range-row {
+  /* Header and rows are separate grids: use definite widths so the columns line up. */
   grid-template-columns:
-    var(--timeline-index-size) minmax(min-content, var(--timeline-timecode-width)) minmax(min-content, var(--timeline-timecode-width))
+    var(--timeline-index-size) 9.5rem 9.5rem
     minmax(6rem, max-content);
   column-gap: var(--timeline-column-gap);
 }
