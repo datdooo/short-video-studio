@@ -169,7 +169,7 @@ export function TeaserCandidateReview({
     >
       <header className="studio-teaser-review-heading">
         <div>
-          <strong>Ứng viên teaser</strong>
+          <strong>Teaser</strong>
           <span>
             Part {part.id} · {choices.length} phương án
           </span>

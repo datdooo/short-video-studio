@@ -238,7 +238,7 @@
     height: 100%;
     min-width: 0;
     min-height: 0;
-    padding: var(--space-2);
+    padding: var(--panel-padding);
     overflow: hidden;
     border-radius: var(--card-radius);
     background: var(--panel);
@@ -254,7 +254,8 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-2);
-    padding: 0 0 6px;
+    padding: 0 0 var(--space-2);
+    line-height: 1.1;
   }
   .studio-teaser-review[data-has-choice="false"] .studio-teaser-review-heading {
     grid-column: 1;
