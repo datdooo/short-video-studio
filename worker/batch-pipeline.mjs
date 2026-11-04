@@ -26,7 +26,7 @@ export function createBatchProcessor({acquire,load,analyze,repairTeasers,render,
         if(!item.plan||item.needsAnalysis){
           if(['gemini','muse','chatgpt-web'].includes(settings.provider)){item.state='awaiting-import';item.error=null;await persist();continue;}
           item.state='analyzing';await persist();
-          const result=await analyze(source,{transcript:source.transcript||'',instruction:settings.instruction||'',supplementalPrompt:settings.supplementalPrompt||'',...(item.plan?.parts?.some(p=>p.manualLocked)?{currentPlan:item.plan}:{})},signal);
+          const result=await analyze(source,{...(settings.provider==='chatgpt'?{mode:'codex-auto'}:{}),transcript:source.transcript||'',instruction:settings.instruction||'',supplementalPrompt:settings.supplementalPrompt||'',...(item.plan?.parts?.some(p=>p.manualLocked)?{currentPlan:item.plan}:{})},signal);
           signal.throwIfAborted();
           item.plan=snapshotPlanVisualStyle({...result.plan,visualStyle:settings.visualStyle,subtitles:settings.subtitles,music:settings.music,...(settings.hookTransition?{hookTransition:settings.hookTransition}:{})});
           item.checkpoint='plan';item.needsAnalysis=false;

@@ -11,11 +11,31 @@ import {assertMainLocks} from '../lib/auto-cut/locks.mjs';
 import {isLaterHookPolicy,TEASER_POLICY,hookRangeKey,unavailableHook,validateTeaser,mainRanges} from '../lib/teaser-hooks.mjs';
 import {validatePlan} from './plan-validation.mjs';
 import {stat} from 'node:fs/promises';
+import {randomUUID} from 'node:crypto';
+import {buildMusePrompt,parseMusePlan} from '../lib/muse-plan.mjs';
 // One orchestration path for single-source Auto, external context/import and batch.
-export function createAutoCutWorkflow({prepareInputs,runCodexTxt,mainContent,selectHooks,verifyPreservedTeasers,describeWebVideo,externalSnapshots}) {
+export function createAutoCutWorkflow({prepareInputs,runCodexTxt,finalizeImported,mainContent,selectHooks,verifyPreservedTeasers,describeWebVideo,externalSnapshots}) {
   return async function analyze(source,body={},signal){
     signal?.throwIfAborted();
     if(body.mode==='codex-run')return runCodexTxt(source,body,signal);
+    if(body.mode==='codex-auto'){
+      // Batch Auto = the manual web flow end to end, without a person: TXT -> Codex -> JSON -> the same importer.
+      const requestId=randomUUID(),transcript=String(body.transcript??source.transcript??'');
+      const base={provider:'chatgpt-web',requestId,transcript,instruction:body.instruction||'',supplementalPrompt:body.supplementalPrompt||'',currentPlan:body.currentPlan};
+      const {context:external}=await analyze(source,{...base,mode:'context'},signal);
+      const {EDIT_PLAN_SCHEMA,normalizePlan}=await import('../lib/edit-plan.ts');
+      const prompt=buildMusePrompt('',EDIT_PLAN_SCHEMA,source,{requestId,analysisKey:external.analysisKey,context:external});
+      const reply=await runCodexTxt(source,{prompt},signal);
+      const imported=parseMusePlan(reply.text,source,'ChatGPT',{requestId,analysisKey:external.analysisKey,lockedPlan:body.currentPlan});
+      const normalized=normalizePlan(imported,'chatgpt-web');
+      const plan={...normalized,parts:normalized.parts.map(part=>({...part,smartCutApplied:true})),captionCues:external.captionTrack};
+      const video=external.attachments.sourceVideo;
+      const imports=await analyze(source,{...base,mode:'import',sourceId:source.id,analysisKey:external.analysisKey,captionCues:external.captionTrack,
+        attachmentConfirmation:{attached:true,sourceId:source.id,requestId,analysisKey:external.analysisKey,mediaId:video.id,sourceKey:video.sourceKey,method:'manual-import'},
+        hookSelections:imported.hookSelections||[],plan},signal);
+      const finalized=await finalizeImported(imports.plan,source,transcript,signal,{instruction:base.instruction,supplementalPrompt:base.supplementalPrompt});
+      return{plan:finalized};
+    }
     let context,options,input,snapshot;
     if(body.mode==='import'&&externalSnapshots){
       if(!['gemini','muse','chatgpt-web'].includes(body.provider)||body.sourceId!==source.id||typeof body.requestId!=='string'||!/^[a-f0-9-]{16,64}$/i.test(body.requestId))throw new Error('External import source/request/provider mismatch.');

@@ -345,6 +345,7 @@ const autoCutWorkflow = createAutoCutWorkflow({
   externalSnapshots: createExternalPromptSnapshots(path.join(dataRoot, "cache", "external-prompt-snapshots")),
   prepareInputs: mainAnalysisInputs,
   runCodexTxt,
+  finalizeImported: finalizeImportedTeasers,
   mainContent,
   selectHooks: planTeasers,
   verifyPreservedTeasers: verifySourceTeasers,
