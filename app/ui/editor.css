@@ -232,9 +232,9 @@
   /* ── Teaser candidate review ───────────────────────────────────────────── */
   .studio-teaser-review {
     display: grid;
-    grid-template-columns: clamp(80px, calc((100cqh - 54px) * 9 / 16), 300px) minmax(0, 1fr);
+    grid-template-columns: clamp(180px, 42cqw, 300px) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto;
-    column-gap: var(--gap);
+    column-gap: var(--space-4);
     height: 100%;
     min-width: 0;
     min-height: 0;
@@ -279,7 +279,7 @@
     container-type: inline-size;
     grid-column: 1;
     grid-row: 1 / -1;
-    align-self: center;
+    align-self: start;
     min-width: 0;
     min-height: 0;
     max-height: 100%;
@@ -292,7 +292,7 @@
     display: grid;
     place-items: center;
     width: 100%;
-    aspect-ratio: 9 / 16;
+    aspect-ratio: 16 / 9;
     overflow: hidden;
     background: var(--media-background);
   }
@@ -366,7 +366,8 @@
     grid-row: 2;
     min-width: 0;
     min-height: 0;
-    padding: var(--space-2) 0;
+    margin-inline: calc(var(--space-2) * -1);
+    padding: var(--space-2);
     overflow: auto;
     overscroll-behavior: contain;
   }
@@ -376,13 +377,15 @@
     gap: 5px;
   }
   .studio-teaser-option {
+    width: calc(100% + 16px);
+    max-width: none;
+    margin-inline: -8px;
     border-color: transparent;
     background: transparent;
     display: flex;
     align-items: center;
     justify-content: flex-start;
     gap: var(--space-2);
-    width: 100%;
     min-height: 46px;
     padding: 6px var(--space-2);
     text-align: left;
@@ -426,7 +429,7 @@
     font-size: var(--text-caption);
   }
   .studio-teaser-review-reason {
-    padding: var(--space-2) 2px 0;
+    padding: var(--space-2) 0 0;
     color: var(--muted-foreground);
     line-height: 1.5;
     overflow-wrap: anywhere;
@@ -478,26 +481,36 @@
     margin: 0;
     font-size: var(--text-caption);
   }
-  @container (max-width: 440px) {
+  @container (max-width: 520px) {
+    /* Narrow panel: status joins the name line, the timecode keeps one full-width line below. */
     .studio-teaser-option {
       display: grid;
-      grid-template-columns: 22px minmax(0, 1fr);
-      align-items: start;
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      align-items: center;
+      column-gap: var(--space-2);
+      row-gap: 2px;
     }
     .studio-teaser-option-index {
       grid-column: 1;
       grid-row: 1 / span 2;
     }
     .studio-teaser-option-copy {
+      display: contents;
+    }
+    .studio-teaser-option-copy > strong {
       grid-column: 2;
+      grid-row: 1;
     }
     .studio-teaser-option-copy > span {
+      grid-column: 2 / -1;
+      grid-row: 2;
       overflow-wrap: normal;
       word-break: normal;
     }
     .studio-teaser-option-status {
-      grid-column: 2;
-      justify-content: flex-start;
+      grid-column: 3;
+      grid-row: 1;
+      justify-content: flex-end;
       min-width: 0;
     }
   }
