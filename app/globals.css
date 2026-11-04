@@ -4524,3 +4524,17 @@ textarea {
   border-color: var(--border);
   background: var(--panel);
 }
+
+/* Render list: the status chip already says what happened, so the "Render Part N · toàn tác vụ" /
+   "Đã lưu output" caption is dropped (kept for screen readers); finished jobs show no bar. */
+.prototype-shell .studio-render-list .studio-task-progress-label > span:first-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.prototype-shell .studio-render-list .studio-task-progress[data-task-state="done"] {
+  display: none;
+}
