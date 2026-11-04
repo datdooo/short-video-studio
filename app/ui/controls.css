@@ -528,8 +528,7 @@
   }
   [data-slot="inline-notice"] {
     padding: var(--panel-padding);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--notice-color, var(--muted-foreground));
+    border: 1px solid color-mix(in srgb, var(--notice-color, var(--border)) 45%, var(--border));
     border-radius: var(--control-radius);
     background: var(--surface);
     color: var(--foreground);

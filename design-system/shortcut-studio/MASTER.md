@@ -51,7 +51,7 @@ Caption 12/500 muted labels · control 13/500 · body 14 · title 14/600 · page
 
 ## Status and notices
 Chip: rectangle, transparent fill, tone colours text and a 30% border. Notice: `--surface` fill,
-neutral border, 3px tone bar on the left, body text stays foreground.
+1px border mixed 45% toward the tone colour, body text stays foreground. No side-stripe borders.
 
 ## Motion
 Colour/border/background 120ms. Nothing else animates. `prefers-reduced-motion` disables all.
