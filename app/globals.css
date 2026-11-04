@@ -4582,3 +4582,158 @@ textarea {
   border: 0;
   background: transparent;
 }
+
+/* ===== Design contract v2 — see design-system/shortcut-studio/MASTER.md =====
+   One state language (rest / hover / selected / disabled / destructive / focus), accent used only for
+   primary fill, selection, focus ring and progress. !important is intentional here: earlier per-area
+   rules each re-declared these states, and this block is the final word. */
+:root {
+  --surface-3: #2a2621;
+  --border-strong: #463e37;
+  --selected-border: color-mix(in srgb, var(--primary) 55%, var(--border));
+  --control-hover: var(--surface-3);
+  --status-radius: 6px;
+  --motion-fast: 120ms;
+}
+
+/* Selected: tinted fill + muted accent border, never an inset ring. */
+.prototype-shell
+  :is(
+    [data-state="active"]:is([data-slot="button"], [data-slot="tabs-trigger"]),
+    [aria-pressed="true"],
+    [aria-current="page"],
+    [aria-selected="true"],
+    .studio-panel-toggles [aria-expanded="true"]
+  ):not(:disabled) {
+  background-color: var(--selection-bg) !important;
+  border-color: var(--selected-border) !important;
+  color: var(--selection-text) !important;
+  box-shadow: none !important;
+}
+
+/* Hover on neutral controls: lift the fill, strengthen the border; orange is for selection only. */
+.prototype-shell
+  :is(button, a[download], a[href*="/outputs/"], .studio-download, [data-slot="select-trigger"]):where(
+    :not(
+      [aria-pressed="true"],
+      [data-state="active"],
+      [aria-current="page"],
+      [aria-selected="true"],
+      [data-variant="primary"],
+      [data-variant="destructive"],
+      .studio-primary
+    )
+  ):hover:not(:disabled) {
+  background-color: var(--surface-3) !important;
+  border-color: var(--border-strong) !important;
+}
+
+/* Destructive: same body as secondary, red text and a soft red border. */
+.prototype-shell
+  :is([data-slot="button"][data-variant="destructive"], button[class*="text-red-"]):not(:disabled) {
+  background-color: var(--panel) !important;
+  border-color: color-mix(in srgb, var(--destructive) 45%, var(--border)) !important;
+  color: var(--destructive) !important;
+}
+.prototype-shell
+  :is([data-slot="button"][data-variant="destructive"], button[class*="text-red-"]):hover:not(:disabled) {
+  background-color: var(--destructive-hover-background) !important;
+  border-color: var(--destructive) !important;
+}
+
+/* Disabled: every variant, primary included, is neutral. No muddy orange. */
+.prototype-shell :is(button, [data-slot="button"], .studio-primary):is(:disabled, [aria-disabled="true"]) {
+  background-color: var(--panel) !important;
+  border-color: var(--border) !important;
+  color: color-mix(in srgb, var(--foreground) 45%, var(--panel)) !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+/* Status chips: rectangle, neutral fill, tone colours text and a soft border. */
+[data-slot="status-chip"] {
+  background: transparent;
+  border-radius: var(--status-radius);
+}
+[data-slot="status-chip"]:is([data-tone="success"], [data-tone="warning"], [data-tone="error"]) {
+  border-color: color-mix(in srgb, currentColor 30%, var(--border));
+}
+
+/* Notices: neutral surface, tone only in the 3px left bar; body text stays readable. */
+:is(:root, .prototype-shell) [data-slot="inline-notice"] {
+  background: var(--surface);
+  color: var(--foreground);
+  border-color: var(--border);
+  border-left: 3px solid var(--notice-color);
+}
+:is(:root, .prototype-shell) [data-slot="inline-notice"] :is(.text-muted-foreground, .text-xs) {
+  color: var(--muted-foreground);
+}
+
+/* Raw Tailwind palette colours map to the tone tokens. */
+.prototype-shell :is(.text-amber-200, .text-amber-300) { color: var(--warning); }
+.prototype-shell :is(.text-emerald-300, .text-emerald-400) { color: var(--success); }
+.prototype-shell :is(.text-red-300, .text-red-400) { color: var(--destructive); }
+
+/* Sentence case everywhere. */
+.prototype-shell * {
+  text-transform: none !important;
+}
+.prototype-shell :is(h1, h2, h3, h4, h5, h6, p, label, legend, summary) {
+  letter-spacing: normal !important;
+}
+.prototype-shell .studio-timeline-scroll .studio-teaser-editor h4 {
+  font-size: var(--ui-text-section);
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* One transition for state changes; nothing else animates. */
+.prototype-shell :is(button, a, input, select, textarea, summary, [data-slot="tabs-trigger"]) {
+  transition:
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .prototype-shell * {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Menus: a focused item is a filled row; the selected item is marked by its check icon, not a ring. */
+:is([data-slot="select-content"], [data-slot="dropdown-menu-content"], [data-slot="popover-content"])
+  :is([role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]) {
+  outline: none !important;
+  border-color: transparent !important;
+  background-color: transparent !important;
+  color: var(--foreground) !important;
+}
+:is([data-slot="select-content"], [data-slot="dropdown-menu-content"], [data-slot="popover-content"])
+  :is([role="option"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]):is(
+    :focus,
+    :focus-visible,
+    [data-highlighted]
+  ) {
+  background-color: var(--surface-3) !important;
+}
+:is([data-slot="select-content"], [data-slot="dropdown-menu-content"], [data-slot="popover-content"])
+  :is([role="option"], [role="menuitemradio"])[aria-selected="true"],
+:is([data-slot="select-content"], [data-slot="dropdown-menu-content"], [data-slot="popover-content"])
+  [data-state="checked"] {
+  color: var(--selection-text) !important;
+}
+
+.studio-count { border-radius: var(--status-radius); }
+
+/* Disclosures: hover and open stay neutral (text foreground, chevron muted); accent is for selection. */
+.prototype-shell details > summary:hover,
+.prototype-shell .studio-source-panel .studio-source-disclosure-trigger:hover,
+.prototype-shell .studio-source-panel .studio-ai-instructions > .studio-source-disclosure-trigger[aria-expanded="true"] {
+  color: var(--foreground) !important;
+  border-color: var(--border-strong) !important;
+}
+.prototype-shell details > summary:hover::after {
+  background: var(--foreground);
+}

@@ -400,7 +400,7 @@ export function InspectorView({ model }: { model: Props }) {
           <div className="studio-card">
             <div className="studio-field-header flex items-center justify-between gap-3">
               <label htmlFor="final-title" className="field-label">
-                TITLE SAU CÙNG
+                Title sau cùng
               </label>
               <CopyButton
                 text={`${plan.originalTitle} | ${activePart.title} (${activePart.id}/${plan.parts.length})\n\n${activePart.hashtags.join(" ")}`}

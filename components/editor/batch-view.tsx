@@ -251,7 +251,7 @@ export function BatchView({ model }: { model: Props }) {
             <div className="studio-batch-item-list mt-3 max-h-[480px] space-y-3 overflow-y-auto">
               {[...(batch ? [batch] : []), ...pastBatches.filter((group) => group.id !== batch?.id)].map((group) => (
                 <div key={group.id} className="space-y-3">
-                  <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                  <p className="text-xs font-medium text-muted-foreground">
                     {group.id === batch?.id ? "Hàng đợi hiện tại" : "Video đã xử lý trước đó"}
                   </p>
                   <BatchProgress items={group.items.filter((item) => !deletedBatchItems.current.has(item.id))} />
@@ -410,7 +410,7 @@ export function BatchView({ model }: { model: Props }) {
                         )}
                         {item.plan?.parts.map((part) => (
                           <div key={part.id} className="mt-3">
-                            <p className="text-xs text-muted-foreground">TITLE SAU CÙNG · Part {part.id}</p>
+                            <p className="text-xs text-muted-foreground">Title sau cùng · Part {part.id}</p>
                             <p className="mt-1 break-words select-text text-xs leading-5">
                               {item.plan!.originalTitle} | {part.title} ({part.id}/{item.plan!.parts.length})
                             </p>

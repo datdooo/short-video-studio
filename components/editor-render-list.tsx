@@ -189,7 +189,7 @@ export function EditorRenderList({
                   return (
                     <Panel as="div" padding="sm" key={part.id}>
                       <p className="text-xs font-semibold tracking-wider text-muted-foreground">
-                        TITLE SAU CÙNG · PART {part.id}
+                        Title sau cùng · Part {part.id}
                       </p>
                       <p className="mt-2 select-text break-words text-sm leading-6 text-foreground">{title}</p>
                       <p className="mt-2 select-text text-xs leading-6 text-muted-foreground [overflow-wrap:anywhere]">
