@@ -2,7 +2,7 @@
 
 ## Codex CLI
 
-**ChatGPT Auto · Terra high** chạy qua Codex CLI do người dùng tự cài riêng, không đóng gói trong app. Sau khi cài, chạy `codex login` trong Terminal. `worker/codex-cli.mjs` gọi `codex exec` với model `gpt-6.1-terra`, reasoning `high`; nếu model bị từ chối thì báo lỗi, không tự đổi model. Không cần API key riêng cho luồng này. Quyền sử dụng và quota phụ thuộc tài khoản Codex.
+**ChatGPT Auto · Terra medium** chạy qua Codex CLI do người dùng tự cài riêng, không đóng gói trong app. Sau khi cài, chạy `codex login` trong Terminal. `worker/codex-cli.mjs` gọi `codex exec` với model `gpt-6.1-terra`, reasoning `medium`; nếu model bị từ chối thì báo lỗi, không tự đổi model. Không cần API key riêng cho luồng này. Quyền sử dụng và quota phụ thuộc tài khoản Codex.
 
 - `SHORTCUT_CODEX_BIN`: đường dẫn tuyệt đối tới binary `codex`; dùng khi worker không tìm thấy CLI.
 - `SHORTCUT_CODEX_TIMEOUT_MS`: thời gian chờ tối đa mỗi lần gọi, tính bằng mili giây.
@@ -37,7 +37,7 @@ Mock tạo plan mẫu trên máy, không gọi AI. Manual cut bỏ qua toàn b�
 
 Trong Editor, **ChatGPT Auto** chạy đúng quy trình của chế độ web thủ công, chỉ bỏ thao tác tay:
 tạo cùng TXT (cùng prompt, tín hiệu, 3 ứng viên teaser mỗi part) → gửi nguyên văn cho Codex
-(`gpt-6.1-terra`, `high`) kèm tối đa 300 khung hình phân bố đều (khoảng 1 ảnh/5 giây) (Codex không nhận được file video) →
+(`gpt-6.1-terra`, `medium`) kèm tối đa 300 khung hình phân bố đều (khoảng 1 ảnh/5 giây) (Codex không nhận được file video) →
 nhận JSON thô → nhập qua đúng bộ nhập JSON thủ công (`provider: chatgpt-web`). Worker: `auto-cut` mode
 `codex-run` (`runCodexTxt` trong `worker/analysis-service.mjs`, chế độ `txtPrompt` của `worker/codex-cli.mjs`).
 Hàng loạt (Batch) vẫn dùng pipeline Auto phía worker cũ.

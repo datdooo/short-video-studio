@@ -113,7 +113,7 @@ export function BatchView({ model }: { model: Props }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="chatgpt">ChatGPT Auto · Terra high</SelectItem>
+                <SelectItem value="chatgpt">ChatGPT Auto · Terra medium</SelectItem>
                 <SelectItem value="chatgpt-web" disabled>
                   ChatGPT web · từng video
                 </SelectItem>

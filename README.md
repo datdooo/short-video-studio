@@ -13,7 +13,7 @@ Build trên macOS/Linux bằng `npm run package:windows`. Kết quả nằm tron
 
 Personal tool để biến video dài thành 2 video dọc 1080×1920. App có hai chế độ chọn nội dung:
 
-- **AI plan**: ChatGPT Auto · Sol low qua Codex CLI (`gpt-6.1-terra`, reasoning `high`), hoặc dùng mock mode.
+- **AI plan**: ChatGPT Auto · Terra medium qua Codex CLI (`gpt-6.1-terra`, reasoning `medium`), hoặc dùng mock mode.
 - **Manual cut**: nhập timestamp trực tiếp, không gọi AI và không cần subtitle.
 
 Sau khi cắt/ghép, worker dựng background blur, giữ main video ở native 100% và center-crop phần tràn ngang, thêm typography social-video, rồi mới tăng tốc video + audio lên 1.25×.
@@ -77,7 +77,7 @@ Edit plan luôn lưu timestamp gốc. Ví dụ source cut 10 giây sẽ còn kho
 
 ## ChatGPT plan — không cần API key
 
-Cài Codex CLI riêng và chạy `codex login` trong Terminal trước khi chọn **ChatGPT Auto · Terra high**. Worker gọi `codex exec` qua `worker/codex-cli.mjs`, dùng model `gpt-6.1-sol`, reasoning `low`; app không còn luồng đăng nhập OAuth hay kho credential ChatGPT riêng. Không muốn dùng AI thì chọn Mock hoặc Manual cut.
+Cài Codex CLI riêng và chạy `codex login` trong Terminal trước khi chọn **ChatGPT Auto · Terra medium**. Worker gọi `codex exec` qua `worker/codex-cli.mjs`, dùng model `gpt-6.1-sol`, reasoning `low`; app không còn luồng đăng nhập OAuth hay kho credential ChatGPT riêng. Không muốn dùng AI thì chọn Mock hoặc Manual cut.
 
 Bước chọn MAIN nhận text và tối đa 300 khung hình (khoảng 1 ảnh/5 giây) lấy mẫu đều phủ toàn video (`worker/coverage-frames.mjs`, `lib/frame-rules.mjs`); chọn teaser vẫn chỉ nhận text. Đây là các khung hình thưa, không phải xem video liên tục và không có âm thanh. Ba chế độ thủ công Gemini, ChatGPT web, Muse giữ nguyên workflow; TXT hiện tại là v24 (`lib/txt-signals.mjs`), dùng chuỗi số dạng cột, `cutPoints`, `timeMap`, `signalAvailability` và vẫn import được v19–v23.
 

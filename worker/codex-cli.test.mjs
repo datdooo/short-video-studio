@@ -59,7 +59,7 @@ test("argv is fixed: prompt never on the command line, images by --image=, '-' l
   const args = codexArguments({ schemaFile: "/j/s.json", outputFile: "/j/o.json", images: ["/j/a.png", "/j/b.png"], cwd: "/j" });
   assert.equal(args[0], "exec");
   assert.deepEqual(args.slice(args.indexOf("-m"), args.indexOf("-m") + 2), ["-m", "gpt-6.1-terra"]);
-  assert.ok(args.includes('model_reasoning_effort="high"'));
+  assert.ok(args.includes('model_reasoning_effort="medium"'));
   for (const flag of ["--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "--output-schema", "-o", "-C"])
     assert.ok(args.includes(flag), flag);
   assert.ok(args.includes("--image=/j/a.png") && args.includes("--image=/j/b.png"));
@@ -98,7 +98,7 @@ test("status reports installed/logged-in without throwing", async () => {
   const f = await fixture();
   try {
     const bridge = f.bridge();
-    assert.deepEqual(await bridge.status(), { installed: true, loggedIn: true, version: "9.9.9", model: "gpt-6.1-terra", reasoning: "high" });
+    assert.deepEqual(await bridge.status(), { installed: true, loggedIn: true, version: "9.9.9", model: "gpt-6.1-terra", reasoning: "medium" });
     await f.mode("logged-out");
     assert.equal((await bridge.status({ force: true })).loggedIn, false);
     await assert.rejects(bridge.ensureCodexReady(), (e) => e.code === "PROVIDER_AUTH" && /codex login/.test(e.message));
@@ -117,7 +117,7 @@ test("analyze returns the schema JSON, uses the real home, cleans its job direct
       { schema: { type: "object" }, instructions: "Be precise" },
       undefined,
       [{ type: "input_text", text: "HELLO world" }],
-      { effort: "high", source: "owner-pin" },
+      { effort: "medium", source: "owner-pin" },
     );
     assert.deepEqual(result.plan, { answer: true });
     assert.equal(result.model, "gpt-6.1-terra");
@@ -141,7 +141,7 @@ test("model and reasoning are pinned, never switched", async () => {
   try {
     const bridge = f.bridge();
     await assert.rejects(bridge.analyzeWithCodexPlan({ model: "other", schema: {} }, undefined, "x"), /MODEL_UNAVAILABLE/);
-    await assert.rejects(bridge.analyzeWithCodexPlan({ schema: {} }, undefined, "x", { effort: "low" }), (e) => e.code === "REASONING_CONFIGURATION");
+    await assert.rejects(bridge.analyzeWithCodexPlan({ schema: {} }, undefined, "x", { effort: "high" }), (e) => e.code === "REASONING_CONFIGURATION");
     assert.deepEqual((await f.calls()).filter((c) => c.argv[0] === "exec"), []);
   } finally {
     await f.cleanup();
@@ -216,7 +216,7 @@ test("TXT mode sends the manual prompt as-is, adds no output schema and returns 
       { txtPrompt: "HELLO from the TXT file", stillsNote: "24 stills attached" },
       undefined,
       undefined,
-      { effort: "high", source: "owner-pin" },
+      { effort: "medium", source: "owner-pin" },
       [],
     );
     assert.equal(result.plan, undefined);

@@ -351,7 +351,7 @@ export function SourceView({ model }: { model: Props }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper" align="start">
-                <SelectItem value="chatgpt">ChatGPT Auto · Terra high</SelectItem>
+                <SelectItem value="chatgpt">ChatGPT Auto · Terra medium</SelectItem>
                 <SelectItem value="chatgpt-web">ChatGPT</SelectItem>
                 <SelectItem value="gemini">Gemini</SelectItem>
                 <SelectItem value="muse">Muse</SelectItem>
@@ -577,7 +577,7 @@ export function SourceView({ model }: { model: Props }) {
                   </p>
                   <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
                     {chatGPTSession?.sharing
-                      ? `${chatGPTSession.model || "gpt-6.1-terra"} · ${chatGPTSession.reasoning || "high"} · text + khung hình`
+                      ? `${chatGPTSession.model || "gpt-6.1-terra"} · ${chatGPTSession.reasoning || "medium"} · text + khung hình`
                       : chatGPTSession
                         ? "Cài Codex rồi chạy `codex login` trong Terminal"
                         : "Chưa kiểm tra được Codex"}
