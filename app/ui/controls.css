@@ -134,6 +134,8 @@
 
   /* Sample tiles (templates, filters, backgrounds, overlays, text styles): a button wrapping artwork + label. */
   [data-ui-exception="sample-card"] {
+    display: block;
+    align-self: start;
     min-width: 0;
     padding: 0;
     border: 0;
@@ -370,21 +372,17 @@
   .studio-inspector-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0;
-    width: 100%;
-    min-height: 0;
-    padding: 0;
-    border: 0;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
-    background: var(--surface);
+    gap: 2px;
+    width: calc(100% - 2 * var(--panel-padding));
+    margin: var(--panel-padding) var(--panel-padding) 0;
+    /* The halo repaints the panel colour around the sticky group so scrolled content never shows through. */
+    box-shadow: 0 0 0 var(--panel-padding) var(--surface);
   }
   .studio-inspector-tabs [data-slot="tabs-trigger"] {
     width: 100%;
     min-width: 0;
     padding: 0 6px;
     justify-content: center;
-    border-radius: 0;
   }
   .studio-library-tabs {
     display: flex;
@@ -466,8 +464,9 @@
     margin-inline: 12px;
     max-width: calc(100% - 24px);
   }
-  details.studio-section > :last-child:not(summary) {
-    margin-bottom: 12px;
+  /* Padding, not a last-child margin: the margin collapses out of the card and the content touches its edge. */
+  details.studio-section[open] {
+    padding-bottom: var(--panel-padding);
   }
   details.studio-section > :is(textarea, input, select, .studio-textarea, [data-slot="textarea"], [data-slot="input"]) {
     width: calc(100% - 24px);

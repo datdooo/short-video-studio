@@ -86,6 +86,8 @@
     margin-inline-start: var(--space-1);
   }
   .studio-header-status .studio-draft-count {
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
     min-width: 20px;
     height: 20px;
@@ -217,7 +219,7 @@
   }
   .studio-inspector-tabs {
     position: sticky;
-    top: 0;
+    top: var(--panel-padding);
     z-index: var(--layer-sticky);
   }
 
