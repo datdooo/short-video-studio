@@ -74,7 +74,7 @@ export function OverlayPanel({
           </button>
         ))}
       </div>
-      <label htmlFor="overlay-opacity" className="mt-3 flex justify-between text-xs">
+      <label htmlFor="overlay-opacity" className="field-label mt-3 flex justify-between">
         <span>Opacity</span>
         <output>{Math.round((overlays[0]?.opacity ?? 0) * 100)}%</output>
       </label>

@@ -58,9 +58,9 @@ function DialogContent({
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close asChild>
-            <Button variant="icon" size="icon" tooltip="Đóng hộp thoại · Esc" className="absolute top-4 right-4">
+            <Button variant="icon" size="icon" className="absolute top-4 right-4">
               <XIcon />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">Đóng hộp thoại (Esc)</span>
             </Button>
           </DialogPrimitive.Close>
         )}

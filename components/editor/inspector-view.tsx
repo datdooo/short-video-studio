@@ -414,7 +414,7 @@ export function InspectorView({ model }: { model: Props }) {
               className="studio-textarea mt-2 min-h-[64px] text-sm leading-6"
             />
 
-            <p className="mt-4 text-xs font-semibold text-zinc-300">
+            <p className="field-label mt-4">
               Hashtag của Part {activePart.id} · {activePart.hashtags.length}/10
             </p>
             {activePart.hashtags.length > 0 ? (

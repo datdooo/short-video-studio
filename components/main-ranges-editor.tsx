@@ -99,7 +99,7 @@ export function MainRangesEditor({
           <h4 className="font-semibold">Nội dung chính</h4>
         </div>
         <div
-          className="studio-main-range-row grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_4.5rem] gap-1.5 text-xs text-zinc-500"
+          className="studio-main-range-row grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_4.5rem] gap-1.5 field-label"
           aria-hidden="true"
         >
           <span>Đoạn</span>

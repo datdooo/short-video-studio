@@ -309,7 +309,7 @@ export function SourceView({ model }: { model: Props }) {
             Tiêu đề gốc
           </label>
           {sourceMode === "youtube" && (
-            <span className="flex items-center gap-1.5 text-xs text-zinc-600">
+            <span className="field-label flex items-center gap-1.5">
               {youtubeState === "loading" ? (
                 <Loader2 className="size-3 animate-spin" />
               ) : youtubeState === "ready" ? (

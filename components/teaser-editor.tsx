@@ -472,7 +472,7 @@ export function TeaserEditor({
           <div className="studio-teaser-time-row">
             <div className="grid min-w-0 grid-cols-2 gap-1.5">
               {(["start", "end"] as const).map((boundary) => (
-                <label key={boundary} className="min-w-0 text-xs text-zinc-400">
+                <label key={boundary} className="field-label block min-w-0">
                   {boundary === "start" ? "Bắt đầu" : "Kết thúc"}
                   <input
                     aria-label={`Teaser Part ${part.id} ${boundary === "start" ? "Bắt đầu" : "Kết thúc"}`}
@@ -490,7 +490,7 @@ export function TeaserEditor({
             </div>
             {transition}
           </div>
-          <label className="block min-w-0 text-zinc-400">
+          <label className="field-label block min-w-0">
             Custom Teaser
             <textarea
               aria-label={`Custom Teaser Part ${part.id}`}

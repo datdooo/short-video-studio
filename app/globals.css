@@ -3475,7 +3475,7 @@ textarea {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 2px 4px 8px;
+  padding: 2px 0 8px;
   scroll-padding: 8px;
 }
 .prototype-shell .studio-library > [data-slot="tabs"] > [data-slot="tabs-content"][hidden] {
@@ -4506,9 +4506,6 @@ textarea {
 .prototype-shell :is(.studio-batch-workspace, .studio-library-workspace) {
   gap: 10px;
 }
-.prototype-shell .studio-library-workspace [data-slot="tabs-content"] {
-  padding: 0;
-}
 /* Batch/Kho show session notices in the same bottom bar style, only when there is something to say. */
 .prototype-shell .studio-notice-bar {
   font-size: var(--ui-text-caption);
@@ -4545,4 +4542,25 @@ textarea {
 .prototype-shell .studio-render-job-title > [data-slot="status-chip"] {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* Kho render list: no panel inside a panel inside a panel. The list heading sits on the page, each job
+   is one card, and its Part boxes are tonal blocks (no extra border). */
+.prototype-shell .studio-render-list[data-slot="panel"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.prototype-shell .studio-render-list article [data-slot="panel"] {
+  border-color: transparent;
+  background: rgb(255 255 255 / 3.5%);
+}
+/* Link rows in the music list were 19px tall; give them a comfortable hit area. */
+.prototype-shell .studio-inspector-body a[href] {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+.prototype-shell .studio-library .studio-render-job-list {
+  padding-inline: 0;
 }

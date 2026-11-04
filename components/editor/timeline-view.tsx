@@ -343,7 +343,7 @@ export function TimelineView({ model }: { model: Props }) {
                 cues={previewPlan.captionCues?.cues || subtitleCues}
                 transition={
                   <label className="mt-3 block min-w-0 space-y-1 text-xs">
-                    <span className="block font-semibold leading-5">
+                    <span className="field-label block">
                       Hook → Main <span className="font-normal text-zinc-500">· cả 2 Part</span>
                     </span>
                     <Select
