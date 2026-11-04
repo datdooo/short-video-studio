@@ -190,7 +190,6 @@
     flex-direction: column;
     gap: 3px;
     padding: var(--space-2);
-    border: 1px solid var(--border);
     border-radius: var(--control-radius);
     background: var(--background);
     font-size: var(--text-caption);

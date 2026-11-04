@@ -52,13 +52,11 @@
   [data-slot="panel"].workspace-panel {
     min-width: 0;
     padding: var(--panel-padding);
-    border: 1px solid var(--border);
     border-radius: var(--card-radius);
-    background: var(--surface);
+    background: var(--panel);
   }
   [data-slot="panel"] [data-slot="panel"].workspace-panel {
-    border-color: transparent;
-    background: var(--panel);
+    background: var(--surface);
   }
   [data-slot="panel-header"],
   [data-slot="panel-footer"] {
@@ -246,7 +244,7 @@
     gap: var(--panel-padding);
     padding: var(--gap) var(--panel-padding);
     border-radius: var(--card-radius);
-    background: var(--surface);
+    background: var(--panel);
   }
   .studio-library-card > .flex:first-child {
     align-items: center;

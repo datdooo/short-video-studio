@@ -240,9 +240,8 @@
     min-height: 0;
     padding: var(--space-2);
     overflow: hidden;
-    border: 1px solid var(--border);
     border-radius: var(--card-radius);
-    background: var(--surface);
+    background: var(--panel);
     color: var(--foreground);
   }
   .studio-teaser-review[data-has-choice="false"] {
@@ -452,7 +451,7 @@
     gap: var(--control-gap);
     padding: 6px 0 0;
     border-top: 1px solid var(--border);
-    background: var(--surface);
+    background: var(--panel);
   }
   .studio-teaser-review-footer > span {
     color: var(--muted-foreground);
@@ -515,7 +514,8 @@
     border-top: 1px solid var(--border);
     background: var(--surface);
   }
-  .studio-timeline-scroll > div {
+  .studio-timeline-scroll > div,
+  .studio-timeline-scroll > .studio-card {
     padding: 0;
     border: 0;
     background: transparent;
@@ -606,10 +606,9 @@
   .studio-teaser-editor,
   .studio-main-editor {
     min-width: 0;
-    padding: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--control-radius);
-    background: transparent;
+    padding: var(--panel-padding);
+    border-radius: var(--card-radius);
+    background: var(--panel);
   }
   .studio-teaser-editor h4 {
     color: var(--foreground);
@@ -664,7 +663,6 @@
   .studio-teaser-status {
     min-width: 0;
     padding: 6px var(--space-2);
-    border: 1px solid var(--border);
     border-radius: var(--control-radius);
     background: var(--surface);
   }
@@ -721,7 +719,6 @@
     gap: var(--gap);
     min-width: 0;
     padding: var(--panel-padding);
-    border: 1px solid var(--border);
     border-radius: var(--card-radius);
     background: var(--panel);
   }
@@ -931,5 +928,56 @@
   }
   .studio-inspector-body [data-ui-exception="sample-card"] > span:last-child {
     font-size: var(--control-font-size);
+  }
+  /* ── Source strip: read-only map of each Part's main ranges and teaser ───── */
+  .studio-strip {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+  }
+  .studio-strip-row {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .studio-strip-label {
+    color: var(--muted-foreground);
+    font-size: var(--text-caption);
+    font-weight: 500;
+  }
+  .studio-strip-row[data-active="true"] .studio-strip-label {
+    color: var(--foreground);
+  }
+  .studio-strip-track {
+    position: relative;
+    height: 28px;
+    border-radius: var(--control-radius);
+    background: var(--background);
+  }
+  .studio-strip-block {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    min-width: 4px;
+    border-radius: var(--chip-radius);
+    background: var(--border-strong);
+  }
+  .studio-strip-row[data-active="true"] .studio-strip-block[data-kind="main"] {
+    background: var(--primary);
+  }
+  .studio-strip-block[data-kind="teaser"] {
+    top: auto;
+    bottom: 3px;
+    height: 8px;
+    background: var(--warning);
+  }
+  .studio-strip-ruler {
+    display: flex;
+    justify-content: space-between;
+    margin-left: 56px;
+    color: var(--dim);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
   }
 }

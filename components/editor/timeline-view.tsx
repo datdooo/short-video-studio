@@ -6,6 +6,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { AiOperationStatus } from "@/components/ai-operation-status";
 import { MainRangesEditor } from "@/components/main-ranges-editor";
 import { TeaserEditor } from "@/components/teaser-editor";
+import { TimelineStrip } from "@/components/editor/timeline-strip";
 import { useCutHistory } from "@/components/use-cut-history";
 import { type AiDiagnostics } from "@/lib/ai-progress";
 import { WORKER_ORIGIN, type RenderJob, type WorkerSource } from "@/lib/api/worker-client";
@@ -190,6 +191,15 @@ export function TimelineView({ model }: { model: Props }) {
     workspace,
   } = model;
 
+  const seekMain = (part: EditPart, rangeIndex: number) => {
+    const main = part.segments.filter((s) => !s.isPadding)[rangeIndex],
+      segments = presentationSegments(part);
+    if (main) {
+      const index = segments.indexOf(main);
+      if (index >= 0) seekPreview(timelineTimeForSegment(segments, index, main.start, PREVIEW_RATE));
+    }
+  };
+
   return (
     <>
       {hasEditPlan && (
@@ -238,6 +248,12 @@ export function TimelineView({ model }: { model: Props }) {
               </Button>
             </div>
           </div>
+          <TimelineStrip
+            plan={previewPlan}
+            duration={preparedSource?.duration || previewDuration || Infinity}
+            activePartIndex={activePartIndex}
+            onSeekMain={(partIndex, rangeIndex) => seekMain(previewPlan.parts[partIndex], rangeIndex)}
+          />
           {previewPlan.parts.map((part, index) => (
             <MainRangesEditor
               key={`${preparedSource?.id || previewVideoUrl}:${part.id}`}
@@ -246,14 +262,7 @@ export function TimelineView({ model }: { model: Props }) {
               plan={previewPlan}
               part={part}
               duration={preparedSource?.duration || previewDuration || Infinity}
-              onSeek={(rangeIndex) => {
-                const main = part.segments.filter((s) => !s.isPadding)[rangeIndex],
-                  segments = presentationSegments(part);
-                if (main) {
-                  const index = segments.indexOf(main);
-                  if (index >= 0) seekPreview(timelineTimeForSegment(segments, index, main.start, PREVIEW_RATE));
-                }
-              }}
+              onSeek={(rangeIndex) => seekMain(part, rangeIndex)}
               onInvalidate={() => {
                 invalidateAnalysis();
                 activeTeaserRequests.current

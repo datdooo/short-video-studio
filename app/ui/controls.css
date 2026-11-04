@@ -413,9 +413,8 @@
   .studio-card,
   details.studio-section {
     min-width: 0;
-    border: 1px solid var(--border);
     border-radius: var(--card-radius);
-    background: var(--surface);
+    background: var(--panel);
   }
   .studio-card {
     margin-top: var(--gap);

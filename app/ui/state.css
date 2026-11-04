@@ -120,6 +120,12 @@
   }
 
   /* Small per-component state rules. */
+  .studio-strip-block[role="button"] {
+    cursor: pointer;
+  }
+  .studio-strip-block[role="button"]:hover {
+    background: var(--primary-hover);
+  }
   .studio-part-fixes button:hover,
   .studio-preserved-drafts button:hover:not(:disabled),
   .studio-video-download-split:has(button:not(:disabled):hover),
@@ -196,7 +202,17 @@
   }
 
   /* Focus: keyboard only. Menus and in-panel scroll areas keep the ring inside their box. */
-  :is(button, input, textarea, select, summary, a, [role="combobox"], [data-slot="disclosure-trigger"]):focus-visible,
+  :is(
+    button,
+    input,
+    textarea,
+    select,
+    summary,
+    a,
+    [role="combobox"],
+    [role="button"],
+    [data-slot="disclosure-trigger"]
+  ):focus-visible,
   .studio-action-row label:has(input[type="file"]):focus-within,
   .studio-video-download-split:has(button:focus-visible) {
     outline: 2px solid var(--ring);
