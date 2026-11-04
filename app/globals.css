@@ -4518,3 +4518,9 @@ textarea {
   font-size: var(--ui-text-caption);
   color: var(--studio-muted);
 }
+
+/* Part switcher buttons stand alone (no surrounding tab group), so every one keeps its own border. */
+.prototype-shell .studio-part-switcher [data-slot="button"][data-variant="segmented"]:not([aria-pressed="true"]) {
+  border-color: var(--border);
+  background: var(--panel);
+}
