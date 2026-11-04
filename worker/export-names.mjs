@@ -48,6 +48,11 @@ export function createExportNameAllocator({ file, seed } = {}) {
     }
   }
   return {
+    /** Forget every language counter (the render list was emptied): the next export is `xx1`/`xx2` again. */
+    reset() {
+      counters.clear();
+      persist();
+    },
     reserve(prefix, partCount = 2) {
       if (!/^[a-z]{2}$/.test(prefix) || partCount !== 2) throw new Error("Mã ngôn ngữ hoặc số part không hợp lệ.");
       // After 240 videos the counter wraps instead of failing, so renders never get stuck.

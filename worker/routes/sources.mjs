@@ -7,6 +7,7 @@ export function createSourcesRoutes({
   corsHeaders,
   createManualDownload,
   editorSourceLeases,
+  exportNameAllocator,
   effectiveCutPlan,
   fetchYouTubeTranscript,
   finalizeImportedTeasers,
@@ -705,6 +706,9 @@ export function createSourcesRoutes({
           job.deleted = true;
           job.outputs = [];
           await persistBatchHistory({ strict: true });
+          // Emptied render list: numbering starts over at 1/2.
+          if (![...jobs.values()].some((other) => other.origin === "editor" && !other.deleted))
+            exportNameAllocator.reset();
           sendJson(request, response, 200, result);
           return;
         }

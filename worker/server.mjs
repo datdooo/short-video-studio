@@ -359,6 +359,7 @@ const analyzeSource = (source, body, signal) =>
 
 await mkdir(sourcesRoot, { recursive: true });
 const dispatchRoutes = createWorkerRoutes({
+  exportNameAllocator,
   codexPeek,
   codexStatus,
   ensureCodexReady,

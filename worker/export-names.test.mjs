@@ -40,3 +40,15 @@ test("after 240 videos the counter wraps instead of failing", () => {
   for (let i = 0; i < 240; i += 1) names.reserve("jp");
   assert.deepEqual(names.reserve("jp"), ["jp1.mp4", "jp2.mp4"]);
 });
+test("reset starts numbering over and the empty state is stored", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "export-names-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, "counters.json");
+  const names = createExportNameAllocator({ file });
+  names.reserve("kr");
+  names.reserve("kr");
+  names.reset();
+  assert.deepEqual(names.reserve("kr"), ["kr1.mp4", "kr2.mp4"]);
+  names.reset();
+  assert.deepEqual(createExportNameAllocator({ file }).reserve("kr"), ["kr1.mp4", "kr2.mp4"]);
+});
