@@ -232,7 +232,7 @@
   /* ── Teaser candidate review ───────────────────────────────────────────── */
   .studio-teaser-review {
     display: grid;
-    grid-template-columns: clamp(180px, 42cqw, 300px) minmax(0, 1fr);
+    grid-template-columns: clamp(80px, calc((100cqh - 54px) * 9 / 16), 300px) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto;
     column-gap: var(--space-4);
     height: 100%;
@@ -279,7 +279,7 @@
     container-type: inline-size;
     grid-column: 1;
     grid-row: 1 / -1;
-    align-self: start;
+    align-self: center;
     min-width: 0;
     min-height: 0;
     max-height: 100%;
@@ -292,7 +292,7 @@
     display: grid;
     place-items: center;
     width: 100%;
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 9 / 16;
     overflow: hidden;
     background: var(--media-background);
   }
