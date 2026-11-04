@@ -81,6 +81,7 @@
   .studio-button-sm,
   [data-size="sm"] {
     --button-height: var(--control-compact-height);
+    padding-block: var(--space-1);
   }
   .studio-button-md {
     --button-height: var(--control-height);
@@ -126,7 +127,7 @@
     border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
     color: var(--destructive);
   }
-  .studio-source-ready {
+  .studio-source-ready[data-slot="button"] {
     border-color: color-mix(in srgb, var(--success) 40%, var(--border));
     background: color-mix(in srgb, var(--success) 10%, var(--panel));
     color: var(--success);
@@ -195,8 +196,10 @@
     min-height: var(--control-height);
     padding: 0 var(--control-padding);
   }
+  input[type="range"] {
+    width: 100%;
+  }
   input[type="checkbox"],
-  input[type="range"],
   input[type="file"] {
     width: auto;
     height: auto;

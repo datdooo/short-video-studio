@@ -147,7 +147,7 @@ export function MainRangesEditor({
                 {onSeek && (
                   <Button
                     variant="ghost"
-                    size="md"
+                    size="sm"
                     type="button"
                     disabled={invalid}
                     className="studio-ghost"

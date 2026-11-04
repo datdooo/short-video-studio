@@ -72,13 +72,12 @@ export function CopyButton({
         size="md"
         type="button"
         aria-label={ariaLabel || label}
+        data-copy-state={status}
         disabled={disabled || status === "pending"}
         onClick={() => void copy()}
         className={cn(
           "flex items-center justify-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs text-zinc-300 transition duration-150 hover:bg-white/15 active:scale-95",
           className,
-          status === "done" && "bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-400/25 hover:bg-emerald-400/20",
-          status === "error" && "bg-red-400/10 text-red-300 hover:bg-red-400/15",
         )}
       >
         {status === "done" ? (

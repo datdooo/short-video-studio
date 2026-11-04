@@ -369,7 +369,9 @@ export function InspectorView({ model }: { model: Props }) {
                     <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
                       {subtitleCues.map((cue, index) => (
                         <label key={index} className="block text-xs text-zinc-500">
-                          {formatTime(cue.start)} – {formatTime(cue.end)}
+                          <span className="font-mono">
+                            {formatTime(cue.start)} – {formatTime(cue.end)}
+                          </span>
                           <Textarea
                             aria-label={`Câu phụ đề ${index + 1}`}
                             value={cue.text}

@@ -575,7 +575,7 @@ export function SourceView({ model }: { model: Props }) {
                     />
                     {chatGPTSession?.sharing ? "Codex sẵn sàng" : "Cần Codex CLI"}
                   </p>
-                  <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
+                  <p className="mt-1 break-words text-xs leading-4 text-zinc-500">
                     {chatGPTSession?.sharing
                       ? `${chatGPTSession.model || "gpt-6.1-terra"} · ${chatGPTSession.reasoning || "medium"} · text + khung hình`
                       : chatGPTSession

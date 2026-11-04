@@ -275,6 +275,7 @@
     overflow-wrap: anywhere;
   }
   .studio-render-state a {
+    min-height: var(--target-min);
     display: inline-flex;
     align-items: center;
     gap: 3px;
@@ -350,7 +351,7 @@
     min-width: 0;
   }
   .studio-timeline-notice summary {
-    min-height: 0;
+    min-height: var(--target-min);
     cursor: pointer;
     font-size: inherit;
     font-weight: 500;

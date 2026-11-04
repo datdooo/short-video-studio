@@ -409,7 +409,7 @@ export function MediaLibraryPanel({
                           return next;
                         })
                       }
-                      className="mt-1 size-4 shrink-0 accent-primary"
+                      className="size-4 shrink-0 accent-primary"
                     />
                     <span className="studio-library-file-icon" aria-hidden="true">
                       <Film size={20} />

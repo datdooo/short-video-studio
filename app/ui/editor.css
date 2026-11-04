@@ -229,7 +229,7 @@
   /* ── Teaser candidate review ───────────────────────────────────────────── */
   .studio-teaser-review {
     display: grid;
-    grid-template-columns: clamp(80px, calc((100cqh - 54px) * 9 / 16), 300px) minmax(0, 1fr);
+    grid-template-columns: clamp(80px, calc((100cqh - 96px) * 9 / 16), 300px) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr) auto;
     column-gap: var(--space-4);
     height: 100%;
@@ -348,6 +348,13 @@
   }
   .studio-teaser-player .studio-inline-error {
     padding: var(--space-1) var(--gap);
+  }
+  @container (max-width: 200px) {
+    .studio-teaser-player-controls span {
+      grid-column: 1 / -1;
+      grid-row: 3;
+      justify-self: center;
+    }
   }
   .studio-teaser-review-content {
     grid-column: 2;
@@ -593,7 +600,7 @@
   .studio-main-range-actions > button[data-control-size="icon"] {
     color: var(--muted-foreground);
   }
-  @container (max-width: 380px) {
+  @container (max-width: 36rem) {
     .studio-main-range-row {
       grid-template-columns: var(--timeline-index-size) minmax(min-content, 1fr) minmax(min-content, 1fr);
     }
@@ -714,7 +721,7 @@
 
   /* ── Source panel ──────────────────────────────────────────────────────── */
   .studio-source-provider [data-slot="select-trigger"] {
-    margin-top: var(--control-gap);
+    margin-top: var(--space-2);
   }
   .studio-web-ai-panel {
     display: flex;
@@ -800,6 +807,9 @@
     justify-self: start;
     --button-height: 26px;
     padding: 3px 6px;
+  }
+  .studio-web-ai-actions .studio-video-download-split {
+    height: var(--control-lg-height);
   }
   .studio-video-download-split {
     display: grid;
@@ -930,10 +940,13 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .studio-inspector-body label:not(:has(input[type="checkbox"])):has(> :is(input, textarea, select)) {
+  .studio-inspector-body
+    label:not(:has(input[type="checkbox"])):has(> :is(input, textarea, select, [data-slot="select-trigger"])) {
     display: block;
   }
-  .studio-inspector-body label:not(:has(input[type="checkbox"])) > :is(input, textarea, select) {
+  .studio-inspector-body
+    label:not(:has(input[type="checkbox"]))
+    > :is(input, textarea, select, [data-slot="select-trigger"]) {
     display: block;
     margin-top: var(--control-gap);
   }
@@ -957,9 +970,19 @@
     fill: currentColor;
     backdrop-filter: blur(8px);
   }
+  .studio-media-play > svg {
+    width: calc(var(--icon-size) + var(--space-1));
+    height: calc(var(--icon-size) + var(--space-1));
+  }
   .studio-media-play {
     display: grid;
     place-items: center;
     padding: 0;
+  }
+  @media (max-width: 480px) {
+    .studio-part-switcher > .studio-segmented {
+      flex-wrap: wrap;
+      width: 100%;
+    }
   }
 }

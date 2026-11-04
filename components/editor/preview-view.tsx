@@ -234,7 +234,9 @@ export function PreviewView({ model }: { model: Props }) {
                 Part {part.id}
                 {hasEditPlan && (
                   <small>
-                    {(presentationDuration(previewPlan.parts[index]) / PREVIEW_RATE).toFixed(1)}s
+                    <span className="font-mono">
+                      {(presentationDuration(previewPlan.parts[index]) / PREVIEW_RATE).toFixed(1)}s
+                    </span>
                     {part.mainEdited ? " · Đã sửa tay" : ""}
                   </small>
                 )}

@@ -7,7 +7,7 @@ import { Tooltip } from "./tooltip";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "studio-button inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition-colors outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "studio-button inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition-colors outline-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

@@ -37,14 +37,22 @@
     min-height: var(--control-lg-height);
   }
   [data-slot="workspace-toolbar"] .studio-library-tabs {
-    height: var(--control-lg-height);
-    min-height: 0;
+    height: auto;
+    min-height: var(--control-lg-height);
     padding: 2px;
   }
   [data-slot="workspace-toolbar"] [data-slot="tabs-trigger"] {
     height: auto;
-    min-height: 0;
+    min-height: var(--control-compact-height);
     align-self: stretch;
+  }
+  .studio-library-card [data-slot="status-chip"] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .studio-library-workspace a.studio-download[data-size="sm"] {
+    min-height: var(--control-compact-height);
+    padding-block: var(--space-1);
   }
   [data-slot="workspace-toolbar"] .studio-library-tabs {
     display: flex;

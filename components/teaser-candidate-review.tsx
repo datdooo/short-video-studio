@@ -215,7 +215,7 @@ export function TeaserCandidateReview({
                           Đang dùng
                         </>
                       ) : (
-                        seconds((t.end - t.start) / PREVIEW_RATE)
+                        <span className="font-mono">{seconds((t.end - t.start) / PREVIEW_RATE)}</span>
                       )}
                     </span>
                   </button>

@@ -7,8 +7,8 @@
    disabled  neutral for every variant, primary included
    focus     2px accent ring, keyboard only */
 @layer kit-state {
-  /* Hover. Primary and destructive keep their own hover below. */
-  :is(
+  /* Hover. :where() keeps this at the lowest specificity so primary, destructive, selected and invalid states always win. */
+  :where(
       .studio-button,
       [data-slot="button"],
       .studio-control,
@@ -50,12 +50,12 @@
     background-color: var(--surface-3);
     border-color: var(--border-strong);
   }
-  .studio-input:hover:not(:disabled),
-  .studio-textarea:hover:not(:disabled),
-  [data-slot="input"]:hover:not(:disabled),
-  [data-slot="textarea"]:hover:not(:disabled),
-  [data-slot="select-trigger"]:hover:not(:disabled),
-  select:hover:not(:disabled) {
+  .studio-input:hover:not(:disabled):not([aria-invalid="true"]),
+  .studio-textarea:hover:not(:disabled):not([aria-invalid="true"]),
+  [data-slot="input"]:hover:not(:disabled):not([aria-invalid="true"]),
+  [data-slot="textarea"]:hover:not(:disabled):not([aria-invalid="true"]),
+  [data-slot="select-trigger"]:hover:not(:disabled):not([aria-invalid="true"]),
+  select:hover:not(:disabled):not([aria-invalid="true"]) {
     border-color: var(--border-strong);
   }
   .studio-primary:hover:not(:disabled),
@@ -80,7 +80,7 @@
   .studio-cancel:not(:disabled) {
     color: var(--destructive);
   }
-  .studio-source-ready:hover:not(:disabled) {
+  .studio-source-ready[data-slot="button"]:hover:not(:disabled) {
     border-color: var(--success);
     background: color-mix(in srgb, var(--success) 16%, var(--panel));
     color: var(--success);
@@ -159,6 +159,16 @@
     scale: 1;
   }
 
+  /* Copy button feedback (set by CopyButton through data-copy-state). */
+  [data-copy-state="done"] {
+    border-color: color-mix(in srgb, var(--success) 45%, var(--border));
+    color: var(--success);
+  }
+  [data-copy-state="error"] {
+    border-color: color-mix(in srgb, var(--destructive) 45%, var(--border));
+    color: var(--destructive);
+  }
+
   /* Invalid. */
   [aria-invalid="true"],
   .studio-danger {
@@ -232,6 +242,14 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
     box-shadow: none;
+  }
+  /* Scroll containers clip an outside ring: keep it inside. */
+  .studio-teaser-review-content :focus-visible,
+  .studio-render-state :focus-visible,
+  .studio-inspector-body [data-slot="textarea"]:focus-visible,
+  [data-slot="tabs-content"]:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
   }
   [data-slot="select-content"] :focus-visible,
   [data-slot="dropdown-menu-content"] :focus-visible,
