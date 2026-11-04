@@ -4534,3 +4534,15 @@ textarea {
 .prototype-shell .studio-render-list .studio-task-progress[data-task-state="done"] {
   display: none;
 }
+
+/* One line: a long title is cut with an ellipsis and the status pill never wraps below it. */
+.prototype-shell .studio-render-job-title { flex-wrap: nowrap; }
+.prototype-shell .studio-render-job-title > h3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prototype-shell .studio-render-job-title > [data-slot="status-chip"] {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

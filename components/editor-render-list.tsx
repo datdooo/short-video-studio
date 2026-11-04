@@ -121,8 +121,11 @@ export function EditorRenderList({
           return (
             <Panel as="article" padding="sm" data-render-state={job.state} key={job.id} className="workspace-list-row">
               <div className="studio-render-job-heading flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-                  <h3 className="min-w-0 break-words text-sm font-semibold">
+                <div className="studio-render-job-title flex min-w-0 flex-nowrap items-center gap-3">
+                  <h3
+                    className="min-w-0 truncate text-sm font-semibold"
+                    title={(job.planSummary || job.plan)?.originalTitle || undefined}
+                  >
                     {(job.planSummary || job.plan)?.originalTitle || "Video đã render"}
                   </h3>
                   <StatusChip
