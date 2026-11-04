@@ -4382,7 +4382,12 @@ textarea {
 }
 :is(:root, .prototype-shell) [data-slot="status-chip"][data-tone="error"] { color: var(--destructive); }
 :is(:root, .prototype-shell) .workspace-list-row { min-height: 80px; }
-.workspace-list-row > [data-slot="status-chip"] { margin-top: 8px; }
+.workspace-list-row > [data-slot="status-chip"] {
+  margin-block: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
 .prototype-shell .studio-library > [data-slot="tabs"] { gap: var(--workspace-gap); }
 .prototype-shell .studio-library-search { flex: 1 1 260px; width: auto; margin: 0; }
 .prototype-shell [data-slot="workspace-toolbar"] .studio-library-tabs {
