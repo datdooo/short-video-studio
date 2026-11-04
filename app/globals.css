@@ -3759,10 +3759,32 @@ textarea {
   border-radius: var(--control-radius);
 }
 .studio-task-progress progress:not([value]) {
-  background: repeating-linear-gradient(105deg, var(--ui-color-302b25) 0 14px, var(--ui-color-a83f27) 14px 28px);
+  background: linear-gradient(
+      90deg,
+      transparent 0 35%,
+      var(--ui-color-ff5733) 50%,
+      transparent 65% 100%
+    )
+    0 0 / 200% 100% no-repeat,
+    var(--ui-color-302b25);
+  animation: task-progress-indeterminate 1.3s linear infinite;
 }
 .studio-task-progress progress:not([value])::-webkit-progress-bar {
-  background: repeating-linear-gradient(105deg, var(--ui-color-302b25) 0 14px, var(--ui-color-a83f27) 14px 28px);
+  background: transparent;
+}
+@keyframes task-progress-indeterminate {
+  from {
+    background-position: 100% 0, 0 0;
+  }
+  to {
+    background-position: -100% 0, 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-task-progress progress:not([value]) {
+    animation: none;
+    background: var(--ui-color-a83f27);
+  }
 }
 .studio-web-download-control {
   display: grid;
@@ -4402,4 +4424,24 @@ textarea {
   font-size: var(--ui-text-caption);
   font-weight: 500;
   line-height: 1.4;
+}
+
+/* ── One spacing rhythm across Editor / Batch / Kho ─────────────────────
+   workspace edge 12px · panel/card padding 12px · stack gap 10px. */
+.prototype-shell :is(.studio-source-panel, .studio-inspector-body) {
+  padding: 12px;
+}
+.prototype-shell :is(.studio-batch-workspace, .studio-library-workspace) [data-slot="panel"] {
+  padding: var(--panel-padding-sm);
+}
+.prototype-shell :is(.studio-batch-workspace, .studio-library-workspace) {
+  gap: 10px;
+}
+.prototype-shell .studio-library-workspace [data-slot="tabs-content"] {
+  padding: 0;
+}
+/* Batch/Kho show session notices in the same bottom bar style, only when there is something to say. */
+.prototype-shell .studio-notice-bar {
+  font-size: var(--ui-text-caption);
+  color: var(--studio-muted);
 }

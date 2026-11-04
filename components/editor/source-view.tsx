@@ -207,8 +207,8 @@ export function SourceView({ model }: { model: Props }) {
           : "");
   return (
     <>
-      <div className="mt-4">
-        <div className="pt-3">
+      <div>
+        <div>
           <label htmlFor="youtube-url" className="field-label">
             {UI_STRINGS.sourceUrl}
           </label>

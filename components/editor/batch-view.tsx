@@ -109,7 +109,7 @@ export function BatchView({ model }: { model: Props }) {
         <div className="studio-batch-setup min-w-0">
           <Toolbar>
             <Select value={isWebAi ? provider : "chatgpt"} onValueChange={changeProvider}>
-              <SelectTrigger aria-label="AI provider hàng loạt" className="studio-input w-[220px]">
+              <SelectTrigger aria-label="AI provider hàng loạt" className="studio-input w-[260px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
