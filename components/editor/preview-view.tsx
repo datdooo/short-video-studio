@@ -553,7 +553,6 @@ export function PreviewView({ model }: { model: Props }) {
               className="studio-source-time"
               title="Mốc nguồn: timestamp gốc, không phải thời gian sau khi nối đoạn"
             >
-              1×{" "}
               <strong className="font-mono">
                 {formatSourceTimecode(
                   hasEditPlan
