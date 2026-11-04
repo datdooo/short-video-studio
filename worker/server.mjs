@@ -26,7 +26,7 @@ import { createCoverageFrames } from "./coverage-frames.mjs";
 import { createCommandLifecycle } from "./command-lifecycle.mjs";
 import { createCommandRunner } from "./command-runner.mjs";
 import { createEditorSourceLeases } from "./editor-source-leases.mjs";
-import { createExportNameAllocator } from "./export-names.mjs";
+import { createExportNameAllocator, seedExportCounters } from "./export-names.mjs";
 import { createExternalPromptSnapshots } from "./external-prompt-snapshot.mjs";
 import { createHttpResponses } from "./http-responses.mjs";
 import { createLibraryService } from "./library-service.mjs";
@@ -126,7 +126,10 @@ const {
 } = createHttpResponses(() => ({ loadSource, requestOrigins, sourcesRoot }));
 const jobs = new Map();
 
-const exportNameAllocator = createExportNameAllocator();
+const exportNameAllocator = createExportNameAllocator({
+  file: path.join(dataRoot, "export-name-counters.json"),
+  seed: () => seedExportCounters(sourcesRoot),
+});
 const batches = new Map();
 const batchControllers = new Map();
 const renderControllers = new Map();
