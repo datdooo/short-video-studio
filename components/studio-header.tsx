@@ -113,7 +113,7 @@ export function StudioHeader({
         >
           <Save size={13} aria-hidden="true" />
           {saveState === "saved" ? (
-            <StatusChip tone="success">Đã lưu</StatusChip>
+            <span className="studio-connected">Đã lưu</span>
           ) : saveState === "saving" ? (
             "Đang lưu…"
           ) : (
