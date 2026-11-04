@@ -121,10 +121,24 @@ export function EditorRenderList({
           return (
             <Panel as="article" padding="sm" data-render-state={job.state} key={job.id} className="workspace-list-row">
               <div className="studio-render-job-heading flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="break-words text-sm font-semibold">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+                  <h3 className="min-w-0 break-words text-sm font-semibold">
                     {(job.planSummary || job.plan)?.originalTitle || "Video đã render"}
                   </h3>
+                  <StatusChip
+                    className="shrink-0"
+                    tone={job.state === "error" ? "error" : job.state === "done" ? "success" : "neutral"}
+                  >
+                    {cancelling
+                      ? "Đang huỷ…"
+                      : {
+                          queued: "Chờ render",
+                          rendering: "Đang render",
+                          done: "Đã kết thúc",
+                          error: "Lỗi",
+                          cancelled: "Đã dừng",
+                        }[job.state]}
+                  </StatusChip>
                 </div>
                 <div className="studio-action-row flex shrink-0 flex-wrap justify-end gap-2">
                   {(active || cancelling) && (
@@ -158,17 +172,6 @@ export function EditorRenderList({
                   </Button>
                 </div>
               </div>
-              <StatusChip tone={job.state === "error" ? "error" : job.state === "done" ? "success" : "neutral"}>
-                {cancelling
-                  ? "Đang huỷ…"
-                  : {
-                      queued: "Chờ render",
-                      rendering: "Đang render",
-                      done: "Đã kết thúc",
-                      error: "Lỗi",
-                      cancelled: "Đã dừng",
-                    }[job.state]}
-              </StatusChip>
               <RenderProgress job={{ ...job, stopping: cancelling }} />
               {job.error && (
                 <InlineNotice tone="error" className="mt-3">
