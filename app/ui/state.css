@@ -120,12 +120,6 @@
   }
 
   /* Small per-component state rules. */
-  .studio-strip-block[role="button"] {
-    cursor: pointer;
-  }
-  .studio-strip-block[role="button"]:hover {
-    background: var(--primary-hover);
-  }
   .studio-part-fixes button:hover,
   .studio-preserved-drafts button:hover:not(:disabled),
   .studio-video-download-split:has(button:not(:disabled):hover),
