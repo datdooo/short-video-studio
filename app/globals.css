@@ -4565,3 +4565,20 @@ textarea {
 .prototype-shell .studio-library .studio-render-job-list {
   padding-inline: 0;
 }
+
+/* "Tùy chỉnh" is one card holding rows; its rows must not be cards/indents of their own. */
+.prototype-shell details.studio-section.visual-customize > div:not(summary) {
+  padding-inline: 0;
+  margin-inline: 0;
+  max-width: none;
+}
+.prototype-shell details.studio-section.visual-customize .visual-customize-options {
+  margin-inline: 0;
+  padding-inline: 12px;
+}
+.prototype-shell details.studio-section.visual-customize .studio-card {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
