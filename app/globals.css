@@ -3530,6 +3530,8 @@ textarea {
 }
 .prototype-shell .studio-library-content-grid > aside {
   top: 0;
+  /* The file list keeps 4px of inner padding for focus rings; match it so both columns start on one line. */
+  margin-top: 4px;
 }
 .prototype-shell .studio-library-file-list,
 .prototype-shell .studio-library .studio-render-job-list {
