@@ -511,19 +511,6 @@ export function PreviewView({ model }: { model: Props }) {
               )}
             </div>
           </div>
-          <div className="studio-clock-labels">
-            <span>Preview 1×</span>
-            <span title="Timestamp gốc, không phải thời gian sau khi nối đoạn">
-              Mốc nguồn ·{" "}
-              <strong className="font-mono">
-                {formatSourceTimecode(
-                  hasEditPlan
-                    ? locateTimelineTime(playbackSegments, previewCurrentTime, PREVIEW_RATE).sourceTime
-                    : previewCurrentTime,
-                )}
-              </strong>
-            </span>
-          </div>
           <div className="preview-controls w-full max-w-[520px]">
             <Button
               variant="icon"
@@ -562,6 +549,19 @@ export function PreviewView({ model }: { model: Props }) {
             >
               <ArrowRight className="size-3" />
             </Button>
+            <span
+              className="studio-source-time"
+              title="Mốc nguồn: timestamp gốc, không phải thời gian sau khi nối đoạn"
+            >
+              1×{" "}
+              <strong className="font-mono">
+                {formatSourceTimecode(
+                  hasEditPlan
+                    ? locateTimelineTime(playbackSegments, previewCurrentTime, PREVIEW_RATE).sourceTime
+                    : previewCurrentTime,
+                )}
+              </strong>
+            </span>
             <span>{formatTime(previewCurrentTime)}</span>
             <input
               className="preview-seek"
