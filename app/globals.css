@@ -545,6 +545,9 @@ textarea {
   padding: 4px 10px;
   color: var(--studio-muted);
 }
+.studio-header-status > .studio-provider-status > svg {
+  display: none;
+}
 .studio-notices {
   display: flex;
   flex-wrap: wrap;
@@ -1151,10 +1154,6 @@ textarea {
     border: 1px solid var(--studio-border);
     border-radius: var(--control-radius);
   }
-  .studio-panel-toggles button[aria-expanded="true"] {
-    color: var(--studio-accent-text);
-    background: var(--studio-accent-soft);
-  }
   .studio-header {
     gap: 6px;
   }
@@ -1171,9 +1170,6 @@ textarea {
     width: 100%;
     justify-content: space-between;
     font-size: 12px;
-  }
-  .studio-header-status > .studio-provider-status {
-    display: none;
   }
   .prototype-shell .preview-controls {
     gap: 3px;
@@ -1432,8 +1428,7 @@ textarea {
   :is(
     [data-slot="tabs-trigger"][data-state="active"],
     .studio-workspaces button[aria-current="page"],
-    .studio-part-switcher button[aria-pressed="true"],
-    .studio-panel-toggles button[aria-expanded="true"]
+    .studio-part-switcher button[aria-pressed="true"]
   ),
 .prototype-shell
   :is(.studio-source-panel, .studio-inspector-body, .studio-timeline-scroll)
@@ -4264,8 +4259,79 @@ textarea {
 :is(:root, .prototype-shell) .studio-button[data-slot][data-size][data-variant="destructive"]:hover:not(:disabled) {
   background: var(--destructive-hover-background);
 }
-:is(:root, .prototype-shell) .studio-button[data-slot][data-size][data-variant="segmented"][data-state="active"] {
+:is(:root, .prototype-shell) .studio-panel-toggles .studio-button[data-slot][data-size][aria-expanded] {
+  background: var(--secondary); border-color: var(--border); color: var(--foreground);
+  box-shadow: none;
+}
+:is(:root, .prototype-shell) .studio-button[data-slot][data-size][data-variant="segmented"][data-state="active"],
+:is(:root, .prototype-shell) .studio-panel-toggles .studio-button[data-slot][data-size][aria-expanded="true"] {
   background: var(--selection-bg); border-color: var(--primary); color: var(--selection-text);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+/* Keep mobile chrome in two rows, with every action and status still available. */
+@media (max-width: 480px) {
+  .prototype-shell .studio-header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--ui-space-1);
+    padding-inline: var(--ui-space-2);
+  }
+  .prototype-shell .studio-brand {
+    font-size: var(--control-font-size);
+  }
+  .prototype-shell .studio-brand > span,
+  .prototype-shell .studio-workspaces button > svg,
+  .prototype-shell .studio-header-status .studio-status-label {
+    display: none;
+  }
+  .prototype-shell .studio-workspaces {
+    flex-wrap: nowrap;
+    justify-self: end;
+  }
+  .prototype-shell .studio-workspaces .studio-button[data-slot][data-variant][data-size],
+  .prototype-shell .studio-header-status .studio-button[data-slot][data-variant][data-size]:not([data-size="icon"]) {
+    padding-inline: var(--ui-space-1);
+  }
+  .prototype-shell .studio-header-status {
+    grid-column: 1 / -1;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: calc(var(--ui-space-1) / 2);
+  }
+  .prototype-shell .studio-header-status > [data-slot="status-chip"] {
+    position: relative;
+    flex-shrink: 0;
+    padding: 0;
+    border: 0;
+    white-space: nowrap;
+  }
+  .prototype-shell .studio-header-status > [data-slot="status-chip"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: var(--ui-space-1);
+    height: var(--ui-space-1);
+    border-radius: var(--status-radius);
+    background: currentColor;
+  }
+  .prototype-shell .studio-header-status > .studio-provider-status > svg {
+    display: block;
+  }
+  .prototype-shell .studio-header-status > button.studio-session-drafts {
+    margin-inline-start: 0;
+  }
+  .prototype-shell .studio-header-status > button.studio-session-save {
+    min-width: 0;
+  }
+  .prototype-shell .studio-header-status > button:is(.studio-session-drafts, .studio-session-save) > svg {
+    display: none;
+  }
+  .prototype-shell .studio-session-save > [data-slot="status-chip"] {
+    padding: 0;
+    border: 0;
+  }
 }
 
 /* Shared workspace chrome: Batch and Kho use the same surface contract. */

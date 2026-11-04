@@ -4,7 +4,7 @@ import { StatusChip } from "./ui/status-chip";
 import Image from "next/image";
 import { ShortcutHelp } from "./shortcut-help";
 import { BETA_RELEASE } from "../desktop/beta-release.mjs";
-import { Cloud, CloudOff, Save, Film, LayoutGrid, FolderOpen } from "lucide-react";
+import { Bot, Cloud, CloudOff, Save, Film, LayoutGrid, FolderOpen } from "lucide-react";
 import { useState } from "react";
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import type { ReactNode } from "react";
@@ -75,18 +75,21 @@ export function StudioHeader({
         <StatusChip
           tone={workerReady ? "success" : "warning"}
           role="status"
+          aria-label={workerReady ? "Worker sẵn sàng" : "Mất kết nối với Media worker"}
           title={workerReady ? "Media worker đang kết nối" : "Media worker chưa kết nối"}
           className={workerReady ? "studio-connected" : "studio-warning"}
         >
-          {workerReady ? <Cloud size={13} /> : <CloudOff size={13} />}
-          <span>{workerReady ? "Worker sẵn sàng" : "Mất kết nối"}</span>
+          {workerReady ? <Cloud size={13} aria-hidden="true" /> : <CloudOff size={13} aria-hidden="true" />}
+          <span className="studio-status-label">{workerReady ? "Worker sẵn sàng" : "Mất kết nối"}</span>
         </StatusChip>
         <StatusChip
           tone={providerReady ? "success" : "warning"}
           className={`studio-provider-status ${providerReady ? "studio-connected" : "studio-warning"}`}
-          title="Trạng thái cấu hình/đăng nhập; không đồng nghĩa đã kiểm chứng inference."
+          aria-label={providerLabel}
+          title={`${providerLabel}. Trạng thái cấu hình/đăng nhập; không đồng nghĩa đã kiểm chứng inference.`}
         >
-          {providerLabel}
+          <Bot size={13} aria-hidden="true" />
+          <span className="studio-status-label">{providerLabel}</span>
         </StatusChip>
         {drafts}
         <Button

@@ -41,3 +41,9 @@ tạo cùng TXT (cùng prompt, tín hiệu, 3 ứng viên teaser mỗi part) →
 nhận JSON thô → nhập qua đúng bộ nhập JSON thủ công (`provider: chatgpt-web`). Worker: `auto-cut` mode
 `codex-run` (`runCodexTxt` trong `worker/analysis-service.mjs`, chế độ `txtPrompt` của `worker/codex-cli.mjs`).
 Hàng loạt (Batch) vẫn dùng pipeline Auto phía worker cũ.
+
+## Dọn dữ liệu tự động
+
+Worker xoá video nguồn, Part đã render và mục trong thùng rác cũ hơn **3 ngày** (`worker/retention.mjs`),
+quét sau khi khởi động 1 phút rồi mỗi 6 giờ. Mục đang mở trong Editor, đang tải/phân tích/render bị bỏ qua
+và thử lại lần sau. Đổi số ngày bằng `SHORTCUT_RETENTION_DAYS` (`0` = tắt).

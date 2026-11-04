@@ -15,6 +15,7 @@ import { currentFilterEnvironment } from "../lib/visual-style/filters.mjs";
 import { snapshotPlanVisualStyle } from "../lib/visual-style/normalize.mjs";
 import { measureAiStage, withAiOperation } from "./ai-operation.mjs";
 import { createAnalysisService } from "./analysis-service.mjs";
+import { createRetention, retentionDays } from "./retention.mjs";
 import { createAutoCutWorkflow } from "./auto-cut-workflow.mjs";
 import { removeBatchItem } from "./batch-cleanup.mjs";
 import { createBatchProcessor } from "./batch-pipeline.mjs";
@@ -463,4 +464,12 @@ await restoreBatchHistory();
 server.listen(port, host, () => {
   process.stdout.write(`\nShortCut media worker listening at http://${host}:${port}\n`);
   process.stdout.write(`FFmpeg: ${ffmpeg || "missing"}\nyt-dlp: ${ytDlp || "missing"}\n\n`);
+  const days = retentionDays();
+  if (days > 0)
+    createRetention({
+      mediaLibrary,
+      days,
+      log: (result) =>
+        process.stdout.write(`Retention (${days} ngày): đã xoá ${result.deleted} mục, giải phóng ${result.freedBytes} byte, giữ lại ${result.kept}.\n`),
+    }).start();
 });

@@ -336,6 +336,7 @@ export function MediaLibraryPanel({
             {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Làm mới
           </Button>
         </Toolbar>
+        <p className="studio-muted text-xs">Video và render cũ hơn 3 ngày tự động bị xoá (trừ mục đang dùng).</p>
         {!ready && <InlineNotice tone="warning">App chưa kết nối media worker.</InlineNotice>}
         {operation && (
           <TaskProgress
