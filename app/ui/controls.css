@@ -48,7 +48,7 @@
     line-height: 1.3;
     text-align: center;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     text-decoration: none;
     box-shadow: none;
     transition:
@@ -118,10 +118,6 @@
     background: transparent;
     border-color: transparent;
   }
-  .studio-part-switcher [data-slot="button"][data-variant="segmented"] {
-    background: var(--panel);
-    border-color: var(--border);
-  }
   .studio-cancel,
   [data-slot="button"][data-variant="destructive"],
   :where(.studio-batch-workspace, .studio-library-workspace) button:where([class*="text-red-"]) {
@@ -137,15 +133,37 @@
 
   /* Sample tiles (templates, filters, backgrounds, overlays, text styles): a button wrapping artwork + label. */
   [data-ui-exception="sample-card"] {
-    padding: var(--space-2);
-    border: 1px solid var(--border);
-    border-radius: var(--card-radius);
-    background: var(--background);
-    color: var(--foreground);
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius);
+    background: transparent;
+    color: var(--muted-foreground);
     text-align: left;
-    transition:
-      background-color var(--motion-fast) ease,
-      border-color var(--motion-fast) ease;
+  }
+  [data-ui-exception="sample-card"] > :first-child:not(svg) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 48px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--control-radius);
+    transition: border-color var(--motion-fast) ease;
+  }
+  [data-ui-exception="sample-card"] > :last-child {
+    display: block;
+    margin-top: var(--space-1);
+    overflow: hidden;
+    font-size: var(--text-caption);
+    font-weight: 500;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  [data-ui-exception="sample-card"] > :last-child svg {
+    display: none;
   }
 
   /* ── Fields ────────────────────────────────────────────────────────────── */
@@ -321,6 +339,7 @@
   /* ── Tabs and segmented groups ─────────────────────────────────────────── */
   [data-slot="tabs-list"],
   .studio-workspaces,
+  .studio-segmented,
   .studio-inspector-tabs {
     display: inline-flex;
     align-items: center;
@@ -334,7 +353,8 @@
     background: var(--background);
   }
   [data-slot="tabs-trigger"],
-  .studio-workspaces button {
+  .studio-workspaces button,
+  .studio-segmented button {
     height: var(--control-height);
     min-height: var(--control-height);
     padding: 0 var(--control-padding);
@@ -352,14 +372,21 @@
   .studio-inspector-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
+    gap: 0;
     width: 100%;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--surface);
   }
   .studio-inspector-tabs [data-slot="tabs-trigger"] {
     width: 100%;
     min-width: 0;
     padding: 0 6px;
     justify-content: center;
+    border-radius: 0;
   }
   .studio-library-tabs {
     display: flex;

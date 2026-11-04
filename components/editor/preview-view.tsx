@@ -211,44 +211,46 @@ export function PreviewView({ model }: { model: Props }) {
   return (
     <>
       <div className="studio-part-switcher" role="group" aria-label="Part cho preview và Timeline">
-        {plan.parts.map((part, index) => {
-          const issue = hasEditPlan && teaserIssues.find((issue) => issue.partId === part.id),
-            invalidMain =
-              mainDraftErrors[part.id]?.sourceKey === mainEditorSourceKey && mainDraftErrors[part.id]?.invalid,
-            invalidTeaser =
-              part.teaserEnabled !== false &&
-              teaserDraftErrors[part.id]?.sourceKey === mainEditorSourceKey &&
-              teaserDraftErrors[part.id]?.message;
-          return (
-            <Button
-              variant="segmented"
-              size="md"
-              data-state={activePartIndex === index ? "active" : "inactive"}
-              type="button"
-              key={part.id}
-              aria-pressed={activePartIndex === index}
-              data-part={part.id}
-              onClick={() => setActivePartIndex(index)}
-            >
-              Part {part.id}
-              {hasEditPlan && (
-                <small>
-                  {(presentationDuration(previewPlan.parts[index]) / PREVIEW_RATE).toFixed(1)}s
-                  {part.mainEdited ? " · Đã sửa tay" : ""}
-                </small>
-              )}
-              {(issue || invalidMain || invalidTeaser) && (
-                <span
-                  className="studio-missing-teaser"
-                  title={issue ? issue.reason : invalidTeaser || "Timeline có mốc chưa hợp lệ"}
-                  aria-label={`Part ${part.id}: thiếu teaser hoặc lỗi mốc`}
-                >
-                  !
-                </span>
-              )}
-            </Button>
-          );
-        })}
+        <div className="studio-segmented">
+          {plan.parts.map((part, index) => {
+            const issue = hasEditPlan && teaserIssues.find((issue) => issue.partId === part.id),
+              invalidMain =
+                mainDraftErrors[part.id]?.sourceKey === mainEditorSourceKey && mainDraftErrors[part.id]?.invalid,
+              invalidTeaser =
+                part.teaserEnabled !== false &&
+                teaserDraftErrors[part.id]?.sourceKey === mainEditorSourceKey &&
+                teaserDraftErrors[part.id]?.message;
+            return (
+              <Button
+                variant="segmented"
+                size="md"
+                data-state={activePartIndex === index ? "active" : "inactive"}
+                type="button"
+                key={part.id}
+                aria-pressed={activePartIndex === index}
+                data-part={part.id}
+                onClick={() => setActivePartIndex(index)}
+              >
+                Part {part.id}
+                {hasEditPlan && (
+                  <small>
+                    {(presentationDuration(previewPlan.parts[index]) / PREVIEW_RATE).toFixed(1)}s
+                    {part.mainEdited ? " · Đã sửa tay" : ""}
+                  </small>
+                )}
+                {(issue || invalidMain || invalidTeaser) && (
+                  <span
+                    className="studio-missing-teaser"
+                    title={issue ? issue.reason : invalidTeaser || "Timeline có mốc chưa hợp lệ"}
+                    aria-label={`Part ${part.id}: thiếu teaser hoặc lỗi mốc`}
+                  >
+                    !
+                  </span>
+                )}
+              </Button>
+            );
+          })}
+        </div>
         {hasEditPlan && (
           <span className="studio-active-title" title={activePart.title}>
             {activePart.title}
@@ -392,7 +394,7 @@ export function PreviewView({ model }: { model: Props }) {
                     onClick={() => void togglePreview()}
                     aria-label={UI_STRINGS.playPreview}
                     style={{ zIndex: transitionWindows.length ? "var(--layer-media-play)" : undefined }}
-                    className="absolute left-1/2 top-1/2 grid size-14 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-white/30 bg-black/50 backdrop-blur-md"
+                    className="studio-media-play absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
                   >
                     <Play className="ml-0.5 size-5 fill-white" />
                   </Button>

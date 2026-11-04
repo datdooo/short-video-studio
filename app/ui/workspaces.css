@@ -30,22 +30,27 @@
     gap: var(--space-2);
     min-width: 0;
   }
-  [data-slot="workspace-toolbar"]
-    :is([data-slot="button"], [data-slot="input"], [data-slot="select-trigger"], [data-slot="tabs-trigger"]) {
-    --button-height: var(--control-height);
-    height: var(--control-height);
-    min-height: var(--control-height);
+  /* Search, tab group and actions in a toolbar share one height. */
+  [data-slot="workspace-toolbar"] :is([data-slot="button"], [data-slot="input"], [data-slot="select-trigger"]) {
+    --button-height: var(--control-lg-height);
+    height: var(--control-lg-height);
+    min-height: var(--control-lg-height);
+  }
+  [data-slot="workspace-toolbar"] .studio-library-tabs {
+    height: var(--control-lg-height);
+    min-height: 0;
+    padding: 2px;
+  }
+  [data-slot="workspace-toolbar"] [data-slot="tabs-trigger"] {
+    height: auto;
+    min-height: 0;
+    align-self: stretch;
   }
   [data-slot="workspace-toolbar"] .studio-library-tabs {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-1);
     width: auto;
-    height: auto;
     margin: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
   }
 
   /* Panel = the one workspace card. A panel inside a panel is a tonal block, not another card. */

@@ -867,13 +867,18 @@
   /* ── Inspector: templates, customize rows ──────────────────────────────── */
   .studio-inspector-body details[aria-labelledby="visual-template-heading"] > .grid,
   .visual-customize-options .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+  /* Text-only choices (e.g. cut transitions) need more width than thumbnail tiles. */
+  .visual-customize-options .grid:not(:has([data-ui-exception="sample-card"])) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .visual-customize summary::-webkit-details-marker {
     display: none;
   }
   .visual-customize-options {
-    padding: var(--space-2) var(--panel-padding) var(--panel-padding);
+    padding: var(--space-2) 0 var(--panel-padding);
   }
   .visual-customize-options > section,
   .visual-customize-options > div {
@@ -928,5 +933,27 @@
   }
   .studio-inspector-body [data-ui-exception="sample-card"] > span:last-child {
     font-size: var(--control-font-size);
+  }
+  /* One play badge for every video: a 48px circle over the picture. */
+  .studio-media-play,
+  .studio-teaser-player-overlay svg,
+  .studio-teaser-player-start svg {
+    box-sizing: border-box;
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    padding: 13px;
+    border: 1px solid color-mix(in srgb, var(--sample-white) 30%, transparent);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--sample-black) 55%, transparent);
+    color: var(--sample-white);
+    fill: currentColor;
+    backdrop-filter: blur(8px);
+  }
+  .studio-media-play {
+    display: grid;
+    place-items: center;
+    padding: 0;
   }
 }

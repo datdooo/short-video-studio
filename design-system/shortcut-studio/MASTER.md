@@ -43,11 +43,11 @@ Primary fill · selected state · keyboard focus ring · progress and sliders. H
 | Focus | 2px accent ring, keyboard only |
 
 ## Shape and size
-Radius: control 8, card 12, chip 6. No pills. Height: 36 control, 32 compact/icon, 40 CTA.
-Space on a 4px grid; panel padding 12, stack gap 10.
+Radius: control 8, card 12, chip 6. No pills. Height: 32 control, 28 compact/icon, 36 CTA and toolbar.
+Space on a 4px grid; panel padding 12, stack gap 8.
 
 ## Type
-Caption 12/500 muted labels · control 13/500 · body 14 · title 14/600 · page 20/600. Sentence case, never uppercase.
+Caption 12/500 muted labels · control 13/500 · body 13 · title 14/600 · page 20/600. Sentence case, never uppercase.
 
 ## Status and notices
 Chip: rectangle, transparent fill, tone colours text and a 30% border. Notice: `--surface` fill,

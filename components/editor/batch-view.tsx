@@ -217,20 +217,16 @@ export function BatchView({ model }: { model: Props }) {
               {isStoppingBatch ? <Loader2 className="animate-spin" /> : <Square />}{" "}
               {isStoppingBatch ? "Đang dừng…" : "Dừng hàng đợi"}
             </Button>
-            <InlineNotice tone="success" className="mt-3">
-              <p className="font-semibold">Tự động tải từng part khi render xong</p>
-              <p className="mt-1 text-muted-foreground">Giữ trang mở và cho phép tải nhiều file.</p>
-              {autoDownloadRequests > 0 && (
-                <p className="mt-1">
-                  Đã gửi {autoDownloadRequests} yêu cầu tải trong phiên này. Kiểm tra mục Downloads của trình duyệt.
-                </p>
-              )}
-              {autoDownloadError && (
-                <InlineNotice tone="error" className="mt-2">
-                  {workerErrorMessage(autoDownloadError)}
-                </InlineNotice>
-              )}
-            </InlineNotice>
+            {autoDownloadRequests > 0 && (
+              <InlineNotice tone="success" className="mt-3">
+                Đã gửi {autoDownloadRequests} yêu cầu tải trong phiên này. Kiểm tra mục Downloads của trình duyệt.
+              </InlineNotice>
+            )}
+            {autoDownloadError && (
+              <InlineNotice tone="error" className="mt-3">
+                {workerErrorMessage(autoDownloadError)}
+              </InlineNotice>
+            )}
             {batchError && (
               <InlineNotice tone="error" className="mt-3">
                 {workerErrorMessage(batchError)}
