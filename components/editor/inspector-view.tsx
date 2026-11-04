@@ -155,10 +155,8 @@ export function InspectorView({ model }: { model: Props }) {
             controls={visualControls}
           />
 
-          <Disclosure className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-            <DisclosureTrigger className="cursor-pointer text-sm font-semibold">
-              Phụ đề tự động · {subtitleSettings.enabled ? "Bật" : "Tắt"}
-            </DisclosureTrigger>
+          <Disclosure section>
+            <DisclosureTrigger>Phụ đề tự động · {subtitleSettings.enabled ? "Bật" : "Tắt"}</DisclosureTrigger>
             <label className="mt-3 flex items-center gap-2 text-xs">
               <input
                 aria-label="Bật phụ đề tự động"
@@ -187,7 +185,10 @@ export function InspectorView({ model }: { model: Props }) {
                   <p className="studio-muted text-xs">{preparedSource.captionWarning}</p>
                 )}
                 <div className="grid grid-cols-2 gap-2">
-                  <Button variant="segmented" size="md" data-state={subtitleSettings.source !== "whisper" ? "active" : "inactive"}
+                  <Button
+                    variant="segmented"
+                    size="md"
+                    data-state={subtitleSettings.source !== "whisper" ? "active" : "inactive"}
                     type="button"
                     aria-pressed={subtitleSettings.source !== "whisper"}
                     disabled={subtitleBusy}
@@ -196,7 +197,10 @@ export function InspectorView({ model }: { model: Props }) {
                   >
                     Dùng phụ đề YouTube
                   </Button>
-                  <Button variant="segmented" size="md" data-state={subtitleSettings.source === "whisper" ? "active" : "inactive"}
+                  <Button
+                    variant="segmented"
+                    size="md"
+                    data-state={subtitleSettings.source === "whisper" ? "active" : "inactive"}
                     type="button"
                     aria-pressed={subtitleSettings.source === "whisper"}
                     disabled={subtitleBusy}
@@ -347,7 +351,13 @@ export function InspectorView({ model }: { model: Props }) {
                   )
                 )}
                 {subtitleBusy && subtitleController.current && (
-                  <Button variant="destructive" size="md" type="button" className="studio-ghost" onClick={onCancelSubtitles}>
+                  <Button
+                    variant="destructive"
+                    size="md"
+                    type="button"
+                    className="studio-ghost"
+                    onClick={onCancelSubtitles}
+                  >
                     Dừng lấy phụ đề
                   </Button>
                 )}
@@ -387,7 +397,7 @@ export function InspectorView({ model }: { model: Props }) {
             />
           </div>
 
-          <div className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
+          <div className="studio-card">
             <div className="studio-field-header flex items-center justify-between gap-3">
               <label htmlFor="final-title" className="field-label">
                 TITLE SAU CÙNG
@@ -453,7 +463,10 @@ export function InspectorView({ model }: { model: Props }) {
   );
 }
 
-function ClockMusicPanel({ clock, ...props }: Omit<ComponentProps<typeof MusicPanel>, "time"> & { clock: import("@/lib/preview-clock.mjs").PreviewClock }) {
+function ClockMusicPanel({
+  clock,
+  ...props
+}: Omit<ComponentProps<typeof MusicPanel>, "time"> & { clock: import("@/lib/preview-clock.mjs").PreviewClock }) {
   const time = useSyncExternalStore(clock.subscribe, clock.getSnapshot, clock.getServerSnapshot);
   return <MusicPanel {...props} time={time} timeRef={clock.timeRef} />;
 }

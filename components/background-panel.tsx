@@ -8,16 +8,14 @@ const presets = listBackgroundPresets();
 export function BackgroundPanel({ background, onPreset }: { background: Background; onPreset: (id: string) => void }) {
   const selected = background.presetId || "current";
   return (
-    <section
-      aria-labelledby="background-heading"
-      className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4"
-    >
+    <section aria-labelledby="background-heading" className="studio-card">
       <h3 id="background-heading" className="text-sm font-semibold">
         Background
       </h3>
       <div className="mt-3 grid grid-cols-3 gap-2">
         {presets.map((preset) => (
-          <button data-ui-exception="sample-card"
+          <button
+            data-ui-exception="sample-card"
             key={preset.id}
             type="button"
             aria-label={`Background: ${preset.label}`}

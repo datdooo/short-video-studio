@@ -7,14 +7,7 @@ import { CopyButton } from "@/components/copy-button";
 import { RenderProgress } from "@/components/render-progress";
 import { TaskProgress } from "@/components/task-progress";
 import { StatusChip } from "@/components/ui/status-chip";
-import {
-  EmptyState,
-  InlineNotice,
-  Panel,
-  PanelBody,
-  PanelHeader,
-  Toolbar,
-} from "@/components/ui/workspace";
+import { EmptyState, InlineNotice, Panel, PanelBody, PanelHeader, Toolbar } from "@/components/ui/workspace";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -133,11 +126,7 @@ export function BatchView({ model }: { model: Props }) {
               </SelectContent>
             </Select>
             <StatusChip tone={provider === "chatgpt" && chatGPTSession?.sharing ? "success" : "neutral"}>
-              {isWebAi
-                ? `${webAiName} thủ công`
-                : chatGPTSession?.sharing
-                  ? "Codex sẵn sàng"
-                  : "Chưa có Codex"}
+              {isWebAi ? `${webAiName} thủ công` : chatGPTSession?.sharing ? "Codex sẵn sàng" : "Chưa có Codex"}
             </StatusChip>
             {provider === "chatgpt" && !chatGPTSession?.sharing && (
               <Button
@@ -163,7 +152,7 @@ export function BatchView({ model }: { model: Props }) {
               </InlineNotice>
             )}
           </Toolbar>
-          <Disclosure className="studio-batch-options mt-3 rounded-xl border border-border p-3">
+          <Disclosure section className="studio-batch-options mt-3">
             <DisclosureTrigger>Yêu cầu và cấu hình lượt mới</DisclosureTrigger>
             <label htmlFor="batch-extra-prompt" className="field-label mt-4 block">
               Yêu cầu bổ sung (không bắt buộc)

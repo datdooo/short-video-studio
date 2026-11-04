@@ -39,13 +39,14 @@ export function OverlayPanel({
 }) {
   const selected = overlays.length === 0 ? "none" : "presetId" in overlays[0] ? overlays[0].presetId : undefined;
   return (
-    <section aria-labelledby="overlay-heading" className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
+    <section aria-labelledby="overlay-heading" className="studio-card">
       <h3 id="overlay-heading" className="text-sm font-semibold">
         Overlay
       </h3>
       <div className="mt-3 grid grid-cols-3 gap-2">
         {presets.map((preset) => (
-          <button data-ui-exception="sample-card"
+          <button
+            data-ui-exception="sample-card"
             key={preset.id}
             type="button"
             aria-label={`Overlay: ${preset.label}`}

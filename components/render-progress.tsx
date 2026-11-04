@@ -13,7 +13,9 @@ export type RenderProgressJob = {
   planSummary?: { parts: unknown[] };
 };
 export function RenderProgress({ job, compact = false }: { job: RenderProgressJob; compact?: boolean }) {
-  const done = job.state === "done" && (!(job.planSummary || job.plan) || job.outputs?.length === (job.planSummary || job.plan)!.parts.length);
+  const done =
+    job.state === "done" &&
+    (!(job.planSummary || job.plan) || job.outputs?.length === (job.planSummary || job.plan)!.parts.length);
   // The worker marks a cancelled job as stopping while its process/cleanup is
   // still active. Do not announce completion before that flag clears.
   const stopping = Boolean(job.stopping) && ["queued", "rendering", "cancelled"].includes(job.state);

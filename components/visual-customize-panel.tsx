@@ -46,11 +46,8 @@ export function VisualCustomizePanel({
     { id: "transition", label: "Chuyển cảnh", value: getCutTransition(style.cutTransition).label },
   ];
   return (
-    <Disclosure
-      data-visual-customize
-      className="studio-disclosure visual-customize mt-5 min-w-0 rounded-2xl border border-white/10 bg-white/[.025]"
-    >
-      <DisclosureTrigger className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl p-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+    <Disclosure data-visual-customize section className="visual-customize min-w-0">
+      <DisclosureTrigger className="flex items-center justify-between gap-3">
         {UI_STRINGS.customize}
         <ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform" />
       </DisclosureTrigger>

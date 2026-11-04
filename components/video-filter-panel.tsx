@@ -36,10 +36,7 @@ export function VideoFilterPanel({
 }) {
   const selected = filter.presetId || "current";
   return (
-    <section
-      aria-labelledby="video-filter-heading"
-      className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4"
-    >
+    <section aria-labelledby="video-filter-heading" className="studio-card">
       <h3 id="video-filter-heading" className="text-sm font-semibold">
         Video Filter
       </h3>
@@ -47,7 +44,8 @@ export function VideoFilterPanel({
         {presets.map((preset) => {
           const id = `studio-filter-card-${preset.id}`;
           return (
-            <button data-ui-exception="sample-card"
+            <button
+              data-ui-exception="sample-card"
               key={preset.id}
               type="button"
               aria-label={`Video filter: ${preset.label}`}
@@ -62,9 +60,11 @@ export function VideoFilterPanel({
                 className="flex h-9 overflow-hidden rounded-lg"
                 style={{ filter: browserFilterStyle(preset.filter, undefined, id) }}
               >
-                {["var(--sample-tan)", "var(--sample-green)", "var(--sample-blue)", "var(--sample-gray)"].map((color) => (
-                  <span key={color} className="flex-1" style={{ backgroundColor: color }} />
-                ))}
+                {["var(--sample-tan)", "var(--sample-green)", "var(--sample-blue)", "var(--sample-gray)"].map(
+                  (color) => (
+                    <span key={color} className="flex-1" style={{ backgroundColor: color }} />
+                  ),
+                )}
               </span>
               <span className="mt-2 flex items-center justify-between gap-1 text-xs font-medium">
                 {preset.label}

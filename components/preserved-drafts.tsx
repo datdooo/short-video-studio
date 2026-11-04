@@ -36,7 +36,9 @@ export function PreservedDrafts({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="secondary" size="sm"
+        <Button
+          variant="secondary"
+          size="sm"
           type="button"
           className="studio-session-drafts"
           disabled={disabled || busy}
@@ -66,7 +68,8 @@ export function PreservedDrafts({
                 <Button variant="secondary" type="button" disabled={busy} onClick={() => void act(draft.key, false)}>
                   Mở
                 </Button>
-                <Button variant="destructive"
+                <Button
+                  variant="destructive"
                   type="button"
                   disabled={busy}
                   aria-label={`Xóa bản nháp ${draft.label}`}
@@ -81,12 +84,7 @@ export function PreservedDrafts({
         )}
         {drafts.length > 0 && (
           <div className="studio-preserved-drafts-footer">
-            <Button
-              variant="destructive"
-              type="button"
-              disabled={busy}
-              onClick={() => void run(onClearAll, true)}
-            >
+            <Button variant="destructive" type="button" disabled={busy} onClick={() => void run(onClearAll, true)}>
               <Trash2 size={14} aria-hidden="true" />
               Xóa tất cả ({drafts.length})
             </Button>

@@ -1,6 +1,14 @@
 "use client";
 
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } from "@/components/ui/select";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  SelectGroup,
+  SelectLabel,
+} from "@/components/ui/select";
 
 import { Check } from "lucide-react";
 import { listFonts, fontFamilyForStyle } from "@/lib/visual-style/fonts.mjs";
@@ -21,16 +29,14 @@ const samples: Record<string, string> = {
 export function TextStylePanel({ style, onPreset }: { style: VisualStyle; onPreset: (id: string) => void }) {
   const selected = style.textPresetId || "current";
   return (
-    <section
-      aria-labelledby="text-style-heading"
-      className="mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4"
-    >
+    <section aria-labelledby="text-style-heading" className="studio-card">
       <h3 id="text-style-heading" className="text-sm font-semibold">
         Text style
       </h3>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {presets.map((preset) => (
-          <button data-ui-exception="sample-card"
+          <button
+            data-ui-exception="sample-card"
             key={preset.id}
             type="button"
             aria-label={`Text style: ${preset.label}`}

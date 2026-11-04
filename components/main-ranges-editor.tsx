@@ -145,7 +145,9 @@ export function MainRangesEditor({
               ))}
               <div className="studio-main-range-actions flex items-center justify-start gap-1">
                 {onSeek && (
-                  <Button variant="ghost" size="md"
+                  <Button
+                    variant="ghost"
+                    size="md"
                     type="button"
                     disabled={invalid}
                     className="studio-ghost"
@@ -155,12 +157,14 @@ export function MainRangesEditor({
                     Xem
                   </Button>
                 )}
-                <Button variant="destructive" size="icon"
+                <Button
+                  variant="destructive"
+                  size="icon"
                   type="button"
                   aria-label={`Xóa đoạn ${i + 1} Part ${part.id}`}
                   title="Xóa đoạn"
                   data-control-size="icon"
-                  className="rounded border border-white/15 py-2 text-sm focus-visible:outline-2 focus-visible:outline-white"
+                  className="rounded-lg border border-white/15 py-2 text-sm focus-visible:outline-2 focus-visible:outline-white"
                   onClick={() => edit(rows.filter((_, j) => j !== i))}
                 >
                   <X size={16} aria-hidden="true" />
@@ -170,19 +174,23 @@ export function MainRangesEditor({
           </Fragment>
         ))}
         <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-          <Button variant="secondary" size="md"
+          <Button
+            variant="secondary"
+            size="md"
             type="button"
             disabled={rows.length >= MAX_MAIN_RANGES}
-            className="rounded border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
+            className="rounded-lg border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
             onClick={() => edit([...rows, { start: "", end: "", timecode: true }])}
           >
             + Thêm đoạn
           </Button>
-          <Button variant="secondary" size="md"
+          <Button
+            variant="secondary"
+            size="md"
             type="button"
             disabled={!part.aiMainRanges}
             title={!part.aiMainRanges ? "Chưa có bản cắt AI để khôi phục." : undefined}
-            className="rounded border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
+            className="rounded-lg border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
             onClick={() => {
               setDraft(null);
               setOwnApplied(null);

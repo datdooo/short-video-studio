@@ -449,7 +449,9 @@ export function TeaserEditor({
                 <span className="studio-danger">· cần chọn</span>
               ))}
           </h4>
-          <Button variant="secondary" size="md"
+          <Button
+            variant="secondary"
+            size="md"
             type="button"
             role="switch"
             aria-checked={enabled}
@@ -520,16 +522,20 @@ export function TeaserEditor({
             />
           </label>
           <div className="studio-action-row">
-            <Button variant="secondary" size="md"
+            <Button
+              variant="secondary"
+              size="md"
               type="button"
               disabled={busy || applying || suspended || aiBusy}
               onClick={() => void generate()}
-              className="max-w-full rounded border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white"
+              className="max-w-full rounded-lg border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white"
             >
               {busy ? "Đang chọn teaser…" : "Tạo/chọn lại teaser"}
             </Button>
             {busy && (
-              <Button variant="secondary" size="md"
+              <Button
+                variant="secondary"
+                size="md"
                 type="button"
                 className="studio-control"
                 onClick={() => {

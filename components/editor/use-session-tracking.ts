@@ -216,10 +216,16 @@ export function useSessionTracking(state: State) {
     ],
   );
   useLayoutEffect(() => {
-    latestSessionRef.current = { ...sessionSnapshot, get previewTime() { return previewCurrentTimeRef.current; } };
+    latestSessionRef.current = {
+      ...sessionSnapshot,
+      get previewTime() {
+        return previewCurrentTimeRef.current;
+      },
+    };
     if (!sessionReady) return;
     registerSessionCheckpoint(() => {
-      if (draftWriteBlockedRef.current || !latestSessionRef.current) return "Bản gốc đang được bảo vệ; chưa ghi đè checkpoint.";
+      if (draftWriteBlockedRef.current || !latestSessionRef.current)
+        return "Bản gốc đang được bảo vệ; chưa ghi đè checkpoint.";
       return writeEditorSession(latestSessionRef.current);
     });
     const baseline = pendingSaveBaselineRef.current;

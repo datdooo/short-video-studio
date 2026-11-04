@@ -193,7 +193,7 @@ export function TimelineView({ model }: { model: Props }) {
   return (
     <>
       {hasEditPlan && (
-        <div className="min-w-0 rounded-xl border border-white/8 bg-white/[.025] p-3">
+        <div className="studio-card min-w-0">
           <div className="studio-cut-history-toolbar">
             <h3 className="text-sm font-semibold">
               Timeline · Part {activePart.id}
@@ -206,7 +206,9 @@ export function TimelineView({ model }: { model: Props }) {
                 ))}
             </h3>
             <div role="group" aria-label="Lịch sử chỉnh cut">
-              <Button variant="secondary" size="md"
+              <Button
+                variant="secondary"
+                size="md"
                 type="button"
                 className="studio-control"
                 disabled={cutHistoryBlocked || !cutHistory.previous}
@@ -219,7 +221,9 @@ export function TimelineView({ model }: { model: Props }) {
               >
                 Hoàn tác
               </Button>
-              <Button variant="secondary" size="md"
+              <Button
+                variant="secondary"
+                size="md"
                 type="button"
                 className="studio-control"
                 disabled={cutHistoryBlocked || !cutHistory.next}

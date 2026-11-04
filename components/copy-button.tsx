@@ -67,7 +67,9 @@ export function CopyButton({
   }
   return (
     <span className="inline-flex max-w-full flex-col items-start gap-2">
-      <Button variant="secondary" size="md"
+      <Button
+        variant="secondary"
+        size="md"
         type="button"
         aria-label={ariaLabel || label}
         disabled={disabled || status === "pending"}

@@ -433,38 +433,6 @@ export function StudioView({
           onNewSession={newSession}
           ready={sessionReady}
         />
-        {(sessionNotice ||
-          saveError ||
-          sourceRestoreNotice ||
-          (sourceLeaseError && workspace !== "storage") ||
-          interruptedTasks.length > 0) && (
-          <div className="studio-notices" role="status">
-            {sessionNotice && <span>{sessionNotice}</span>}
-            {saveError && <span className="studio-danger">{saveError}</span>}
-            {sourceRestoreNotice && <span className="studio-warning">{sourceRestoreNotice}</span>}
-            {sourceLeaseError && workspace !== "storage" && <span className="studio-warning">{sourceLeaseError}</span>}
-            {!!interruptedTasks.length && (
-              <span className="studio-warning">
-                Đã gián đoạn: {interruptedTasks.join(", ")}. Dùng nút tác vụ để tiếp tục; không tự gửi lại.
-              </span>
-            )}
-            {retainedSourceId && !preparedSource && (
-              <Button variant="secondary" size="md" type="button" onClick={() => setSourceRestoreVersion((v) => v + 1)}>
-                Nối lại source
-              </Button>
-            )}
-            {restoreBlocked && (
-              <Button variant="secondary" size="md"
-                type="button"
-                onClick={() => {
-                  if (preserveCurrentDraft()) setSessionNotice("Đã giữ nguyên bản gốc. Bấm Lưu để lưu phiên hiện tại.");
-                }}
-              >
-                Giữ bản gốc
-              </Button>
-            )}
-          </div>
-        )}
         {workspace === "storage" && (
           <StorageView model={{ ...renderActions, ...renderState, editorSourceId, ensureEditorSource, workerHealth }} />
         )}
@@ -647,6 +615,50 @@ export function StudioView({
             }
             status={
               <StudioRenderStatus
+                notices={
+                  sessionNotice ||
+                  saveError ||
+                  sourceRestoreNotice ||
+                  (sourceLeaseError && workspace !== "storage") ||
+                  interruptedTasks.length > 0 ? (
+                    <>
+                      {sessionNotice && <span>{sessionNotice}</span>}
+                      {saveError && <span className="studio-danger">{saveError}</span>}
+                      {sourceRestoreNotice && <span className="studio-warning">{sourceRestoreNotice}</span>}
+                      {sourceLeaseError && workspace !== "storage" && (
+                        <span className="studio-warning">{sourceLeaseError}</span>
+                      )}
+                      {!!interruptedTasks.length && (
+                        <span className="studio-warning">
+                          Đã gián đoạn: {interruptedTasks.join(", ")}. Dùng nút tác vụ để tiếp tục; không tự gửi lại.
+                        </span>
+                      )}
+                      {retainedSourceId && !preparedSource && (
+                        <Button
+                          variant="secondary"
+                          size="md"
+                          type="button"
+                          onClick={() => setSourceRestoreVersion((v) => v + 1)}
+                        >
+                          Nối lại source
+                        </Button>
+                      )}
+                      {restoreBlocked && (
+                        <Button
+                          variant="secondary"
+                          size="md"
+                          type="button"
+                          onClick={() => {
+                            if (preserveCurrentDraft())
+                              setSessionNotice("Đã giữ nguyên bản gốc. Bấm Lưu để lưu phiên hiện tại.");
+                          }}
+                        >
+                          Giữ bản gốc
+                        </Button>
+                      )}
+                    </>
+                  ) : null
+                }
                 timelineDraftInvalid={Boolean(
                   (mainDraftErrors[activePart.id]?.sourceKey === mainEditorSourceKey &&
                     mainDraftErrors[activePart.id]?.invalid) ||

@@ -28,7 +28,10 @@ export function useRenderJobs() {
       pending = true;
       const epoch = editorMutationEpoch.current;
       try {
-        const response = await workerFetch(`/api/editor-renders?compact=1`, { cache: "no-store", signal: controller.signal });
+        const response = await workerFetch(`/api/editor-renders?compact=1`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const data = (await response.json()) as { jobs?: RenderJob[]; error?: string };
         if (!response.ok || !data.jobs) throw new Error(data.error || "Không đọc được danh sách render.");
         if (active && epoch === editorMutationEpoch.current) {
@@ -40,7 +43,14 @@ export function useRenderJobs() {
             }));
           delay = jobs.some((job) => job.state === "queued" || job.state === "rendering") ? 1_200 : 5_000;
           setEditorRenderJobs((current) => retainEqualJobs(current, jobs));
-          setRenderJob((current) => (current ? (() => { const next = jobs.find((job) => job.id === current.id); return next ? retainEqualJobs(current, next) : current; })() : null));
+          setRenderJob((current) =>
+            current
+              ? (() => {
+                  const next = jobs.find((job) => job.id === current.id);
+                  return next ? retainEqualJobs(current, next) : current;
+                })()
+              : null,
+          );
           setEditorRenderPollError("");
         }
       } catch (caughtError) {
@@ -56,7 +66,10 @@ export function useRenderJobs() {
     void poll();
 
     const onVisible = () => {
-      if (document.visibilityState !== "hidden") { window.clearTimeout(timer); void poll(); }
+      if (document.visibilityState !== "hidden") {
+        window.clearTimeout(timer);
+        void poll();
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {

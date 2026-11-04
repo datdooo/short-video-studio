@@ -58,7 +58,8 @@ export function StudioHeader({
       </strong>
       <nav aria-label="Chế độ làm việc" className="studio-workspaces">
         {tabs.map((tab) => (
-          <Button variant="segmented"
+          <Button
+            variant="segmented"
             data-state={workspace === tab.id ? "active" : "inactive"}
             type="button"
             key={tab.id}
@@ -88,7 +89,9 @@ export function StudioHeader({
           {providerLabel}
         </StatusChip>
         {drafts}
-        <Button variant="secondary" size="sm"
+        <Button
+          variant="secondary"
+          size="sm"
           type="button"
           className="studio-session-save"
           data-unsaved={saveState === "dirty" || saveState === "error"}
@@ -106,7 +109,13 @@ export function StudioHeader({
           }
         >
           <Save size={13} aria-hidden="true" />
-          {saveState === "saved" ? <StatusChip tone="success">Đã lưu</StatusChip> : saveState === "saving" ? "Đang lưu…" : "Lưu"}
+          {saveState === "saved" ? (
+            <StatusChip tone="success">Đã lưu</StatusChip>
+          ) : saveState === "saving" ? (
+            "Đang lưu…"
+          ) : (
+            "Lưu"
+          )}
         </Button>
         <Popover open={confirmNew} onOpenChange={setConfirmNew}>
           <PopoverTrigger asChild>
@@ -121,7 +130,8 @@ export function StudioHeader({
               <Button variant="secondary" type="button" className="studio-ghost" onClick={() => setConfirmNew(false)}>
                 Hủy
               </Button>
-              <Button variant="destructive"
+              <Button
+                variant="destructive"
                 type="button"
                 onClick={() => {
                   setConfirmNew(false);

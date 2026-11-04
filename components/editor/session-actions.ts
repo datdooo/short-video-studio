@@ -175,7 +175,7 @@ export function createSessionActions(read: () => State) {
     setTranscript(d.transcript || "");
     setInstruction(d.instruction || "");
     setSupplementalPrompt(d.supplementalPrompt || "");
-    setEditMode(d.editMode || "ai");
+    setEditMode("ai");
     setProvider(d.provider || "chatgpt");
     setPlan(d.plan || mockPlan({ ...DEFAULT_REQUEST, originalTitle: d.sourceTitle || "" }));
     setHasEditPlan(!!d.hasEditPlan);
@@ -587,10 +587,7 @@ export function useSessionActions(read: () => State) {
     (key: string) => createSessionActions(readerRef.current).deletePreservedDraft(key),
     [],
   );
-  const clearPreservedDrafts = useCallback(
-    () => createSessionActions(readerRef.current).clearPreservedDrafts(),
-    [],
-  );
+  const clearPreservedDrafts = useCallback(() => createSessionActions(readerRef.current).clearPreservedDrafts(), []);
   const newSession = useCallback(
     (...args: Parameters<ReturnType<typeof createSessionActions>["newSession"]>) =>
       createSessionActions(readerRef.current).newSession(...args),

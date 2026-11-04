@@ -190,7 +190,8 @@ export function TeaserCandidateReview({
               {choices.map((choice, index) => {
                 const t = choice.part.teaser as Selected;
                 return (
-                  <button data-ui-exception="candidate-card"
+                  <button
+                    data-ui-exception="candidate-card"
                     type="button"
                     key={choice.id}
                     className="studio-teaser-option"
@@ -272,7 +273,9 @@ export function TeaserCandidateReview({
           </div>
           <footer className="studio-teaser-review-footer">
             <span title="Phát video và tiếng nguồn; không render style hoặc trộn nhạc lại">Video nguồn · 1×</span>
-            <Button variant="primary" size="md"
+            <Button
+              variant="primary"
+              size="md"
               type="button"
               className="studio-primary"
               disabled={suspended || Boolean(used && !hasEdits)}
@@ -606,7 +609,8 @@ function RangePlayer({
             onEnded={pause}
           />
         ) : (
-          <button data-ui-exception="media-hit-area"
+          <button
+            data-ui-exception="media-hit-area"
             type="button"
             className="studio-teaser-player-start"
             disabled={suspended || !sourceUrl}
@@ -617,19 +621,24 @@ function RangePlayer({
           </button>
         )}
         {loaded && !playing && !buffering && (
-          <Tooltip label="Phát thử ứng viên"><button data-ui-exception="media-hit-area"
-            type="button"
-            className="studio-teaser-player-overlay"
-            aria-label="Phát thử ứng viên"
-            disabled={suspended}
-            onClick={toggle}
-          >
-            <Play size={22} />
-          </button></Tooltip>
+          <Tooltip label="Phát thử ứng viên">
+            <button
+              data-ui-exception="media-hit-area"
+              type="button"
+              className="studio-teaser-player-overlay"
+              aria-label="Phát thử ứng viên"
+              disabled={suspended}
+              onClick={toggle}
+            >
+              <Play size={22} />
+            </button>
+          </Tooltip>
         )}
       </div>
       <div className="studio-teaser-player-controls">
-        <Button variant="icon" size="icon"
+        <Button
+          variant="icon"
+          size="icon"
           type="button"
           className="studio-control-icon"
           disabled={suspended || !sourceUrl}
@@ -638,7 +647,9 @@ function RangePlayer({
         >
           {playing || buffering ? <Pause size={16} /> : <Play size={16} />}
         </Button>
-        <Button variant="icon" size="icon"
+        <Button
+          variant="icon"
+          size="icon"
           type="button"
           className="studio-control-icon"
           aria-label="Về đầu ứng viên"

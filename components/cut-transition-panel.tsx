@@ -27,7 +27,10 @@ export function CutTransitionPanel({
       </h3>
       <div className="mt-2 grid grid-cols-3 gap-2">
         {presets.map(({ id, label }) => (
-          <Button variant="segmented" size="md" data-state={selected === id ? "active" : "inactive"}
+          <Button
+            variant="segmented"
+            size="md"
+            data-state={selected === id ? "active" : "inactive"}
             key={id}
             type="button"
             aria-label={`Cut transition: ${label}`}

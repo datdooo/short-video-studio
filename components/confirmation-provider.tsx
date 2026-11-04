@@ -69,7 +69,11 @@ export function ConfirmationProvider({ children }: { children: ReactNode }) {
             <Button type="button" variant="secondary" onClick={() => finish("cancel")}>
               {request?.save ? "Ở lại" : "Hủy"}
             </Button>
-            <Button type="button" variant={request?.save ? "secondary" : "destructive"} onClick={() => finish("confirm")}>
+            <Button
+              type="button"
+              variant={request?.save ? "secondary" : "destructive"}
+              onClick={() => finish("confirm")}
+            >
               {request?.confirmLabel || (request?.save ? "Bỏ phần chưa lưu" : "Xác nhận")}
             </Button>
             {request?.save && (

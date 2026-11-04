@@ -166,7 +166,8 @@ export function EditorWorkspace({
     <div className="editor-workspace">
       <div className="studio-fixed-columns" data-source-open={sourceOpen} data-inspector-open={inspectorOpen}>
         {narrow && drawer && visible && (
-          <button data-ui-exception="drawer-backdrop"
+          <button
+            data-ui-exception="drawer-backdrop"
             type="button"
             tabIndex={-1}
             className="studio-drawer-backdrop"
@@ -188,7 +189,14 @@ export function EditorWorkspace({
         >
           <div className="studio-drawer-heading">
             <strong id="studio-source-drawer-title">Nguồn và AI</strong>
-            <Button variant="icon" size="icon" ref={sourceClose} type="button" aria-label="Đóng nguồn" onClick={closeDrawer}>
+            <Button
+              variant="icon"
+              size="icon"
+              ref={sourceClose}
+              type="button"
+              aria-label="Đóng nguồn"
+              onClick={closeDrawer}
+            >
               <X size={16} />
             </Button>
           </div>
@@ -209,7 +217,14 @@ export function EditorWorkspace({
         >
           <div className="studio-drawer-heading">
             <strong id="studio-inspector-drawer-title">Chỉnh sửa</strong>
-            <Button variant="icon" size="icon" ref={inspectorClose} type="button" aria-label={UI_STRINGS.closeInspector} onClick={closeDrawer}>
+            <Button
+              variant="icon"
+              size="icon"
+              ref={inspectorClose}
+              type="button"
+              aria-label={UI_STRINGS.closeInspector}
+              onClick={closeDrawer}
+            >
               <X size={16} />
             </Button>
           </div>
@@ -219,7 +234,9 @@ export function EditorWorkspace({
       <EditorStatusBar
         controls={
           <>
-            <Button variant="icon" size="icon"
+            <Button
+              variant="icon"
+              size="icon"
               ref={sourceToggle}
               type="button"
               aria-controls="studio-source-column"
@@ -230,7 +247,9 @@ export function EditorWorkspace({
             >
               <PanelLeft size={16} />
             </Button>
-            <Button variant="icon" size="icon"
+            <Button
+              variant="icon"
+              size="icon"
               ref={inspectorToggle}
               type="button"
               aria-controls="studio-inspector-column"

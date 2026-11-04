@@ -79,7 +79,7 @@ export function readEditorSessionRaw(saved:string|null):EditorSessionRead{
   d.selectedBatchPreviewKey=text(r.selectedBatchPreviewKey,500);
   d.sourceAdvancedOpen=r.sourceAdvancedOpen===true;
   d.inspectorTab=r.inspectorTab==='text'||r.inspectorTab==='music'?r.inspectorTab:'appearance';
-  d.sourceMode=r.sourceMode==='local'?'local':'youtube';d.editMode=r.editMode==='manual'?'manual':'ai';
+  d.sourceMode=r.sourceMode==='local'?'local':'youtube';d.editMode='ai';
   if(['mock','chatgpt','chatgpt-web','gemini','muse','openai','qwen'].includes(String(r.provider)))d.provider=r.provider as EditorSession['provider'];
   d.workspace=r.workspace==='batch'||r.workspace==='storage'?r.workspace:'editor';d.activePartIndex=r.activePartIndex===1?1:0;d.previewTime=finite(r.previewTime)?Number(r.previewTime):0;
   d.plan=readPlan(r.plan,d.sourceId||undefined);d.hasEditPlan=!!d.plan&&r.hasEditPlan===true;

@@ -5,14 +5,7 @@ import { useConfirm, toast } from "./confirmation-provider";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Download, Film, FolderOpen, Loader2, Play, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import { StatusChip } from "@/components/ui/status-chip";
-import {
-  EmptyState,
-  InlineNotice,
-  Panel,
-  PanelBody,
-  PanelHeader,
-  Toolbar,
-} from "@/components/ui/workspace";
+import { EmptyState, InlineNotice, Panel, PanelBody, PanelHeader, Toolbar } from "@/components/ui/workspace";
 import { TaskProgress } from "./task-progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

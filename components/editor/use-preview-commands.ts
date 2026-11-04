@@ -230,7 +230,9 @@ export function usePreviewCommands(state: State) {
         return;
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
-      seekPreview(Math.max(0, Math.min(timelineDuration, previewCurrentTimeRef.current + (event.key === "ArrowRight" ? 5 : -5))));
+      seekPreview(
+        Math.max(0, Math.min(timelineDuration, previewCurrentTimeRef.current + (event.key === "ArrowRight" ? 5 : -5))),
+      );
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);

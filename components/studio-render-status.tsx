@@ -21,6 +21,7 @@ type Job = {
 };
 export function StudioRenderStatus({
   timelineNotice,
+  notices,
   timelineDraftInvalid = false,
   job,
   submitting,
@@ -37,6 +38,7 @@ export function StudioRenderStatus({
   busy,
 }: {
   timelineNotice?: ReactNode;
+  notices?: ReactNode;
   timelineDraftInvalid?: boolean;
   job: Job | null;
   submitting: boolean;
@@ -66,6 +68,7 @@ export function StudioRenderStatus({
     <>
       <div className="studio-render-state" role={running ? undefined : "status"}>
         {timelineNotice}
+        {notices}
         {submitting ? (
           <span>
             <Loader2 size={13} className="animate-spin" aria-hidden="true" />
@@ -99,7 +102,14 @@ export function StudioRenderStatus({
         {!!issues.length && hasPlan && !running && (
           <span className="studio-part-fixes">
             {issues.map((issue) => (
-              <Button variant="secondary" size="md" type="button" key={issue.partId} onClick={() => onPart(issue.partId)} title={issue.reason}>
+              <Button
+                variant="secondary"
+                size="md"
+                type="button"
+                key={issue.partId}
+                onClick={() => onPart(issue.partId)}
+                title={issue.reason}
+              >
                 Sửa Part {issue.partId}
               </Button>
             ))}
@@ -119,7 +129,14 @@ export function StudioRenderStatus({
         ))}
       </div>
       {running && (
-        <Button variant="destructive" size="md" type="button" className="studio-cancel" disabled={cancelling} onClick={onCancel}>
+        <Button
+          variant="destructive"
+          size="md"
+          type="button"
+          className="studio-cancel"
+          disabled={cancelling}
+          onClick={onCancel}
+        >
           <Square size={13} aria-hidden="true" />
           {cancelling ? "Đang dừng…" : "Hủy"}
         </Button>
@@ -129,7 +146,9 @@ export function StudioRenderStatus({
           {reason}
         </span>
       )}
-      <Button variant="primary" size="md"
+      <Button
+        variant="primary"
+        size="md"
         type="button"
         aria-describedby={!canRender ? reasonId : undefined}
         className="studio-primary studio-render-button"

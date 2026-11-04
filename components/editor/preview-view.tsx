@@ -12,7 +12,15 @@ import type { EditPart, Segment } from "@/lib/edit-plan";
 import { EditPlan, formatTime } from "@/lib/edit-plan";
 import { PREVIEW_RATE, previewToExportTime } from "@/lib/preview-config.mjs";
 import { locateTimelineTime } from "@/lib/preview-timeline.mjs";
-import { CANVAS_WIDTH, TITLE_SHINE_SECONDS, TITLE_SHINE_WIDTH, FOREGROUND_HEIGHT, FOREGROUND_SCALE, FOREGROUND_Y, TITLE_LAYOUT } from "@/lib/render-config.mjs";
+import {
+  CANVAS_WIDTH,
+  TITLE_SHINE_SECONDS,
+  TITLE_SHINE_WIDTH,
+  FOREGROUND_HEIGHT,
+  FOREGROUND_SCALE,
+  FOREGROUND_Y,
+  TITLE_LAYOUT,
+} from "@/lib/render-config.mjs";
 import { formatSourceTimecode } from "@/lib/source-timecode.mjs";
 import type { Caption } from "@/lib/subtitles.mjs";
 import { subtitleY } from "@/lib/subtitles.mjs";
@@ -184,9 +192,15 @@ export function PreviewView({ model }: { model: Props }) {
     workspace,
     workspaceRef,
   } = model;
-  const previewCurrentTime = useSyncExternalStore(previewClock.subscribe, previewClock.getSnapshot, previewClock.getServerSnapshot);
+  const previewCurrentTime = useSyncExternalStore(
+    previewClock.subscribe,
+    previewClock.getSnapshot,
+    previewClock.getServerSnapshot,
+  );
   const previewEffectTime = previewToExportTime(previewCurrentTime);
-  const previewCaption = previewCaptions.find(cue => previewCurrentTime * PREVIEW_RATE >= cue.start && previewCurrentTime * PREVIEW_RATE < cue.end);
+  const previewCaption = previewCaptions.find(
+    (cue) => previewCurrentTime * PREVIEW_RATE >= cue.start && previewCurrentTime * PREVIEW_RATE < cue.end,
+  );
   const titleShineStyle = {
     maskImage: "linear-gradient(to right, transparent, var(--sample-black) 50%, transparent)",
     maskRepeat: "no-repeat",
@@ -206,7 +220,10 @@ export function PreviewView({ model }: { model: Props }) {
               teaserDraftErrors[part.id]?.sourceKey === mainEditorSourceKey &&
               teaserDraftErrors[part.id]?.message;
           return (
-            <Button variant="segmented" size="md" data-state={activePartIndex === index ? "active" : "inactive"}
+            <Button
+              variant="segmented"
+              size="md"
+              data-state={activePartIndex === index ? "active" : "inactive"}
               type="button"
               key={part.id}
               aria-pressed={activePartIndex === index}
@@ -367,7 +384,10 @@ export function PreviewView({ model }: { model: Props }) {
                   height={foregroundSourceHeight}
                 />
                 {previewVideoUrl && !isPreviewPlaying && (
-                  <Button variant="icon" size="icon" tooltip={`${isPreviewPlaying ? UI_STRINGS.pausePreview : UI_STRINGS.playPreview} · Space`}
+                  <Button
+                    variant="icon"
+                    size="icon"
+                    tooltip={`${isPreviewPlaying ? UI_STRINGS.pausePreview : UI_STRINGS.playPreview} · Space`}
                     type="button"
                     onClick={() => void togglePreview()}
                     aria-label={UI_STRINGS.playPreview}
@@ -503,7 +523,9 @@ export function PreviewView({ model }: { model: Props }) {
             </span>
           </div>
           <div className="preview-controls w-full max-w-[520px]">
-            <Button variant="icon" size="icon"
+            <Button
+              variant="icon"
+              size="icon"
               type="button"
               aria-label="Tua lùi 5 giây"
               title="← · Lùi 5 giây"
@@ -512,7 +534,10 @@ export function PreviewView({ model }: { model: Props }) {
             >
               <ArrowLeft className="size-3" />
             </Button>
-            <Button variant="icon" size="icon" tooltip={`${isPreviewPlaying ? UI_STRINGS.pausePreview : UI_STRINGS.playPreview} · Space`}
+            <Button
+              variant="icon"
+              size="icon"
+              tooltip={`${isPreviewPlaying ? UI_STRINGS.pausePreview : UI_STRINGS.playPreview} · Space`}
               type="button"
               onClick={() => void togglePreview()}
               disabled={!previewVideoUrl}
@@ -524,7 +549,9 @@ export function PreviewView({ model }: { model: Props }) {
                 <Play className="ml-0.5 size-4 fill-current" />
               )}
             </Button>
-            <Button variant="icon" size="icon"
+            <Button
+              variant="icon"
+              size="icon"
               type="button"
               aria-label="Tua tới 5 giây"
               title="→ · Tới 5 giây"

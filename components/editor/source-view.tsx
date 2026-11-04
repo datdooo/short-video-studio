@@ -9,7 +9,6 @@ import { TaskProgress } from "@/components/task-progress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { type AiDiagnostics } from "@/lib/ai-progress";
 import {
@@ -24,7 +23,7 @@ import {
 import { AiProvider, EditPlan, formatTime } from "@/lib/edit-plan";
 import { explainInVietnamese } from "@/lib/explanation-language.mjs";
 import { UI_STRINGS } from "@/lib/ui-strings";
-import { Check, Download, Link2, Loader2, RefreshCw, Scissors, Sparkles, Square, WandSparkles } from "lucide-react";
+import { Check, Download, Link2, Loader2, RefreshCw, Square, WandSparkles } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { ChangeEvent } from "react";
 
@@ -136,7 +135,6 @@ export function SourceView({ model }: { model: Props }) {
     analysisNotice,
     analysisStartedAt,
     analyze,
-    applyManualPlan,
     applyWebAiResult,
     batchEditing,
     changeProvider,
@@ -155,10 +153,6 @@ export function SourceView({ model }: { model: Props }) {
     isStartingRender,
     isWebAi,
     localFileName,
-    manualPart1Ranges,
-    manualPart1Title,
-    manualPart2Ranges,
-    manualPart2Title,
     preparedSource,
     prepareSource,
     previewPlan,
@@ -166,12 +160,7 @@ export function SourceView({ model }: { model: Props }) {
     queueEditedBatchItem,
     resetSourceSelection,
     setAnalysisNotice,
-    setEditMode,
     setError,
-    setManualPart1Ranges,
-    setManualPart1Title,
-    setManualPart2Ranges,
-    setManualPart2Title,
     setSourceAdvancedOpen,
     setSourceTitle,
     setSourceUrl,
@@ -239,14 +228,12 @@ export function SourceView({ model }: { model: Props }) {
           </div>
         </div>
       </div>
-      <Button variant="primary" size="md"
+      <Button
+        variant="primary"
+        size="md"
         type="button"
         onClick={() => void prepareSource()}
-        disabled={
-          isPreparingSource ||
-          !workerHealth?.ok ||
-          (!preparedSource && !sourceUrl.trim())
-        }
+        disabled={isPreparingSource || !workerHealth?.ok || (!preparedSource && !sourceUrl.trim())}
         className={`studio-primary w-full${preparedSource && !isPreparingSource ? " studio-source-ready" : ""}`}
         aria-busy={isPreparingSource}
       >
@@ -292,7 +279,9 @@ export function SourceView({ model }: { model: Props }) {
                 : undefined
             }
           />
-          <Button variant="secondary" size="md"
+          <Button
+            variant="secondary"
+            size="md"
             type="button"
             onClick={() => {
               sourcePreparation.current?.abort(new DOMException("Đã dừng chuẩn bị nguồn", "AbortError"));
@@ -493,7 +482,9 @@ export function SourceView({ model }: { model: Props }) {
         </section>
       ) : null}
       {!(editMode === "ai" && isWebAi) && (
-        <Button variant="primary" size="md"
+        <Button
+          variant="primary"
+          size="md"
           type="button"
           className="studio-primary w-full"
           disabled={
@@ -501,23 +492,15 @@ export function SourceView({ model }: { model: Props }) {
             Object.values(teaserOperations).some((operation) => operation.running) ||
             isPreparingSource ||
             !workerHealth?.ok ||
-            !preparedSource ||
-            (editMode === "manual" && hasEditPlan)
+            !preparedSource
           }
           onClick={() => {
-            if (editMode === "manual") applyManualPlan();
-            else if (isWebAi) void downloadWebAiPrompt();
+            if (isWebAi) void downloadWebAiPrompt();
             else void analyze();
           }}
         >
           {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <WandSparkles size={14} />}{" "}
-          {isAnalyzing
-            ? "Đang phân tích…"
-            : editMode === "manual"
-              ? "Áp dụng main thủ công"
-              : isWebAi
-                ? `Tạo prompt ${webAiName}`
-                : "Phân tích"}
+          {isAnalyzing ? "Đang phân tích…" : isWebAi ? `Tạo prompt ${webAiName}` : "Phân tích"}
         </Button>
       )}
       {isAnalyzing && webAiPhase !== "prompt" && (
@@ -561,173 +544,112 @@ export function SourceView({ model }: { model: Props }) {
         onOpenChange={setSourceAdvancedOpen}
         className="studio-advanced"
       >
-        <Tabs
-          value={editMode}
-          onValueChange={(value) => {
-            setEditMode(value as "ai" | "manual");
-            setError("");
-          }}
-          className="mt-5"
-        >
-          <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl bg-white/[.045] p-1">
-            <TabsTrigger value="ai" className="rounded-lg text-xs">
-              <Sparkles /> Cắt bằng AI
-            </TabsTrigger>
-            <TabsTrigger value="manual" className="rounded-lg text-xs">
-              <Scissors /> Cắt thủ công
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="ai" className="space-y-4 pt-4">
-            {provider === "chatgpt" && (
-              <div className="rounded-2xl border border-white/8 bg-white/[.025] p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-xs font-semibold text-zinc-200">
-                      <span
-                        className={`size-2 rounded-full ${chatGPTSession?.sharing ? "bg-emerald-400 shadow-[0_0_10px_var(--provider-glow)]" : "bg-zinc-700"}`}
-                      />
-                      {chatGPTSession?.sharing ? "Codex sẵn sàng" : "Cần Codex CLI"}
-                    </p>
-                    <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
-                      {chatGPTSession?.sharing
-                        ? `ChatGPT Auto · ${chatGPTSession.model || "gpt-6.1-terra"} · ${chatGPTSession.reasoning || "high"} · text + khung hình${chatGPTSession.version ? ` · Codex ${chatGPTSession.version}` : ""}`
-                        : chatGPTSession
-                          ? "Cài Codex rồi chạy `codex login` trong Terminal"
-                          : "Chưa kiểm tra được Codex"}
-                    </p>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    type="button"
-                    disabled={isChatGPTChecking || !workerHealth?.ok}
-                    onClick={() => void refreshChatGPTSession()}
-                    className="shrink-0"
-                  >
-                    {isChatGPTChecking ? <Loader2 className="animate-spin" /> : <RefreshCw />} Kiểm tra lại
-                  </Button>
-                </div>
-                {chatGPTSession?.error && (
-                  <p role="status" className="mt-2 text-xs text-amber-300">
-                    {chatGPTSession.error}
+        <div>
+          {provider === "chatgpt" && (
+            <div className="studio-card">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-zinc-200">
+                    <span
+                      className={`size-2 rounded-full ${chatGPTSession?.sharing ? "bg-emerald-400 shadow-[0_0_10px_var(--provider-glow)]" : "bg-zinc-700"}`}
+                    />
+                    {chatGPTSession?.sharing ? "Codex sẵn sàng" : "Cần Codex CLI"}
                   </p>
-                )}
+                  <p className="mt-1 truncate text-xs leading-4 text-zinc-500">
+                    {chatGPTSession?.sharing
+                      ? `${chatGPTSession.model || "gpt-6.1-terra"} · ${chatGPTSession.reasoning || "high"} · text + khung hình`
+                      : chatGPTSession
+                        ? "Cài Codex rồi chạy `codex login` trong Terminal"
+                        : "Chưa kiểm tra được Codex"}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  disabled={isChatGPTChecking || !workerHealth?.ok}
+                  onClick={() => void refreshChatGPTSession()}
+                  className="shrink-0"
+                >
+                  {isChatGPTChecking ? <Loader2 className="animate-spin" /> : <RefreshCw />} Kiểm tra lại
+                </Button>
               </div>
-            )}
-            <Disclosure className="rounded-xl border border-white/8 p-3">
-              <DisclosureTrigger className="cursor-pointer text-xs font-semibold text-zinc-300">
-                Transcript · {transcript.length.toLocaleString()} ký tự · xem / sửa
+              {chatGPTSession?.error && (
+                <p role="status" className="mt-2 text-xs text-amber-300">
+                  {chatGPTSession.error}
+                </p>
+              )}
+            </div>
+          )}
+          <Disclosure section>
+            <DisclosureTrigger>Transcript · {transcript.length.toLocaleString()} ký tự · xem / sửa</DisclosureTrigger>
+            <div className="mt-3 flex items-center justify-between">
+              <label htmlFor="transcript" className="field-label">
+                Transcript
+              </label>
+              <span className="text-xs text-zinc-600">{transcript.length.toLocaleString()} chars</span>
+            </div>
+            <Textarea
+              id="transcript"
+              value={transcript}
+              onChange={(event) => onEditTranscript(event.target.value)}
+              className="studio-textarea studio-transcript mt-2 font-mono text-[12px] leading-5"
+              placeholder="00:00 Transcript..."
+            />
+            <p className="mt-2 text-xs leading-5 text-zinc-500">{transcriptStatus}</p>
+          </Disclosure>
+
+          {batchEditing && preparedSource?.id === batchEditing.sourceId && hasEditPlan && (
+            <Button
+              variant="secondary"
+              disabled={
+                isAnalyzing || isStartingRender || Boolean(effectiveTiming.error) || Boolean(teaserIssues.length)
+              }
+              onClick={() => void queueEditedBatchItem()}
+              className="w-full text-xs"
+            >
+              Lưu plan đã duyệt & tiếp tục item này
+            </Button>
+          )}
+
+          {previewPlan.analysis && (
+            <Disclosure section>
+              <DisclosureTrigger>
+                Lý do chọn ·{" "}
+                {previewPlan.analysis.method === "ai"
+                  ? "AI"
+                  : previewPlan.analysis.method === "deterministic-fallback"
+                    ? "Dự phòng"
+                    : "Nhập/đã lưu"}{" "}
+                · {previewPlan.analysis.provider}
               </DisclosureTrigger>
-              <div className="mt-3 flex items-center justify-between">
-                <label htmlFor="transcript" className="field-label">
-                  Transcript
-                </label>
-                <span className="text-xs text-zinc-600">{transcript.length.toLocaleString()} chars</span>
-              </div>
-              <Textarea
-                id="transcript"
-                value={transcript}
-                onChange={(event) => onEditTranscript(event.target.value)}
-                className="studio-textarea studio-transcript mt-2 font-mono text-[12px] leading-5"
-                placeholder="00:00 Transcript..."
-              />
-              <p className="mt-2 text-xs leading-5 text-zinc-500">{transcriptStatus}</p>
-            </Disclosure>
-
-            {batchEditing && preparedSource?.id === batchEditing.sourceId && hasEditPlan && (
-              <Button
-                variant="secondary"
-                disabled={
-                  isAnalyzing || isStartingRender || Boolean(effectiveTiming.error) || Boolean(teaserIssues.length)
-                }
-                onClick={() => void queueEditedBatchItem()}
-                className="w-full text-xs"
-              >
-                Lưu plan đã duyệt & tiếp tục item này
-              </Button>
-            )}
-
-            {previewPlan.analysis && (
-              <Disclosure className="rounded-xl border border-white/10 p-3 text-xs">
-                <DisclosureTrigger className="cursor-pointer">
-                  Lý do chọn ·{" "}
-                  {previewPlan.analysis.method === "ai"
-                    ? "AI"
-                    : previewPlan.analysis.method === "deterministic-fallback"
-                      ? "Dự phòng"
-                      : "Nhập/đã lưu"}{" "}
-                  · {previewPlan.analysis.provider}
-                </DisclosureTrigger>
-                {previewPlan.analysis.parts.map((p) => (
-                  <div key={p.id} className="mt-2">
-                    <strong>Part {p.id}</strong>
-                    <p>{explainInVietnamese(p.reason)}</p>
-                    <p className="text-zinc-400">
-                      {Object.entries(p.signals)
-                        .map(
-                          ([name, s]) =>
-                            `${({ transcript: "Lời thoại", replay: "Replay tương đối", comments: "Bình luận", chapters: "Chương", visual: "Hình ảnh", audio: "Âm thanh" } as Record<string, string>)[name] || "Tín hiệu hỗ trợ"}: ${s.contribution.toFixed(3)}`,
-                        )
-                        .join(" · ") ||
-                        (previewPlan.analysis?.method === "ai"
-                          ? "AI chọn theo nội dung; không gán điểm heuristic cho các range mới."
-                          : previewPlan.analysis?.method === "external-import"
-                            ? "Lựa chọn đã nhập; xem lý do theo nội dung."
-                            : "Dự phòng theo cấu trúc; chưa được AI xác minh.")}
-                    </p>
-                  </div>
-                ))}
-                {previewPlan.analysis.limitations.map((line, i) => (
-                  <p key={i} className="mt-1 text-zinc-500">
-                    {explainInVietnamese(line, "Thiếu hoặc giới hạn bằng chứng; ghi chú gốc vẫn giữ trong plan.")}
+              {previewPlan.analysis.parts.map((p) => (
+                <div key={p.id} className="mt-2">
+                  <strong>Part {p.id}</strong>
+                  <p>{explainInVietnamese(p.reason)}</p>
+                  <p className="text-zinc-400">
+                    {Object.entries(p.signals)
+                      .map(
+                        ([name, s]) =>
+                          `${({ transcript: "Lời thoại", replay: "Replay tương đối", comments: "Bình luận", chapters: "Chương", visual: "Hình ảnh", audio: "Âm thanh" } as Record<string, string>)[name] || "Tín hiệu hỗ trợ"}: ${s.contribution.toFixed(3)}`,
+                      )
+                      .join(" · ") ||
+                      (previewPlan.analysis?.method === "ai"
+                        ? "AI chọn theo nội dung; không gán điểm heuristic cho các range mới."
+                        : previewPlan.analysis?.method === "external-import"
+                          ? "Lựa chọn đã nhập; xem lý do theo nội dung."
+                          : "Dự phòng theo cấu trúc; chưa được AI xác minh.")}
                   </p>
-                ))}
-              </Disclosure>
-            )}
-          </TabsContent>
-
-          <TabsContent value="manual" className="space-y-4 pt-4">
-            {!hasEditPlan && (
-              <>
-                <div>
-                  <label htmlFor="manual-title-1" className="field-label">
-                    Part 1 title
-                  </label>
-                  <Input
-                    id="manual-title-1"
-                    value={manualPart1Title}
-                    onChange={(event) => setManualPart1Title(event.target.value.toUpperCase())}
-                    className="studio-input mt-2"
-                  />
-                  <Textarea
-                    aria-label="Part 1 timestamp ranges"
-                    value={manualPart1Ranges}
-                    onChange={(event) => setManualPart1Ranges(event.target.value)}
-                    className="studio-textarea mt-2 min-h-[88px] font-mono text-[12px] leading-5"
-                  />
                 </div>
-                <div>
-                  <label htmlFor="manual-title-2" className="field-label">
-                    Part 2 title
-                  </label>
-                  <Input
-                    id="manual-title-2"
-                    value={manualPart2Title}
-                    onChange={(event) => setManualPart2Title(event.target.value.toUpperCase())}
-                    className="studio-input mt-2"
-                  />
-                  <Textarea
-                    aria-label="Part 2 timestamp ranges"
-                    value={manualPart2Ranges}
-                    onChange={(event) => setManualPart2Ranges(event.target.value)}
-                    className="studio-textarea mt-2 min-h-[88px] font-mono text-[12px] leading-5"
-                  />
-                </div>
-              </>
-            )}
-          </TabsContent>
-        </Tabs>
+              ))}
+              {previewPlan.analysis.limitations.map((line, i) => (
+                <p key={i} className="mt-1 text-zinc-500">
+                  {explainInVietnamese(line, "Thiếu hoặc giới hạn bằng chứng; ghi chú gốc vẫn giữ trong plan.")}
+                </p>
+              ))}
+            </Disclosure>
+          )}
+        </div>
       </SourceOptionsSection>
     </>
   );

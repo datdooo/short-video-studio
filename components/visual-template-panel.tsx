@@ -27,13 +27,10 @@ const regionalSamples: Record<string, string> = {
 export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle; onTemplate: (id: string) => void }) {
   const selected = matchVisualTemplate(style);
   return (
-    <Disclosure
-      aria-labelledby="visual-template-heading"
-      className="studio-disclosure group/template mt-5 rounded-2xl border border-white/15 bg-white/[.04] p-4"
-    >
+    <Disclosure section aria-labelledby="visual-template-heading" className="group/template">
       <DisclosureTrigger
         id="visual-template-heading"
-        className="group flex cursor-pointer list-none items-center justify-between gap-2 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-webkit-details-marker]:hidden"
+        className="group flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-webkit-details-marker]:hidden"
       >
         <span className="min-w-0 break-words">
           Visual Template ·{" "}
@@ -52,7 +49,8 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
           const sample =
             template.category === "regional" ? regionalSamples[template.fontId] || "Create & Learn" : "Create & Learn";
           return (
-            <button data-ui-exception="sample-card"
+            <button
+              data-ui-exception="sample-card"
               key={template.id}
               type="button"
               aria-label={`Visual template: ${template.label}`}

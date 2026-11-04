@@ -74,7 +74,7 @@ export function useManualEditTool(state: State) {
           setManualPart2Ranges(values.part2Ranges);
           replacePlan(nextPlan);
           setHasEditPlan(true);
-          setEditMode("manual");
+          setEditMode("ai");
           setActivePartIndex(0);
           setError("");
           return {

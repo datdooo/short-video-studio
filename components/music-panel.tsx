@@ -1,7 +1,15 @@
 "use client";
 import { Button } from "@/components/ui/button";
 
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem, SelectGroup, SelectLabel } from "@/components/ui/select";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+  SelectGroup,
+  SelectLabel,
+} from "@/components/ui/select";
 import { Disclosure, DisclosureTrigger } from "@/components/ui/disclosure";
 
 import { UI_STRINGS } from "@/lib/ui-strings";
@@ -559,8 +567,8 @@ export function MusicPanel(props: Props) {
     );
   return (
     <>
-      <Disclosure className="studio-disclosure mt-5 rounded-2xl border border-white/8 bg-white/[.025] p-4">
-        <DisclosureTrigger className="cursor-pointer text-sm font-semibold">
+      <Disclosure section>
+        <DisclosureTrigger>
           Nhạc nền · {settings.enabled ? "Bật" : "Tắt"}
           {settings.enabled && !selectedAsset ? " · chưa có file được chọn" : ""}
         </DisclosureTrigger>
@@ -617,17 +625,21 @@ export function MusicPanel(props: Props) {
             />
           )}
           {previewStatus === "error" && (
-            <Button variant="secondary" size="md"
+            <Button
+              variant="secondary"
+              size="md"
               type="button"
               disabled={props.suspended || !effective.enabled || !effective.assetId || !sourceId || !props.previewReady}
               onClick={() => setPreviewAttempt((value) => value + 1)}
-              className="rounded border border-white/15 px-3 py-2"
+              className="rounded-lg border border-white/15 px-3 py-2"
             >
               Chuẩn bị lại nhạc
             </Button>
           )}
           {previewStatus === "blocked" && (
-            <Button variant="secondary" size="md"
+            <Button
+              variant="secondary"
+              size="md"
               type="button"
               disabled={props.suspended}
               onClick={() => {
@@ -636,7 +648,7 @@ export function MusicPanel(props: Props) {
                   void playback.current?.play(true);
                 }
               }}
-              className="rounded border border-white/15 px-3 py-2"
+              className="rounded-lg border border-white/15 px-3 py-2"
             >
               Phát nhạc trong preview
             </Button>
@@ -784,15 +796,17 @@ export function MusicPanel(props: Props) {
             </Select>
           </label>
           <div className="studio-action-row">
-            <Button variant="secondary" size="md"
+            <Button
+              variant="secondary"
+              size="md"
               type="button"
               disabled={props.suspended || !effective.assetId}
               onClick={listen}
-              className="rounded border border-white/15 px-3 py-2 disabled:opacity-40"
+              className="rounded-lg border border-white/15 px-3 py-2 disabled:opacity-40"
             >
               {auditionId ? "Dừng nghe thử" : "Nghe thử nhạc"}
             </Button>
-            <label className="cursor-pointer rounded border border-white/15 px-3 py-2">
+            <label className="cursor-pointer rounded-lg border border-white/15 px-3 py-2">
               {busy ? "Đang import…" : "Import nhạc cục bộ"}
               <input
                 aria-label="Import nhạc cục bộ"
@@ -806,7 +820,9 @@ export function MusicPanel(props: Props) {
                 }}
               />
             </label>
-            <Button variant="secondary" size="md"
+            <Button
+              variant="secondary"
+              size="md"
               type="button"
               disabled={refreshing || busy}
               onClick={() => {
@@ -818,7 +834,9 @@ export function MusicPanel(props: Props) {
             </Button>
           </div>
           <Disclosure>
-            <DisclosureTrigger className="cursor-pointer">Gợi ý Mixkit theo mục đích · link chính thức</DisclosureTrigger>
+            <DisclosureTrigger className="cursor-pointer">
+              Gợi ý Mixkit theo mục đích · link chính thức
+            </DisclosureTrigger>
             <p className="mt-2 text-zinc-500">Link tham khảo · chưa xác minh không lời/quyền dùng từng bài.</p>
             {[...new Set(MUSIC_CATALOG.filter((t) => !("downloadUrl" in t)).map((t) => t.mood))].map((mood) => (
               <div key={mood} className="mt-3">
