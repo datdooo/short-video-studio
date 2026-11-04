@@ -12,7 +12,6 @@ import {
   PanelBody,
   PanelHeader,
   Toolbar,
-  WorkspaceHeader,
 } from "@/components/ui/workspace";
 import { TaskProgress } from "./task-progress";
 import { Button } from "@/components/ui/button";
@@ -297,6 +296,7 @@ export function MediaLibraryPanel({
   const available = files.filter((file) => !file.busy).slice(0, 500);
   return (
     <section className="studio-library px-5 py-6">
+      <h1 className="sr-only">Kho</h1>
       <Tabs
         value={tab}
         onValueChange={(value) => {
@@ -305,15 +305,6 @@ export function MediaLibraryPanel({
           setSelected(new Set());
         }}
       >
-        <WorkspaceHeader
-          icon={<FolderOpen />}
-          title="Kho"
-          actions={
-            <Button variant="secondary" onClick={() => void refresh()} disabled={!ready || loading || working}>
-              {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Làm mới
-            </Button>
-          }
-        />
         <Toolbar>
           <div className="studio-library-search relative min-w-0">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -342,6 +333,15 @@ export function MediaLibraryPanel({
               Thùng rác <span className="studio-count">{library ? library.trash.length : "…"}</span>
             </TabsTrigger>
           </TabsList>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="ml-auto"
+            onClick={() => void refresh()}
+            disabled={!ready || loading || working}
+          >
+            {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />} Làm mới
+          </Button>
         </Toolbar>
         {!ready && <InlineNotice tone="warning">App chưa kết nối media worker.</InlineNotice>}
         {operation && (

@@ -14,7 +14,6 @@ import {
   PanelBody,
   PanelHeader,
   Toolbar,
-  WorkspaceHeader,
 } from "@/components/ui/workspace";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -112,7 +111,7 @@ export function BatchView({ model }: { model: Props }) {
 
   return (
     <section className="studio-batch-workspace px-5 py-6">
-      <WorkspaceHeader icon={<ListVideo />} title="Xử lý hàng loạt" />
+      <h1 className="sr-only">Xử lý hàng loạt</h1>
       <div className="studio-batch-grid">
         <div className="studio-batch-setup min-w-0">
           <Toolbar>
