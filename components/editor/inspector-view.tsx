@@ -193,7 +193,7 @@ export function InspectorView({ model }: { model: Props }) {
                     aria-pressed={subtitleSettings.source !== "whisper"}
                     disabled={subtitleBusy}
                     onClick={() => chooseSubtitleSource("youtube")}
-                    className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source !== "whisper" ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-white/10 text-zinc-400"}`}
+                    className={`rounded-lg border px-2 py-2 text-xs`}
                   >
                     Dùng phụ đề YouTube
                   </Button>
@@ -205,7 +205,7 @@ export function InspectorView({ model }: { model: Props }) {
                     aria-pressed={subtitleSettings.source === "whisper"}
                     disabled={subtitleBusy}
                     onClick={() => chooseSubtitleSource("whisper")}
-                    className={`rounded-lg border px-2 py-2 text-xs disabled:opacity-50 ${subtitleSettings.source === "whisper" ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200" : "border-white/10 text-zinc-400"}`}
+                    className={`rounded-lg border px-2 py-2 text-xs`}
                   >
                     Dùng phụ đề Whisper
                   </Button>

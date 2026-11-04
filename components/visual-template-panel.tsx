@@ -30,7 +30,7 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
     <Disclosure section aria-labelledby="visual-template-heading" className="group/template">
       <DisclosureTrigger
         id="visual-template-heading"
-        className="group flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-webkit-details-marker]:hidden"
+        className="group flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg text-sm font-semibold focus-visible:outline-offset-4 [&::-webkit-details-marker]:hidden"
       >
         <span className="min-w-0 break-words">
           Visual Template ·{" "}
@@ -57,7 +57,7 @@ export function VisualTemplatePanel({ style, onTemplate }: { style: VisualStyle;
               aria-pressed={selected === template.id}
               title={template.description}
               onClick={() => onTemplate(template.id)}
-              className={`relative rounded-xl border p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected === template.id ? "border-white bg-white/10" : "border-white/10 bg-black/20 hover:border-white/40"}`}
+              className={`relative rounded-xl border p-2 text-left`}
             >
               <VideoFilterDefinition filter={template.style.filter} id={filterId} />
               <span

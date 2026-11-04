@@ -21,7 +21,7 @@ export function BackgroundPanel({ background, onPreset }: { background: Backgrou
             aria-label={`Background: ${preset.label}`}
             aria-pressed={selected === preset.id}
             onClick={() => onPreset(preset.id)}
-            className={`relative rounded-xl border p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected === preset.id ? "border-white bg-white/10" : "border-white/10 bg-black/20 hover:border-white/40"}`}
+            className={`relative rounded-xl border p-2 text-left`}
           >
             <span
               aria-hidden="true"

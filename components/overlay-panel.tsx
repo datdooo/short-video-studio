@@ -52,7 +52,7 @@ export function OverlayPanel({
             aria-label={`Overlay: ${preset.label}`}
             aria-pressed={selected === preset.id}
             onClick={() => onPreset(preset.id)}
-            className={`relative rounded-xl border p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected === preset.id ? "border-white bg-white/10" : "border-white/10 bg-black/20 hover:border-white/40"}`}
+            className={`relative rounded-xl border p-2 text-left`}
           >
             <span aria-hidden="true" className="relative block h-12 overflow-hidden rounded-lg bg-zinc-600">
               {preset.overlays.map((overlay) => (

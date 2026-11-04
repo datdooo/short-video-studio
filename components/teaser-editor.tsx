@@ -528,7 +528,7 @@ export function TeaserEditor({
               type="button"
               disabled={busy || applying || suspended || aiBusy}
               onClick={() => void generate()}
-              className="max-w-full rounded-lg border border-white/15 px-3 py-2 text-left disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-white"
+              className="max-w-full rounded-lg border border-border px-3 py-2 text-left"
             >
               {busy ? "Đang chọn teaser…" : "Tạo/chọn lại teaser"}
             </Button>

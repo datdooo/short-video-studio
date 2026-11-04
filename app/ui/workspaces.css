@@ -1,0 +1,370 @@
+/* ShortCut Studio UI kit v3 — Batch and Kho workspaces (shared panel, header, toolbar, list rows). */
+@layer kit-layout {
+  [data-slot="workspace-header"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap);
+    min-width: 0;
+  }
+  [data-slot="workspace-header"] h1 {
+    display: flex;
+    align-items: center;
+    gap: var(--control-gap);
+    margin: 0;
+  }
+  [data-slot="workspace-header"] h1 svg {
+    width: var(--target-min);
+    height: var(--target-min);
+    color: var(--accent-foreground);
+  }
+  [data-slot="workspace-header"] p {
+    margin-top: var(--space-1);
+    color: var(--muted-foreground);
+  }
+  [data-slot="workspace-toolbar"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  [data-slot="workspace-toolbar"]
+    :is([data-slot="button"], [data-slot="input"], [data-slot="select-trigger"], [data-slot="tabs-trigger"]) {
+    --button-height: var(--control-height);
+    height: var(--control-height);
+    min-height: var(--control-height);
+  }
+  [data-slot="workspace-toolbar"] .studio-library-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  /* Panel = the one workspace card. A panel inside a panel is a tonal block, not another card. */
+  [data-slot="panel"].workspace-panel {
+    min-width: 0;
+    padding: var(--panel-padding);
+    border: 1px solid var(--border);
+    border-radius: var(--card-radius);
+    background: var(--surface);
+  }
+  [data-slot="panel"] [data-slot="panel"].workspace-panel {
+    border-color: transparent;
+    background: var(--panel);
+  }
+  [data-slot="panel-header"],
+  [data-slot="panel-footer"] {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap);
+  }
+  [data-slot="panel-body"] {
+    min-width: 0;
+  }
+  [data-slot="panel"] > [data-slot="panel-body"]:not(:first-child),
+  [data-slot="panel-footer"] {
+    margin-top: var(--panel-padding);
+  }
+  [data-slot="panel-header"] + [data-slot="empty-state"] {
+    margin-top: var(--panel-padding);
+  }
+  .studio-batch-workspace [data-slot="button"][data-variant="primary"],
+  .studio-library-workspace [data-slot="button"][data-variant="primary"] {
+    border-color: transparent;
+  }
+  .studio-batch-workspace .studio-action-row button,
+  .studio-library-workspace .studio-action-row button {
+    min-height: var(--control-height);
+    gap: var(--control-gap);
+  }
+  .studio-batch-workspace a.studio-download,
+  .studio-library-workspace a.studio-download {
+    height: auto;
+    min-height: var(--control-height);
+    padding: 6px var(--control-padding);
+  }
+
+  /* ── Batch ─────────────────────────────────────────────────────────────── */
+  .prototype-shell > .studio-batch-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+    padding: var(--panel-padding);
+    overflow: auto;
+    scrollbar-gutter: stable;
+    scroll-padding: var(--panel-padding);
+  }
+  .studio-batch-grid {
+    flex: 1 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    grid-template-rows: auto minmax(160px, 1fr);
+    gap: var(--panel-padding);
+    min-height: min-content;
+    margin-top: 0;
+  }
+  .studio-batch-grid > * {
+    min-width: 0;
+    min-height: 0;
+  }
+  .studio-batch-setup {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-padding);
+    overflow: visible;
+  }
+  .studio-batch-setup > * {
+    flex-shrink: 0;
+    margin-top: 0;
+  }
+  .studio-batch-queue {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+  }
+  .studio-batch-preview {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    align-self: start;
+  }
+  .studio-batch-queue .studio-batch-item-list {
+    flex: 1;
+    min-height: 0;
+    max-height: 480px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    scroll-padding: var(--panel-padding);
+  }
+  .studio-batch-options > summary {
+    min-height: var(--control-height);
+  }
+  .studio-batch-workspace [data-batch-state] > .studio-job-status {
+    color: var(--selection-text);
+  }
+  .studio-batch-workspace [data-batch-state="done"] > .studio-job-status {
+    color: var(--success);
+  }
+  .studio-batch-workspace [data-batch-state="error"] > .studio-job-status {
+    color: var(--destructive);
+  }
+  .studio-batch-workspace
+    :is([data-batch-state="paused"], [data-batch-state="review-required"], [data-batch-state="cancelled"])
+    > .studio-job-status {
+    color: var(--warning);
+  }
+
+  /* ── Kho (library) ─────────────────────────────────────────────────────── */
+  .prototype-shell > .studio-library-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    padding: var(--panel-padding);
+    overflow: hidden;
+  }
+  .studio-library-workspace > .studio-library {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 100%;
+    max-width: none;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .studio-library > [data-slot="tabs"] {
+    flex: 1;
+    gap: var(--panel-padding);
+    min-height: 0;
+    overflow: hidden;
+  }
+  .studio-library > [data-slot="tabs"] > :not([data-slot="tabs-content"]) {
+    flex-shrink: 0;
+  }
+  .studio-library > [data-slot="tabs"] > [data-slot="tabs-content"] {
+    min-height: 0;
+    padding: 2px 0 var(--space-2);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scroll-padding: var(--space-2);
+  }
+  .studio-library > [data-slot="tabs"] > [data-slot="tabs-content"][hidden] {
+    display: none;
+  }
+  .studio-library-search {
+    flex: 1 1 260px;
+    width: auto;
+    margin: 0 3px;
+  }
+  .studio-library-content-grid {
+    grid-template-columns: minmax(0, 1fr) clamp(260px, 25vw, 360px);
+  }
+  .studio-library-content-grid > aside {
+    top: 0;
+    /* The file list keeps 4px of inner padding for focus rings; match it so both columns start on one line. */
+    margin-top: var(--space-1);
+  }
+  .studio-library-file-list,
+  .studio-library .studio-render-job-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-padding);
+    max-height: none;
+    overflow: visible;
+  }
+  .studio-library-file-list {
+    padding: var(--space-1);
+  }
+  .studio-library .studio-render-job-list {
+    padding-inline: 0;
+  }
+  :is(.studio-library-file-list, .studio-library .studio-render-job-list) > * {
+    min-width: 0;
+    margin-top: 0;
+  }
+  .studio-library-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--panel-padding);
+    padding: var(--gap) var(--panel-padding);
+    border-radius: var(--card-radius);
+    background: var(--surface);
+  }
+  .studio-library-card > .flex:first-child {
+    align-items: center;
+  }
+  .studio-library-card > .flex:last-child {
+    justify-content: flex-end;
+    margin-top: 0;
+  }
+  .studio-library-file-icon {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 40px;
+    height: 52px;
+    border: 1px solid var(--border);
+    border-radius: var(--control-radius);
+    background: var(--panel);
+    color: var(--muted-foreground);
+  }
+  .workspace-list-row {
+    min-height: 80px;
+  }
+  .workspace-list-row > [data-slot="status-chip"] {
+    margin-block: var(--space-2);
+  }
+
+  /* Render list: the heading sits on the page, each job is one card, its Part boxes are tonal. */
+  .studio-render-list[data-slot="panel"] {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .studio-render-job-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .studio-render-job-heading > .min-w-0 {
+    flex: 1 1 180px;
+  }
+  .studio-render-job-heading > .studio-action-row {
+    flex: 0 1 auto;
+    max-width: 100%;
+    margin-left: auto;
+  }
+  .studio-render-job-heading > .studio-action-row > button {
+    max-width: 100%;
+    white-space: normal;
+  }
+  .studio-render-job-heading [data-slot="status-chip"] {
+    margin: 0;
+  }
+  .studio-render-job-heading + .studio-task-progress {
+    margin-top: var(--panel-padding);
+  }
+  .studio-render-job-title {
+    flex-wrap: nowrap;
+  }
+  .studio-render-job-title > h3 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .studio-render-job-title > [data-slot="status-chip"] {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  /* The status chip already says what happened: drop the caption (kept for screen readers) and the finished bar. */
+  .studio-render-list .studio-task-progress-label > span:first-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .studio-render-list .studio-task-progress[data-task-state="done"] {
+    display: none;
+  }
+  .studio-render-list .studio-job-status {
+    color: var(--selection-text);
+  }
+  .studio-render-list [data-render-state="done"] .studio-job-status {
+    color: var(--success);
+  }
+  .studio-render-list [data-render-state="error"] .studio-job-status {
+    color: var(--destructive);
+  }
+  .studio-render-list [data-render-state="cancelled"] .studio-job-status {
+    color: var(--muted-foreground);
+  }
+
+  @media (max-width: 1200px) {
+    .studio-library-card {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-2);
+    }
+    .studio-library-card > .flex:last-child {
+      justify-content: flex-start;
+      padding-left: 28px;
+    }
+  }
+  @media (max-width: 760px) {
+    .studio-batch-grid {
+      display: flex;
+      flex: none;
+      flex-direction: column;
+    }
+    .studio-batch-setup,
+    .studio-batch-preview {
+      overflow: visible;
+    }
+    .studio-batch-queue {
+      min-height: 220px;
+      max-height: 60dvh;
+    }
+    .studio-library-content-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

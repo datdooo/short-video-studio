@@ -1,0 +1,3 @@
+/* Declared right after Tailwind's own layers, so every kit layer outranks utilities.
+   Order is the cascade: base, controls, layout, state. */
+@layer kit-base, kit-controls, kit-layout, kit-state;

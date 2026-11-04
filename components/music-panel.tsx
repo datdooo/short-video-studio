@@ -631,7 +631,7 @@ export function MusicPanel(props: Props) {
               type="button"
               disabled={props.suspended || !effective.enabled || !effective.assetId || !sourceId || !props.previewReady}
               onClick={() => setPreviewAttempt((value) => value + 1)}
-              className="rounded-lg border border-white/15 px-3 py-2"
+              className="rounded-lg border border-border px-3 py-2"
             >
               Chuẩn bị lại nhạc
             </Button>
@@ -648,7 +648,7 @@ export function MusicPanel(props: Props) {
                   void playback.current?.play(true);
                 }
               }}
-              className="rounded-lg border border-white/15 px-3 py-2"
+              className="rounded-lg border border-border px-3 py-2"
             >
               Phát nhạc trong preview
             </Button>
@@ -802,11 +802,11 @@ export function MusicPanel(props: Props) {
               type="button"
               disabled={props.suspended || !effective.assetId}
               onClick={listen}
-              className="rounded-lg border border-white/15 px-3 py-2 disabled:opacity-40"
+              className="rounded-lg border border-border px-3 py-2"
             >
               {auditionId ? "Dừng nghe thử" : "Nghe thử nhạc"}
             </Button>
-            <label className="cursor-pointer rounded-lg border border-white/15 px-3 py-2">
+            <label className="cursor-pointer rounded-lg border border-border px-3 py-2">
               {busy ? "Đang import…" : "Import nhạc cục bộ"}
               <input
                 aria-label="Import nhạc cục bộ"

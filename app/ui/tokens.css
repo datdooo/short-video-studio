@@ -1,0 +1,200 @@
+/* ShortCut Studio UI kit v3 — tokens.
+   Every colour, size and radius in the kit comes from this file; nothing else may hard-code them.
+   Contract: design-system/shortcut-studio/MASTER.md. */
+
+/* Unmodified OFL font, bundled locally for UI only. Source/license in fonts/ui. */
+@font-face {
+  font-family: "Studio UI Jakarta";
+  src: url("/fonts/ui/PlusJakartaSans-Variable.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces: canvas < panel < raised < hover. Cards never nest (see components.css `.studio-card`). */
+  --background: #0f0d0b;
+  --surface: #161412;
+  --panel: #1e1b18;
+  --surface-3: #292520;
+  --border: #2f2a25;
+  --border-strong: #463e37;
+
+  /* Text. */
+  --foreground: #f4f0ea;
+  --muted-foreground: #bdb3a8;
+  --dim: #8f867c;
+
+  /* Accent: primary fill, selection, focus ring, progress. Nothing else. */
+  --primary: #ff5a36;
+  --primary-hover: #ff7a5c;
+  --primary-pressed: #e64a28;
+  --primary-foreground: #1a0d09;
+  --selection-bg: color-mix(in srgb, var(--primary) 15%, var(--surface));
+  --selection-text: #ffb199;
+  --selected-border: color-mix(in srgb, var(--primary) 55%, var(--border));
+  --ring: var(--primary);
+
+  /* Semantic. */
+  --success: #7dcea0;
+  --warning: #e7c36a;
+  --destructive: #ff6b7a;
+
+  /* Shape. */
+  --control-radius: 8px;
+  --card-radius: 12px;
+  --chip-radius: 6px;
+
+  /* Size: one control height family. */
+  --control-height: 36px;
+  --control-compact-height: 32px;
+  --control-lg-height: 40px;
+  --control-icon-size: 32px;
+  --control-padding: 12px;
+  --control-gap: 6px;
+  --control-font-size: 13px;
+  --icon-size: 16px;
+  --target-min: 24px;
+
+  /* Spacing (4px grid). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --gap: 10px;
+  --panel-padding: 12px;
+
+  /* Type: caption 12 · control 13 · body 14 · title 14/600 · page 20/600. */
+  --font-ui: "Studio UI Jakarta", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --text-caption: 12px;
+  --text-body: 14px;
+  --text-title: 14px;
+  --text-page: 20px;
+
+  /* Motion + floating layers. */
+  --motion-fast: 120ms;
+  --floating-shadow: 0 8px 28px rgb(0 0 0 / 35%);
+  --layer-media-text: 1;
+  --layer-media-caption: 2;
+  --layer-media-empty: 3;
+  --layer-media-paused: 4;
+  --layer-media-play: 3;
+  --layer-sticky: 1;
+  --layer-drawer-backdrop: 40;
+  --layer-drawer: 41;
+  --layer-status: 42;
+  --layer-dropdown: 50;
+  --layer-dialog: 60;
+  --layer-toast: 70;
+
+  /* Timeline grid. */
+  --timeline-index-size: 2rem;
+  --timeline-column-gap: 6px;
+  --timeline-timecode-width: 13ch;
+
+  /* Media, never restyled by the kit: video stage and sample artwork keep their own colours. */
+  --media-background: #080808;
+  --sample-white: #fff;
+  --sample-black: #000;
+  --sample-green: #789b65;
+  --sample-blue: #799dab;
+  --sample-tan: #c99b72;
+  --sample-gray: #8a8084;
+  --sample-type-background: #191b21;
+  --placeholder-glow: #6c3422;
+  --placeholder-top: #101114;
+  --placeholder-middle: #292024;
+  --placeholder-bottom: #0d0e11;
+  --provider-glow: #34d399;
+  --title-shine: #e8f7ff;
+  --title-shine-glow: #b4e9ff;
+
+  /* shadcn aliases (vendor CSS and Radix wrappers read these names). */
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--panel);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--panel);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--panel);
+  --accent: var(--panel);
+  --accent-foreground: var(--selection-text);
+  --input: var(--border);
+  --radius: var(--card-radius);
+  --destructive-background: color-mix(in srgb, var(--destructive) 8%, var(--panel));
+  --destructive-hover-background: color-mix(in srgb, var(--destructive) 12%, var(--panel));
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--panel);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--primary);
+}
+
+/* Tailwind: utilities in components resolve to kit tokens, so a stray `text-zinc-400` or `text-xs`
+   can never introduce an off-palette colour or size. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-xs: var(--chip-radius);
+  --radius-sm: var(--control-radius);
+  --radius-md: var(--control-radius);
+  --radius-lg: var(--control-radius);
+  --radius-xl: var(--card-radius);
+  --radius-2xl: var(--card-radius);
+  --radius-3xl: var(--card-radius);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
+
+  --text-xs: 12px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 13px;
+  --text-sm--line-height: 1.5;
+  --text-base: 14px;
+  --text-base--line-height: 1.5;
+
+  --color-zinc-50: var(--foreground);
+  --color-zinc-100: var(--foreground);
+  --color-zinc-200: var(--foreground);
+  --color-zinc-300: var(--foreground);
+  --color-zinc-400: var(--muted-foreground);
+  --color-zinc-500: var(--dim);
+  --color-zinc-600: var(--dim);
+  --color-zinc-700: var(--border-strong);
+  --color-zinc-800: var(--border);
+  --color-zinc-900: var(--surface);
+  --color-zinc-950: var(--background);
+  --color-amber-200: var(--warning);
+  --color-amber-300: var(--warning);
+  --color-amber-400: var(--warning);
+  --color-yellow-300: var(--warning);
+  --color-emerald-300: var(--success);
+  --color-emerald-400: var(--success);
+  --color-green-300: var(--success);
+  --color-red-300: var(--destructive);
+  --color-red-400: var(--destructive);
+  --color-rose-300: var(--destructive);
+}

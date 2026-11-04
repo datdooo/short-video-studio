@@ -51,12 +51,12 @@ export function VisualCustomizePanel({
         {UI_STRINGS.customize}
         <ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform" />
       </DisclosureTrigger>
-      <div className="divide-y divide-white/8 border-t border-white/8 px-3">
+      <div className="divide-y divide-border border-t border-border px-3">
         {rows
           .filter((row) => !include || include.includes(row.id))
           .map(({ id, label, value }) => (
             <Disclosure key={id} data-customize-row={id} className="min-w-0">
-              <DisclosureTrigger className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_16px] items-center gap-3 rounded-lg py-3 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
+              <DisclosureTrigger className="grid cursor-pointer list-none grid-cols-[auto_minmax(0,1fr)_16px] items-center gap-3 rounded-lg py-3 text-xs">
                 <span className="font-medium text-zinc-300">{label}</span>
                 <span className="truncate text-right text-zinc-400" title={value}>
                   {value}

@@ -1,0 +1,232 @@
+/* ShortCut Studio UI kit v3 — states. The single place where hover, selected, disabled, invalid
+   and focus are defined. Loaded after every other layer, so plain selectors always win.
+
+   rest      panel fill · border
+   hover     surface-3 fill · border-strong (never an orange border)
+   selected  soft accent fill · muted accent border · accent text
+   disabled  neutral for every variant, primary included
+   focus     2px accent ring, keyboard only */
+@layer kit-state {
+  /* Hover. Primary and destructive keep their own hover below. */
+  :is(
+      .studio-button,
+      [data-slot="button"],
+      .studio-control,
+      .studio-ghost,
+      .studio-workspaces button,
+      .studio-header-status > button,
+      .studio-part-switcher button,
+      .studio-panel-toggles button:not([aria-expanded="true"]),
+      .studio-drawer-heading button,
+      .preview-controls button,
+      [data-slot="tabs-trigger"],
+      .studio-inspector-body button[aria-pressed]:not(.relative),
+      .studio-teaser-option,
+      [data-ui-exception="sample-card"],
+      .studio-library-card,
+      a[download],
+      a[href*="/outputs/"],
+      .studio-download
+    ):where(
+      :not(
+        [aria-pressed="true"],
+        [aria-selected="true"],
+        [data-state="active"],
+        [aria-current="page"],
+        [aria-checked="true"]
+      )
+    ):hover:not(:disabled) {
+    background-color: var(--surface-3);
+    border-color: var(--border-strong);
+    color: var(--foreground);
+  }
+  :where(
+      .studio-source-panel,
+      .studio-inspector-body,
+      .studio-timeline-scroll,
+      .studio-batch-workspace,
+      .studio-library-workspace
+    )
+    button:where(:not([data-slot]):not([aria-pressed]):not([role]):not(.relative)):hover:not(:disabled) {
+    background-color: var(--surface-3);
+    border-color: var(--border-strong);
+  }
+  .studio-input:hover:not(:disabled),
+  .studio-textarea:hover:not(:disabled),
+  [data-slot="input"]:hover:not(:disabled),
+  [data-slot="textarea"]:hover:not(:disabled),
+  [data-slot="select-trigger"]:hover:not(:disabled),
+  select:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+  .studio-primary:hover:not(:disabled),
+  [data-slot="button"][data-variant="primary"]:hover:not(:disabled) {
+    background: var(--primary-hover);
+    border-color: var(--primary-hover);
+    color: var(--primary-foreground);
+  }
+  .studio-primary:active:not(:disabled),
+  [data-slot="button"][data-variant="primary"]:active:not(:disabled) {
+    background: var(--primary-pressed);
+    border-color: var(--primary-pressed);
+  }
+  .studio-cancel:hover:not(:disabled),
+  [data-slot="button"][data-variant="destructive"]:hover:not(:disabled),
+  button[class*="text-red-"]:hover:not(:disabled) {
+    background: var(--destructive-hover-background);
+    border-color: var(--destructive);
+    color: var(--destructive);
+  }
+  [data-slot="button"][data-variant="destructive"]:not(:disabled),
+  .studio-cancel:not(:disabled) {
+    color: var(--destructive);
+  }
+  .studio-source-ready:hover:not(:disabled) {
+    border-color: var(--success);
+    background: color-mix(in srgb, var(--success) 16%, var(--panel));
+    color: var(--success);
+  }
+  details > summary:hover {
+    color: var(--foreground);
+  }
+  details > summary:hover::after {
+    background: var(--foreground);
+  }
+
+  /* Selected: one look for tabs, nav, part pills, pressed toggles, panel toggles. */
+  [data-slot="tabs-trigger"][data-state="active"],
+  .studio-button[data-state="active"],
+  .studio-workspaces button[aria-current="page"],
+  [aria-pressed="true"],
+  [aria-selected="true"],
+  .studio-teaser-toggle[aria-checked="true"],
+  .studio-panel-toggles [aria-expanded="true"] {
+    background-color: var(--selection-bg);
+    border-color: var(--selected-border);
+    color: var(--selection-text);
+    box-shadow: none;
+  }
+  [data-slot="tabs-trigger"][data-state="active"],
+  .studio-workspaces button[aria-current="page"] {
+    font-weight: 600;
+  }
+  .studio-part-switcher button[aria-pressed="true"] small {
+    color: inherit;
+    opacity: 0.8;
+  }
+  .studio-main-range-actions > button[data-control-size="icon"]:hover {
+    border-color: var(--destructive);
+    color: var(--destructive);
+  }
+
+  /* Small per-component state rules. */
+  .studio-part-fixes button:hover,
+  .studio-preserved-drafts button:hover:not(:disabled),
+  .studio-video-download-split:has(button:not(:disabled):hover),
+  .studio-video-download-split:has(button[data-state="open"]) {
+    background-color: var(--surface-3);
+    border-color: var(--border-strong);
+  }
+  .studio-input:read-only,
+  [data-slot="input"]:read-only {
+    color: var(--muted-foreground);
+  }
+  .preview-seek:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+  label:has(> input[type="checkbox"]:disabled) {
+    cursor: not-allowed;
+  }
+  .studio-batch-workspace button:active,
+  .studio-library-workspace button:active {
+    transform: none;
+    scale: 1;
+  }
+
+  /* Invalid. */
+  [aria-invalid="true"],
+  .studio-danger {
+    border-color: var(--destructive);
+  }
+
+  /* Menu rows: focus = filled row, selected = accent text and a check icon. */
+  [data-slot="select-item"][data-highlighted],
+  [data-slot="dropdown-menu-item"][data-highlighted],
+  [data-slot="dropdown-menu-checkbox-item"][data-highlighted],
+  [data-slot="dropdown-menu-radio-item"][data-highlighted],
+  [data-slot="dropdown-menu-sub-trigger"]:is([data-highlighted], [data-state="open"]),
+  [data-slot="combobox-item"][data-highlighted] {
+    background: var(--surface-3);
+    color: var(--foreground);
+    outline: 0;
+  }
+  [data-slot="select-item"][data-state="checked"],
+  [data-slot="dropdown-menu-checkbox-item"][data-state="checked"],
+  [data-slot="dropdown-menu-radio-item"][data-state="checked"] {
+    color: var(--selection-text);
+  }
+  [data-slot="select-item"][data-disabled],
+  [data-slot="dropdown-menu-item"][data-disabled],
+  [data-slot="combobox-item"][data-disabled] {
+    opacity: 0.5;
+  }
+
+  /* Disabled. */
+  button:disabled {
+    cursor: not-allowed;
+  }
+  :is(button, [data-slot="button"], .studio-primary):is(:disabled, [aria-disabled="true"]) {
+    background: var(--panel);
+    border-color: var(--border);
+    color: color-mix(in srgb, var(--foreground) 45%, var(--panel));
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+  .studio-input:disabled,
+  .studio-textarea:disabled,
+  [data-slot="input"]:disabled,
+  [data-slot="textarea"]:disabled,
+  [data-slot="select-trigger"]:disabled,
+  select:disabled,
+  label:has(> input:disabled),
+  .studio-action-row label:has(input[type="file"]:disabled) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Focus: keyboard only. Menus and in-panel scroll areas keep the ring inside their box. */
+  :is(button, input, textarea, select, summary, a, [role="combobox"], [data-slot="disclosure-trigger"]):focus-visible,
+  .studio-action-row label:has(input[type="file"]):focus-within,
+  .studio-video-download-split:has(button:focus-visible) {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    box-shadow: none;
+  }
+  [data-slot="select-content"] :focus-visible,
+  [data-slot="dropdown-menu-content"] :focus-visible,
+  [data-slot="popover-content"] :focus-visible {
+    outline-offset: -2px;
+  }
+  [data-slot="select-item"]:focus-visible,
+  [data-slot="dropdown-menu-item"]:focus-visible {
+    outline: 0;
+  }
+  .studio-library-search [data-slot="input"]:focus-visible {
+    outline: 0;
+    border-color: var(--ring);
+    box-shadow: inset 0 0 0 1px var(--ring);
+  }
+  [data-slot="slider-thumb"]:is(:hover, :focus-visible) {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+  @media (forced-colors: active) {
+    :is(button, input, select, textarea, summary, a):focus-visible {
+      outline: 2px solid Highlight;
+    }
+    details > summary::after {
+      background: ButtonText;
+    }
+  }
+}

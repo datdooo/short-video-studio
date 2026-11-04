@@ -164,7 +164,7 @@ export function MainRangesEditor({
                   aria-label={`Xóa đoạn ${i + 1} Part ${part.id}`}
                   title="Xóa đoạn"
                   data-control-size="icon"
-                  className="rounded-lg border border-white/15 py-2 text-sm focus-visible:outline-2 focus-visible:outline-white"
+                  className="rounded-lg border border-border py-2 text-sm"
                   onClick={() => edit(rows.filter((_, j) => j !== i))}
                 >
                   <X size={16} aria-hidden="true" />
@@ -179,7 +179,7 @@ export function MainRangesEditor({
             size="md"
             type="button"
             disabled={rows.length >= MAX_MAIN_RANGES}
-            className="rounded-lg border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
+            className="rounded-lg border border-border px-2 py-1.5"
             onClick={() => edit([...rows, { start: "", end: "", timecode: true }])}
           >
             + Thêm đoạn
@@ -190,7 +190,7 @@ export function MainRangesEditor({
             type="button"
             disabled={!part.aiMainRanges}
             title={!part.aiMainRanges ? "Chưa có bản cắt AI để khôi phục." : undefined}
-            className="rounded-lg border border-white/15 px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-white disabled:opacity-40"
+            className="rounded-lg border border-border px-2 py-1.5"
             onClick={() => {
               setDraft(null);
               setOwnApplied(null);

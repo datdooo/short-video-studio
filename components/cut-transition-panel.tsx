@@ -36,7 +36,7 @@ export function CutTransitionPanel({
             aria-label={`Cut transition: ${label}`}
             aria-pressed={selected === id}
             onClick={() => onChange(id)}
-            className={`flex items-center justify-between gap-1 rounded-xl border px-3 py-2 text-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${selected === id ? "border-white bg-white/10" : "border-white/10 hover:border-white/40"}`}
+            className={`flex items-center justify-between gap-1 rounded-xl border px-3 py-2 text-xs`}
           >
             {label}
             {selected === id && <Check aria-hidden="true" className="size-3" />}
