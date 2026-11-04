@@ -255,7 +255,6 @@
     justify-content: space-between;
     gap: var(--space-2);
     padding: 0 0 6px;
-    border-bottom: 1px solid var(--border);
   }
   .studio-teaser-review[data-has-choice="false"] .studio-teaser-review-heading {
     grid-column: 1;
@@ -329,7 +328,6 @@
     align-items: center;
     gap: var(--space-1);
     padding: var(--space-1);
-    border-top: 1px solid var(--border);
   }
   .studio-teaser-player-controls input {
     width: 100%;
@@ -377,6 +375,8 @@
     gap: 5px;
   }
   .studio-teaser-option {
+    border-color: transparent;
+    background: transparent;
     display: flex;
     align-items: center;
     justify-content: flex-start;
@@ -450,7 +450,6 @@
     justify-content: space-between;
     gap: var(--control-gap);
     padding: 6px 0 0;
-    border-top: 1px solid var(--border);
     background: var(--panel);
   }
   .studio-teaser-review-footer > span {
@@ -918,11 +917,14 @@
   .studio-inspector-body details[data-customize-row] > summary > span {
     overflow-wrap: anywhere;
   }
+  .visual-customize > div {
+    padding-inline: 0;
+  }
   .studio-inspector-body [data-customize-row] > summary span[title] {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    text-overflow: clip;
-    white-space: normal;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .studio-inspector-body label:not(:has(input[type="checkbox"])):has(> :is(input, textarea, select)) {
     display: block;

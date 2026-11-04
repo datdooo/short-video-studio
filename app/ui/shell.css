@@ -87,10 +87,13 @@
   }
   .studio-header-status .studio-draft-count {
     justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 4px;
-    background: var(--background);
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--chip-radius);
+    background: var(--surface-3);
+    color: var(--foreground);
+    font-size: var(--text-caption);
   }
 
   /* ── Columns ───────────────────────────────────────────────────────────── */

@@ -18,6 +18,7 @@
   .studio-workspaces button,
   .studio-header-status > button,
   .studio-part-switcher button,
+  .studio-teaser-option,
   .studio-panel-toggles button,
   .studio-drawer-heading button,
   .preview-controls button,
@@ -141,10 +142,7 @@
     color: var(--muted-foreground);
     text-align: left;
   }
-  [data-ui-exception="sample-card"] > :first-child:not(svg) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  [data-ui-exception="sample-card"] > span[aria-hidden="true"] {
     width: 100%;
     height: 48px;
     overflow: hidden;
@@ -153,14 +151,14 @@
     transition: border-color var(--motion-fast) ease;
   }
   [data-ui-exception="sample-card"] > :last-child {
-    display: block;
+    display: -webkit-box;
     margin-top: var(--space-1);
     overflow: hidden;
     font-size: var(--text-caption);
     font-weight: 500;
     line-height: 1.3;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
   }
   [data-ui-exception="sample-card"] > :last-child svg {
     display: none;

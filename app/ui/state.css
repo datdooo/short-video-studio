@@ -114,12 +114,17 @@
     border-color: transparent;
     color: var(--selection-text);
   }
-  [data-ui-exception="sample-card"][aria-pressed="true"] > :first-child:not(svg) {
+  [data-ui-exception="sample-card"][aria-pressed="true"] > span[aria-hidden="true"] {
     border-color: var(--primary);
     box-shadow: 0 0 0 1px var(--primary);
   }
-  [data-ui-exception="sample-card"]:hover:not([aria-pressed="true"]) > :first-child:not(svg) {
+  [data-ui-exception="sample-card"]:hover:not([aria-pressed="true"]) > span[aria-hidden="true"] {
     border-color: var(--border-strong);
+  }
+  .studio-inspector-tabs [data-slot="tabs-trigger"]:hover:not(:disabled) {
+    background: transparent;
+    border-color: transparent;
+    color: var(--foreground);
   }
   .studio-inspector-tabs [data-slot="tabs-trigger"][data-state="active"] {
     background: transparent;

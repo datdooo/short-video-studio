@@ -286,6 +286,9 @@
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
+    /* Title and actions sit 24px from the card edge on every side, like the text inside the Part blocks
+       (card pad 12 + block pad 12). */
+    padding: 10px var(--panel-padding) 0;
   }
   .studio-render-job-heading > .min-w-0 {
     flex: 1 1 180px;
