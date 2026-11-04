@@ -4361,6 +4361,16 @@ textarea {
 }
 .prototype-shell details.studio-section > :not(summary) {
   margin-inline: 12px;
+  max-width: calc(100% - 24px);
+}
+.prototype-shell details.studio-section > :is(textarea, input, select, .studio-textarea, [data-slot="textarea"], [data-slot="input"]) {
+  width: calc(100% - 24px);
+}
+.prototype-shell details.studio-section > label:has(input[type="checkbox"]) {
+  font-size: var(--ui-text-caption);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .prototype-shell details.studio-section > :last-child:not(summary) {
   margin-bottom: 12px;

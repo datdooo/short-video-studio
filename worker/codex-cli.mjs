@@ -11,7 +11,7 @@ export const CODEX_TRANSPORT = "codex-cli-v1";
 const OUTPUT_LIMIT = 1024 * 1024;
 const STATUS_TTL_MS = 15_000;
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
-const MAX_IMAGES = 24;
+const MAX_IMAGES = 300;
 
 const executableNames = (platform) => (platform === "win32" ? ["codex.exe", "codex.cmd"] : ["codex"]);
 const pathFor = (platform) => (platform === "win32" ? path.win32 : path);

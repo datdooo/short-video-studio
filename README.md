@@ -79,7 +79,7 @@ Edit plan luôn lưu timestamp gốc. Ví dụ source cut 10 giây sẽ còn kho
 
 Cài Codex CLI riêng và chạy `codex login` trong Terminal trước khi chọn **ChatGPT Auto · Terra high**. Worker gọi `codex exec` qua `worker/codex-cli.mjs`, dùng model `gpt-6.1-sol`, reasoning `low`; app không còn luồng đăng nhập OAuth hay kho credential ChatGPT riêng. Không muốn dùng AI thì chọn Mock hoặc Manual cut.
 
-Bước chọn MAIN nhận text và tối đa 24 khung hình lấy mẫu đều phủ toàn video (`worker/coverage-frames.mjs`, `lib/frame-rules.mjs`); chọn teaser vẫn chỉ nhận text. Đây là các khung hình thưa, không phải xem video liên tục và không có âm thanh. Ba chế độ thủ công Gemini, ChatGPT web, Muse giữ nguyên workflow; TXT hiện tại là v24 (`lib/txt-signals.mjs`), dùng chuỗi số dạng cột, `cutPoints`, `timeMap`, `signalAvailability` và vẫn import được v19–v23.
+Bước chọn MAIN nhận text và tối đa 300 khung hình (khoảng 1 ảnh/5 giây) lấy mẫu đều phủ toàn video (`worker/coverage-frames.mjs`, `lib/frame-rules.mjs`); chọn teaser vẫn chỉ nhận text. Đây là các khung hình thưa, không phải xem video liên tục và không có âm thanh. Ba chế độ thủ công Gemini, ChatGPT web, Muse giữ nguyên workflow; TXT hiện tại là v24 (`lib/txt-signals.mjs`), dùng chuỗi số dạng cột, `cutPoints`, `timeMap`, `signalAvailability` và vẫn import được v19–v23.
 
 Chi tiết kỹ thuật và xử lý lỗi nằm trong [`docs/AI_PROVIDERS.md`](docs/AI_PROVIDERS.md).
 

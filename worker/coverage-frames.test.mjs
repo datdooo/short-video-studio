@@ -23,12 +23,13 @@ async function fixture(duration = 1000) {
 }
 
 test("count is bounded, evenly spaced and overridable", () => {
-  assert.equal(coverageCount(60, {}), 8);
-  assert.equal(coverageCount(1054, {}), 24);
-  assert.equal(coverageCount(10_000, {}), 24);
+  assert.equal(coverageCount(20, {}), 8);
+  assert.equal(coverageCount(60, {}), 12);
+  assert.equal(coverageCount(1054, {}), 211);
+  assert.equal(coverageCount(10_000, {}), 300);
   assert.equal(coverageCount(1000, { SHORTCUT_CODEX_FRAMES: "0" }), 0);
   assert.equal(coverageCount(1000, { SHORTCUT_CODEX_FRAMES: "12" }), 12);
-  assert.equal(coverageCount(1000, { SHORTCUT_CODEX_FRAMES: "99" }), 0);
+  assert.equal(coverageCount(1000, { SHORTCUT_CODEX_FRAMES: "999" }), 0);
   assert.equal(coverageCount(NaN, {}), 0);
   const times = coverageTimes(100, 4);
   assert.deepEqual(times, [12.5, 37.5, 62.5, 87.5]);

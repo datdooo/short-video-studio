@@ -4,13 +4,14 @@ import path from "node:path";
 import { FRAME_COVERAGE_VERSION } from "../lib/frame-rules.mjs";
 import { createSharedOperations } from "./shared-operation.mjs";
 
-const MAX_COUNT = 24;
+const MAX_COUNT = 300;
+const SECONDS_PER_IMAGE = 5;
 const MIN_COUNT = 8;
 const KEEP_SOURCES = 16;
 const WIDTH = 448;
 const POOL = 3;
 
-/** Number of stills: about one per 40 s, bounded; SHORTCUT_CODEX_FRAMES overrides (0 disables). */
+/** Number of stills: about one per 5 s, bounded to 8..300; SHORTCUT_CODEX_FRAMES overrides (0 disables). */
 export function coverageCount(duration, env = process.env) {
   const override = env.SHORTCUT_CODEX_FRAMES;
   if (override !== undefined && override !== "") {
@@ -19,7 +20,7 @@ export function coverageCount(duration, env = process.env) {
     return value;
   }
   if (!Number.isFinite(duration) || duration <= 0) return 0;
-  return Math.min(MAX_COUNT, Math.max(MIN_COUNT, Math.round(duration / 40)));
+  return Math.min(MAX_COUNT, Math.max(MIN_COUNT, Math.round(duration / SECONDS_PER_IMAGE)));
 }
 
 export function coverageTimes(duration, count) {

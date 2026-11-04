@@ -6,8 +6,8 @@
 
 - `SHORTCUT_CODEX_BIN`: đường dẫn tuyệt đối tới binary `codex`; dùng khi worker không tìm thấy CLI.
 - `SHORTCUT_CODEX_TIMEOUT_MS`: thời gian chờ tối đa mỗi lần gọi, tính bằng mili giây.
-- `SHORTCUT_CODEX_FRAMES`: `0` tắt khung hình; `1`–`24` đặt số khung hình lấy mẫu.
-- MAIN nhận text và tối đa 24 khung hình lấy mẫu đều phủ toàn video qua `worker/coverage-frames.mjs` và `lib/frame-rules.mjs`. Teaser vẫn text-only. Khung hình thưa không phải xem video liên tục; không có âm thanh.
+- `SHORTCUT_CODEX_FRAMES`: `0` tắt khung hình; `1`–`300` đặt số khung hình lấy mẫu (mặc định khoảng 1 ảnh mỗi 5 giây, tối đa 300).
+- MAIN nhận text và tối đa 300 khung hình (khoảng 1 ảnh/5 giây) lấy mẫu đều phủ toàn video qua `worker/coverage-frames.mjs` và `lib/frame-rules.mjs`. Teaser vẫn text-only. Khung hình thưa không phải xem video liên tục; không có âm thanh.
 - Mỗi lần gọi tốn khoảng **10–15k token nền** của Codex, chưa gồm dữ liệu tác vụ và kết quả; đây không phải tổng token cố định cho mỗi video.
 
 Trạng thái: `GET /api/codex/status`; `GET /api/chatgpt/session` giữ hình dạng cũ để tương thích. `GET /health` có trường `codex`.
@@ -37,7 +37,7 @@ Mock tạo plan mẫu trên máy, không gọi AI. Manual cut bỏ qua toàn b�
 
 Trong Editor, **ChatGPT Auto** chạy đúng quy trình của chế độ web thủ công, chỉ bỏ thao tác tay:
 tạo cùng TXT (cùng prompt, tín hiệu, 3 ứng viên teaser mỗi part) → gửi nguyên văn cho Codex
-(`gpt-6.1-terra`, `high`) kèm tối đa 24 khung hình phân bố đều (Codex không nhận được file video) →
+(`gpt-6.1-terra`, `high`) kèm tối đa 300 khung hình phân bố đều (khoảng 1 ảnh/5 giây) (Codex không nhận được file video) →
 nhận JSON thô → nhập qua đúng bộ nhập JSON thủ công (`provider: chatgpt-web`). Worker: `auto-cut` mode
 `codex-run` (`runCodexTxt` trong `worker/analysis-service.mjs`, chế độ `txtPrompt` của `worker/codex-cli.mjs`).
 Hàng loạt (Batch) vẫn dùng pipeline Auto phía worker cũ.

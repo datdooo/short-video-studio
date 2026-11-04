@@ -65,7 +65,7 @@ test("argv is fixed: prompt never on the command line, images by --image=, '-' l
   assert.ok(args.includes("--image=/j/a.png") && args.includes("--image=/j/b.png"));
   assert.equal(args.at(-1), "-");
   assert.ok(!args.some((a) => /danger|bypass|full-access/.test(a)));
-  assert.throws(() => codexArguments({ schemaFile: "s", outputFile: "o", cwd: "c", images: Array.from({ length: 25 }, (_, i) => `/i${i}.png`) }), /ảnh/);
+  assert.throws(() => codexArguments({ schemaFile: "s", outputFile: "o", cwd: "c", images: Array.from({ length: 301 }, (_, i) => `/i${i}.png`) }), /ảnh/);
 });
 
 test("child environment uses the real home and drops secrets", () => {
