@@ -314,7 +314,8 @@
     margin: 0;
   }
   .studio-render-job-heading + .studio-task-progress {
-    margin-top: var(--panel-padding);
+    width: auto;
+    margin: var(--panel-padding) var(--panel-padding) 0;
   }
   .studio-render-job-title {
     flex-wrap: nowrap;
