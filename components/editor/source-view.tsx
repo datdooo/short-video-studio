@@ -421,7 +421,6 @@ export function SourceView({ model }: { model: Props }) {
               disabled={!preparedSource || !workerHealth?.ok || isPreparingSource}
             />
           </div>
-          <p className="studio-muted text-xs">Gửi TXT + video cho AI, rồi dán JSON bên dưới.</p>
           {webAiPrompt && webAiPromptIsCurrent && (
             <p className="studio-muted text-xs">
               TXT · {(new TextEncoder().encode(webAiPrompt).byteLength / 1024).toFixed(1)} KiB
