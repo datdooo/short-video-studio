@@ -669,7 +669,7 @@ function RangePlayer({
           onChange={(e) => seek(Number(e.target.value))}
         />
         <span>
-          {seconds((position - choice.start) / PREVIEW_RATE)} / {seconds(length)}
+          {seconds((position - choice.start) / PREVIEW_RATE).slice(0, -1)} / {seconds(length)}
         </span>
       </div>
       {error && (

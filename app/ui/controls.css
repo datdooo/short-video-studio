@@ -726,7 +726,9 @@
     max-width: calc(100vw - 24px);
   }
   [data-slot="select-content"][data-position="popper"] {
-    min-width: min(var(--radix-select-trigger-width), calc(100vw - 24px));
+    /* A list opens exactly as wide as the field that opened it; long items wrap. */
+    width: min(var(--radix-select-trigger-width), calc(100vw - 24px));
+    min-width: 0;
     max-height: min(var(--radix-select-content-available-height, calc(100dvh - 24px)), calc(100dvh - 24px));
   }
   [data-slot="tooltip-content"] {

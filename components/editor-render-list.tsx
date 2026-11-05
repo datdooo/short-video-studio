@@ -175,7 +175,7 @@ export function EditorRenderList({
                   </Button>
                 </div>
               </div>
-              <RenderProgress job={{ ...job, stopping: cancelling }} />
+              {(job.state !== "done" || cancelling) && <RenderProgress job={{ ...job, stopping: cancelling }} />}
               {job.error && (
                 <InlineNotice tone="error" className="mt-3">
                   {workerErrorMessage(job.error)}

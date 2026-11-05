@@ -786,7 +786,7 @@ export function MusicPanel(props: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent position="popper">
-                <SelectItem value="__studio_empty__">File riêng · quyền sử dụng do bạn xác nhận</SelectItem>
+                <SelectItem value="__studio_empty__">File riêng · bạn tự xác nhận quyền</SelectItem>
                 {MUSIC_CATALOG.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.mood} · {t.title} — {t.artist}
@@ -795,19 +795,19 @@ export function MusicPanel(props: Props) {
               </SelectContent>
             </Select>
           </label>
-          <div className="studio-action-row">
+          <div className="studio-action-row studio-music-actions">
             <Button
               variant="secondary"
               size="md"
               type="button"
+              title={auditionId ? "Dừng nghe thử" : "Nghe thử nhạc đang chọn"}
               disabled={props.suspended || !effective.assetId}
               onClick={listen}
-              className="rounded-lg border border-border px-3 py-2"
             >
-              {auditionId ? "Dừng nghe thử" : "Nghe thử nhạc"}
+              {auditionId ? "Dừng" : "Nghe thử"}
             </Button>
-            <label className="cursor-pointer rounded-lg border border-border px-3 py-2">
-              {busy ? "Đang import…" : "Import nhạc cục bộ"}
+            <label className="cursor-pointer" title="Import nhạc cục bộ">
+              {busy ? "Đang import…" : "Import"}
               <input
                 aria-label="Import nhạc cục bộ"
                 className="sr-only"
@@ -830,39 +830,9 @@ export function MusicPanel(props: Props) {
                 void refresh();
               }}
             >
-              {refreshing ? "Đang đọc nhạc…" : "Làm mới"}
+              {refreshing ? "Đang đọc…" : "Làm mới"}
             </Button>
           </div>
-          <Disclosure>
-            <DisclosureTrigger className="cursor-pointer">
-              Gợi ý Mixkit theo mục đích · link chính thức
-            </DisclosureTrigger>
-            <p className="mt-2 text-zinc-500">Link tham khảo · chưa xác minh không lời/quyền dùng từng bài.</p>
-            {[...new Set(MUSIC_CATALOG.filter((t) => !("downloadUrl" in t)).map((t) => t.mood))].map((mood) => (
-              <div key={mood} className="mt-3">
-                <p>{mood}</p>
-                {MUSIC_CATALOG.filter((t) => !("downloadUrl" in t) && t.mood === mood).map((t) => (
-                  <a
-                    key={t.id}
-                    className="mt-1 block text-zinc-400 underline"
-                    href={t.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {t.title} — {t.artist}
-                  </a>
-                ))}
-              </div>
-            ))}
-            <a
-              className="mt-3 block underline"
-              href="https://mixkit.co/license/modal/musicFree/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Giấy phép Mixkit
-            </a>
-          </Disclosure>
           {error && (
             <p role="alert" className="text-amber-300">
               {error}

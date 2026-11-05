@@ -13,6 +13,8 @@
     font-family: var(--font-ui);
     font-size: var(--text-body);
     line-height: 1.5;
+    /* Plus Jakarta Sans ships a 0.175em space, which glues words together at 12-14px. */
+    word-spacing: 0.1em;
   }
   button,
   input,

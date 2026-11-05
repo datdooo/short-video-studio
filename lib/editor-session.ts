@@ -14,7 +14,8 @@ export const SESSION_KEY='shortcut-beta-editor-session-v1';
 export const SESSION_LIMIT=4*1024*1024; // UTF-16 upper bound, one atomic localStorage value.
 const PRESERVED_SESSION_KEY='shortcut-beta-editor-preserved-sessions-v1';
 const PRESERVED_SESSION_LIMIT=8*1024*1024;
-const PRESERVED_SESSION_COUNT=12;
+const PRESERVED_SESSION_COUNT=10; // newest kept; the oldest is dropped past this
+const PRESERVED_SESSION_READ_LIMIT=12; // archives written before the cap of 10 still load
 export type Controls=Record<string,unknown>;
 export type EditorSession={
  sourceMode:'youtube'|'local';sourceUrl:string;sourceId:string;localFileName:string;localDraftId?:string;sourceTitle:string;transcript:string;
@@ -138,7 +139,7 @@ function readPreservedSessions():PreservedSessions{
  if(raw.length*2>PRESERVED_SESSION_LIMIT)throw Error('Kho bản nháp đã vượt giới hạn; chưa thay phiên.');
  let value:unknown;
  try{value=JSON.parse(raw);}catch{throw Error('Không đọc được kho bản nháp; chưa thay phiên hoặc ghi đè.');}
- if(!object(value)||value.version!==1||!Array.isArray(value.entries)||value.entries.length>PRESERVED_SESSION_COUNT||value.entries.some(entry=>!object(entry)||typeof entry.key!=='string'||typeof entry.label!=='string'||typeof entry.savedAt!=='string'||typeof entry.raw!=='string'||typeof entry.opaque!=='boolean')||new Set(value.entries.map(entry=>entry.key)).size!==value.entries.length)throw Error('Kho bản nháp không đúng định dạng; chưa thay phiên hoặc ghi đè.');
+ if(!object(value)||value.version!==1||!Array.isArray(value.entries)||value.entries.length>PRESERVED_SESSION_READ_LIMIT||value.entries.some(entry=>!object(entry)||typeof entry.key!=='string'||typeof entry.label!=='string'||typeof entry.savedAt!=='string'||typeof entry.raw!=='string'||typeof entry.opaque!=='boolean')||new Set(value.entries.map(entry=>entry.key)).size!==value.entries.length)throw Error('Kho bản nháp không đúng định dạng; chưa thay phiên hoặc ghi đè.');
  return value as PreservedSessions;
 }
 export function preserveEditorSession(data:EditorSession,{preserveBlockedRaw=false}:{preserveBlockedRaw?:boolean}={}):{key?:string;error?:string}{
@@ -161,7 +162,7 @@ export function preserveEditorSession(data:EditorSession,{preserveBlockedRaw=fal
    }
   }
   entries.push({key,label,savedAt,raw,opaque:false});
-  if(entries.length>PRESERVED_SESSION_COUNT)return{error:'Kho đã giữ đủ 12 bản nháp; chưa thay phiên. Không tự xóa bản cũ để lấy chỗ.'};
+  while(entries.length>PRESERVED_SESSION_COUNT)entries.shift();
   const json=JSON.stringify({version:1,entries});
   if(json.length*2>PRESERVED_SESSION_LIMIT)return{error:'Kho bản nháp vượt 8 MiB; chưa thay phiên. Không tự bỏ dữ liệu đã giữ.'};
   localStorage.setItem(PRESERVED_SESSION_KEY,json);
