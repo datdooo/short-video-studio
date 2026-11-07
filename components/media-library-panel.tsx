@@ -395,6 +395,7 @@ export function MediaLibraryPanel({
               {files.map((file) => (
                 <Panel as="article" padding="sm" key={file.id} className="studio-library-card workspace-list-row">
                   <div className="flex items-start gap-3">
+                    <label className="studio-check-target">
                     <input
                       type="checkbox"
                       aria-label={`Chọn ${file.title} ${file.filename}`}
@@ -410,6 +411,7 @@ export function MediaLibraryPanel({
                       }
                       className="size-4 shrink-0 accent-primary"
                     />
+                    </label>
                     <span className="studio-library-file-icon" aria-hidden="true">
                       <Film size={20} />
                     </span>

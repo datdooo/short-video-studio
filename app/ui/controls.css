@@ -305,6 +305,10 @@
     gap: var(--control-gap);
     cursor: pointer;
   }
+  .studio-check-target {
+    justify-content: center;
+    min-width: var(--target-min);
+  }
   [data-slot="slider-track"] {
     background-color: var(--panel);
   }
