@@ -21,7 +21,7 @@ async function occupied(port) {
     socket.once('connect', () => done(true)); socket.once('error', () => done(false)); socket.once('timeout', () => done(false));
   });
 }
-if (await occupied(5373) || await occupied(8987)) throw new Error('Beta ports 5373/8987 are occupied. Close the other ShortCut Studio Beta instance first.');
+if (await occupied(5373) || await occupied(8987)) throw new Error('Ports 5373/8987 are occupied. Close the other ShortCut Studio instance first.');
 let stopping = false;
 const children = [];
 function stop(code) {

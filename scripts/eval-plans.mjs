@@ -13,7 +13,7 @@ import { buildCutPoints } from "../lib/txt-signals.mjs";
 const args = process.argv.slice(2);
 const jsonIndex = args.indexOf("--json");
 const jsonOut = jsonIndex >= 0 ? args.splice(jsonIndex, 2)[1] : null;
-const dataRoot = args[0] || path.join(homedir(), "Library", "Application Support", "ShortCut Studio Beta", "media");
+const dataRoot = args[0] || path.join(homedir(), "Library", "Application Support", "ShortCut Studio", "media");
 const history = JSON.parse(readFileSync(path.join(dataRoot, "batch-history.json"), "utf8"));
 const limits = hookDurationLimits(PLAYBACK_RATE);
 const TOLERANCE = 0.35;

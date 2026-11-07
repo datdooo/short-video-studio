@@ -15,11 +15,11 @@ const beta = options => resolveRuntime({home, platform: "darwin", ...options});
 
 test("Beta defaults preserve their own identity, fixed ports, storage and frontend origin", () => {
   const runtime = beta();
-  assert.equal(runtime.name, "ShortCut Studio Beta");
-  assert.equal(runtime.bundleId, "local.datdo.shortcutstudio.beta");
+  assert.equal(runtime.name, "ShortCut Studio");
+  assert.equal(runtime.bundleId, "local.datdo.shortcutstudio");
   assert.equal(runtime.webPort, 5373);
   assert.equal(runtime.workerPort, 8987);
-  assert.equal(runtime.dataRoot, path.join(home, "Library", "Application Support", "ShortCut Studio Beta", "media"));
+  assert.equal(runtime.dataRoot, path.join(home, "Library", "Application Support", "ShortCut Studio", "media"));
   assert.equal(resolveWorkerOrigin(), runtime.workerOrigin);
   assert.equal(runtimeEnvironment(runtime, {}).MEDIA_WORKER_DISABLE_LEGACY, "1");
   for (const profile of ["production", "development"]) assert.throws(() => beta({profile}), /only supports the Beta profile/);
@@ -39,14 +39,14 @@ test("Beta environment removes inherited credentials, DEV paths and production p
   assert.equal(env.MEDIA_WORKER_DISABLE_LEGACY, "1"); assert.equal(env.MEDIA_WORKER_DATA_DIR, runtime.dataRoot);
   assert.equal(resolveWorkerOrigin(env.NEXT_PUBLIC_MEDIA_WORKER_ORIGIN), "http://127.0.0.1:8987");
   assert.equal(env.CHATGPT_KEYCHAIN_SERVICE, undefined);
-  assert.ok(env.HOME.includes("ShortCut Studio Beta")); assert.ok(env.TMPDIR.includes("ShortCut Studio Beta"));
+  assert.ok(env.HOME.includes("ShortCut Studio")); assert.ok(env.TMPDIR.includes("ShortCut Studio"));
   for (const key of ["OPENAI_API_KEY", "GOOGLE_APPLICATION_CREDENTIALS", "YOUTUBE_COOKIES_FILE", "YOUTUBE_COOKIES_FROM_BROWSER", "MEDIA_WORKER_LEGACY_DATA_DIR", "FONTCONFIG_FILE", "NODE_OPTIONS"]) assert.equal(env[key], undefined, key);
 });
 
 test("Beta packaging cannot target DEV/production or retain an existing data root", () => {
   const target = macPackageTarget({projectRoot, beta: true});
-  assert.equal(target.outputAppPath, path.join(projectRoot, "release", "beta", "ShortCut Studio Beta.app"));
-  assert.equal(target.runtime.bundleId, "local.datdo.shortcutstudio.beta");
+  assert.equal(target.outputAppPath, path.join(projectRoot, "release", "beta", "ShortCut Studio.app"));
+  assert.equal(target.runtime.bundleId, "local.datdo.shortcutstudio");
   assert.deepEqual(target.config, {profile: "beta", webPort: 5373, workerPort: 8987, existingDataRoot: null});
   for (const options of [{}, {development: true}, {beta: true, development: true}, {beta: true, compatible26: true}]) {
     assert.throws(() => macPackageTarget({projectRoot, ...options}), /Use --beta/);
@@ -56,7 +56,7 @@ test("Beta packaging cannot target DEV/production or retain an existing data roo
 test("runtime resolution creates nothing; Beta directories are created only under the mock support root", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "shortcut-isolation-"));
   t.after(() => rm(root, {recursive: true, force: true}));
-  const supportRoot = path.join(root, "ShortCut Studio Beta");
+  const supportRoot = path.join(root, "ShortCut Studio");
   const runtime = beta({supportRoot});
   assert.equal(existsSync(supportRoot), false);
   await prepareRuntimeDirectories(runtime);
@@ -68,7 +68,7 @@ test("runtime resolution creates nothing; Beta directories are created only unde
 test("unexpected Beta directory links fail closed without modifying their targets", async t => {
   const root = await mkdtemp(path.join(tmpdir(), "shortcut-isolation-link-"));
   t.after(() => rm(root, {recursive: true, force: true}));
-  const runtime = beta({supportRoot: path.join(root, "ShortCut Studio Beta")});
+  const runtime = beta({supportRoot: path.join(root, "ShortCut Studio")});
   await prepareRuntimeDirectories(runtime);
   const target = await mkdtemp(path.join(root, "preserve-"));
   await rm(runtime.dataRoot, {recursive: true});

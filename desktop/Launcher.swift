@@ -71,7 +71,7 @@ final class StudioApp: NSObject, NSApplicationDelegate {
     private var logURL: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/\(appName)/launcher.log")
     }
-    @objc private func openBrowser() { guard let url = webURL else { showError("Cấu hình Beta không hợp lệ."); return }; NSWorkspace.shared.open(url) }
+    @objc private func openBrowser() { guard let url = webURL else { showError("Cấu hình không hợp lệ."); return }; NSWorkspace.shared.open(url) }
     @objc private func openLog() { NSWorkspace.shared.open(logURL) }
     @objc private func quitApp() { NSApplication.shared.terminate(nil) }
 

@@ -14,7 +14,7 @@ if (!prefix || !outDir) {
   console.error("usage: make-paired-txt.mjs <snapshotPrefix> <outDir> [dataRoot]");
   process.exit(2);
 }
-const root = rootArg || path.join(homedir(), "Library", "Application Support", "ShortCut Studio Beta", "media");
+const root = rootArg || path.join(homedir(), "Library", "Application Support", "ShortCut Studio", "media");
 const dir = path.join(root, "cache", "external-prompt-snapshots");
 const file = readdirSync(dir).find((name) => name.startsWith(prefix));
 if (!file) throw new Error("snapshot not found");

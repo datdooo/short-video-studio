@@ -3,7 +3,7 @@ import net from "node:net";
 import { homedir } from "node:os";
 import path from "node:path";
 
-const identities = { beta: { name: "ShortCut Studio Beta", bundleId: "local.datdo.shortcutstudio.beta", webPort: 5373, workerPort: 8987 } };
+const identities = { beta: { name: "ShortCut Studio", bundleId: "local.datdo.shortcutstudio", webPort: 5373, workerPort: 8987 } };
 
 export function resolveRuntime({ profile = "beta", home = homedir(), platform = process.platform, localAppData = process.env.LOCALAPPDATA, supportRoot: suppliedSupportRoot, existingDataRoot } = {}) {
   const identity = identities[profile];

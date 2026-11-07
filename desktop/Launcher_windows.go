@@ -1,4 +1,4 @@
-// Windows x64 Beta launcher with embedded runtime and per-user installer support.
+// Windows x64 launcher with embedded runtime and per-user installer support.
 package main
 
 import (
@@ -27,7 +27,7 @@ var shell = syscall.NewLazyDLL("shell32.dll")
 
 func ptr(s string) uintptr { p, _ := syscall.UTF16PtrFromString(s); return uintptr(unsafe.Pointer(p)) }
 func message(text string, flags uintptr) uintptr {
-	r, _, _ := user.NewProc("MessageBoxW").Call(0, ptr(text), ptr("ShortCut Studio Beta"), flags)
+	r, _, _ := user.NewProc("MessageBoxW").Call(0, ptr(text), ptr("ShortCut Studio"), flags)
 	return r
 }
 func browser() {
@@ -176,7 +176,7 @@ func main() {
 	}
 }
 func run() error {
-	mutex, _, callErr := kernel.NewProc("CreateMutexW").Call(0, 0, ptr("Local\\ShortCutStudio.Beta.Windows.SingleInstance"))
+	mutex, _, callErr := kernel.NewProc("CreateMutexW").Call(0, 0, ptr("Local\\ShortCutStudio.Windows.SingleInstance"))
 	if mutex == 0 {
 		return callErr
 	}
@@ -189,8 +189,8 @@ func run() error {
 	if local == "" {
 		return fmt.Errorf("LOCALAPPDATA is missing")
 	}
-	root := filepath.Join(local, "ShortCut Studio Beta")
-	fmt.Println("ShortCut Studio Beta — starting. First launch extracts the bundled runtime; please wait.")
+	root := filepath.Join(local, "ShortCut Studio")
+	fmt.Println("ShortCut Studio — starting. First launch extracts the bundled runtime; please wait.")
 	resources, err := unpack(root)
 	if err != nil {
 		return err
@@ -216,7 +216,7 @@ func run() error {
 		syscall.WaitForSingleObject(child, syscall.INFINITE)
 		var code uint32
 		syscall.GetExitCodeProcess(child, &code)
-		done <- fmt.Errorf("ShortCut Studio Beta stopped (%d). Log: %s", code, logName)
+		done <- fmt.Errorf("ShortCut Studio stopped (%d). Log: %s", code, logName)
 	}()
 	go func() {
 		reader := bufio.NewReader(os.Stdin)
@@ -224,7 +224,7 @@ func run() error {
 			if _, err := reader.ReadString('\n'); err != nil {
 				return
 			}
-			if message("Stop ShortCut Studio Beta? Active downloads and renders will be cancelled.", 0x24) == 6 {
+			if message("Stop ShortCut Studio? Active downloads and renders will be cancelled.", 0x24) == 6 {
 				done <- nil
 				return
 			}

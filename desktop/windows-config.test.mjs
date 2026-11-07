@@ -10,7 +10,7 @@ test('Windows paths, fonts and binary names never reference the developer Mac', 
   assert.equal(result.env.Path, undefined);
   assert.ok(result.fontXml.includes('C:/Windows/Fonts'));
   assert.ok(!JSON.stringify(result).includes('/Users/datdo'));
-  assert.ok(result.dataRoot.endsWith('ShortCut Studio Beta\\media'));
+  assert.ok(result.dataRoot.endsWith('ShortCut Studio\\media'));
 });
 test('Windows bootstrap rejects missing local application data', () => {
   assert.throws(() => windowsEnvironment('C:\\App', {}), /LOCALAPPDATA/);

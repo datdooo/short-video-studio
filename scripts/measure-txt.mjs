@@ -13,7 +13,7 @@ import { buildExternalEditingContext } from "../worker/external-editing-context.
 const args = process.argv.slice(2);
 const jsonIndex = args.indexOf("--json");
 const jsonOut = jsonIndex >= 0 ? args.splice(jsonIndex, 2)[1] : null;
-const dataRoot = args[0] || path.join(homedir(), "Library", "Application Support", "ShortCut Studio Beta", "media");
+const dataRoot = args[0] || path.join(homedir(), "Library", "Application Support", "ShortCut Studio", "media");
 const snapshotDir = path.join(dataRoot, "cache", "external-prompt-snapshots");
 
 const size = (value) => (value === undefined ? 0 : JSON.stringify(value).length);

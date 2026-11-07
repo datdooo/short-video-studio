@@ -9,7 +9,7 @@ import { createRenderComposition } from "../worker/render/composition.mjs";
 
 const [label, D, F, C, E, nice, argSource, argJob] = process.argv.slice(2);
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
-const DATA = process.env.SHORTCUT_DATA_ROOT || path.join(process.env.HOME, "Library/Application Support/ShortCut Studio Beta/media");
+const DATA = process.env.SHORTCUT_DATA_ROOT || path.join(process.env.HOME, "Library/Application Support/ShortCut Studio/media");
 const FFMPEG = process.env.FFMPEG_PATH || "ffmpeg";
 const SOURCE_ID = argSource, JOB_ID = argJob;
 if (!SOURCE_ID || !JOB_ID) throw new Error("usage: bench-render.mjs <label> <in> <filter> <complex> <encode> <nice> <sourceId> <jobId>");
