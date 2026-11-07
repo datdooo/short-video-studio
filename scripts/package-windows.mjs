@@ -228,6 +228,8 @@ const payload = path.join(stage, 'payload.zip');
 run('/usr/bin/zip', ['-q', '-r', payload, '.'], { cwd: resources });
 await copyFile(path.join(project, 'desktop/Launcher_windows.go'), path.join(stage, 'main.go'));
 await copyFile(path.join(project,'desktop/Installer_windows.go'),path.join(stage,'installer.go'));
+// A module path keeps the host checkout path out of the binary (with -trimpath).
+await writeFile(path.join(stage,'go.mod'),'module shortcutstudio/launcher\n\ngo 1.21\n');
 
 const hostGoEnv = { ...goEnv, GOOS: process.platform, GOARCH: process.arch === 'arm64' ? 'arm64' : 'amd64' };
 const imports = JSON.parse(run(go, ['run', 'scripts/audit-windows-runtime.go', resources], { env: hostGoEnv }));
@@ -256,7 +258,7 @@ run(path.join(cache, 'go-tools/go-winres'), ['make', '--in', 'winres.json', '--a
 console.log('Compiling Windows x64 installer and launcher with embedded runtime…');
 const filename=`ShortCut-Studio-Setup-${BETA_RELEASE.version}-x64.exe`;
 const output=path.join(stage,filename);
-run(go, ['build', '-trimpath', `-ldflags=-s -w -X main.releaseVersion=${BETA_RELEASE.version} -X main.releaseCommit=${revision}`, '-o', output, '.'], { cwd: stage, env: goEnv });
+run(go, ['build', '-trimpath', `-ldflags=-s -w -X main.releaseVersion=${BETA_RELEASE.version} -X main.releaseCommit=${revision}`, '-o', output, '.'], { cwd: stage, env: { ...goEnv, GO111MODULE: 'on' } });
 const destination=path.join(release,filename);
 if (existsSync(destination)) await rename(destination, path.join(stage, 'previous-build.exe'));
 await rename(output, destination);
