@@ -106,7 +106,7 @@ AI, YouTube hoặc ASR. Chưa xác minh runtime/chất lượng video/âm thanh.
 Đóng gói DEV thành công một lần (exit 0), dùng Node 22 và toàn bộ compile/native audit/codesign guard hiện có.
 Chỉ đổi đường dẫn đầu ra trong script build tạm, đã xóa script tạm sau khi hoàn tất; không sửa packager được lưu trong Git.
 
-App mới: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev Review 20261021-205914.app`
+App mới: `<dev-checkout>/release/dev/ShortCut Studio Dev Review 20261021-205914.app`
 
 Log: `/tmp/shortcut-dev-review-20261021-205914-build.log`
 
@@ -122,11 +122,11 @@ Git vẫn branch `recovery/visual-dev-reconstructed`, HEAD `865f75dd69893b9718a2
 
 Theo yêu cầu tiếp theo, đã build/đóng gói DEV thành công một lần, exit 0; giữ đầy đủ native audit và codesign guard. Không thêm feature hoặc đổi auth/model/reasoning/service_tier.
 
-App: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev Review 20261021-214000.app`
+App: `<dev-checkout>/release/dev/ShortCut Studio Dev Review 20261021-214000.app`
 
 Log: `/tmp/shortcut-dev-20261021-214000-build.log`
 
-Profile development, web 5273 / worker 8887, existingDataRoot=null; bootstrap dùng `/Users/datdo/Library/Application Support/ShortCut Studio Dev/media`. Không khởi chạy bundle để xác minh runtime.
+Profile development, web 5273 / worker 8887, existingDataRoot=null; bootstrap dùng `~/Library/Application Support/ShortCut Studio Dev/media`. Không khởi chạy bundle để xác minh runtime.
 
 Đã đối chiếu 24 source input không đổi trong lúc build, các module worker/lib sửa khớp hash bản source. Parser worker/provider-response.mjs và import worker/ai-operation.mjs có trong package, đúng nội dung; ai-input, server, bootstrap/runtime-config cũng khớp. Client đã biên dịch chứa marker draft/manual-main và diagnostics. Manifest tại Contents/Resources/source-build-manifest.json; kiểm tra file/package tĩnh, không phải test/runtime QA.
 

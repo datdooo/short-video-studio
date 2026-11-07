@@ -1,6 +1,6 @@
 # Phase 8 qualification — curated title animations
 
-DEV worktree: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+DEV worktree: `<dev-checkout>`.
 Branch: `feature/visual-preset-engine`. Phase 7 base:
 `7abe5f23fded5bcd195907d00f606d5524fa40ad`. Node 22.23.3.
 

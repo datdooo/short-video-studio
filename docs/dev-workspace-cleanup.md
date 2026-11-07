@@ -7,12 +7,12 @@ Hiện hành trong checkout Beta: ChatGPT Auto dùng `codex exec` qua `worker/co
 # DEV workspace cleanup — 2026-10-18
 
 Feature development is paused. Work was limited to
-`/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+`<dev-checkout>`.
 
 ## Git blocker predates cleanup
 
 The checkout exists, but `.git` is a file pointing to
-`/Users/datdo/Documents/tiktok-edit/short-video-studio/.git/worktrees/short-video-studio-visual-dev`.
+`<stable-checkout>/.git/worktrees/short-video-studio-visual-dev`.
 That directory and its parent checkout no longer exist. `git branch
 --show-current`, `git rev-parse HEAD`, `git status --short` and `git worktree list
 --porcelain` all fail with “not a git repository”.
@@ -100,7 +100,7 @@ sheets remain. Databases, credentials and Keychains were not accessed or changed
   stopped cleanly. It did not start the worker, recover jobs, render, call an AI
   provider or read credentials. No DEV listeners/processes remained afterward.
 - Source and packaged normal launcher resolve HOME/CFFIXED_USER_HOME to
-  `/Users/datdo/Library/Application Support/ShortCut Studio Dev/home`, **not** a
+  `~/Library/Application Support/ShortCut Studio Dev/home`, **not** a
   mock QA HOME. Ports5273/8887, DEV media root, DEV credential service and disabled
   legacy lookup remain correct. The credential-only real-account HOME exception
   from the earlier login fix remains unchanged. No live process environment was

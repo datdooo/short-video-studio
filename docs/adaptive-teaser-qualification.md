@@ -126,7 +126,7 @@ BGM/reconstruction bundles are untouched. Unavailable original21 commits stay un
 Quit the existing DEV instance through its normal app controls, then open the new app:
 
 ```sh
-open "/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev.app"
+open "<dev-checkout>/release/dev/ShortCut Studio Dev.app"
 ```
 
 Test one known part with a real provider once auth is restored by the user; inspect

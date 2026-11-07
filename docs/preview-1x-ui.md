@@ -3,7 +3,7 @@
 Base HEAD `13f3c90f28afb30a3e6e53c87d40695197914712`, branch
 `recovery/visual-dev-reconstructed`, with all inherited dirty work preserved.
 Primary design is now user-supplied
-`/Users/datdo/Downloads/shortcut_studio_dev_ui_prototype_codex_handoff.tsx`,
+`~/Downloads/shortcut_studio_dev_ui_prototype_codex_handoff.tsx`,
 superseding the earlier ZIP. Its mock schemas, alternate transition enums, demo
 scenarios, fake autosave/progress and simulated source clock were NOT installed.
 The user's explicit Preview1× requirement overrides the TSX's Output1.25× labels.

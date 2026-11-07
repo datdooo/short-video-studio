@@ -142,7 +142,7 @@ PATH="/opt/homebrew/opt/node@22/bin:$PATH" node --test lib/*.test.mjs worker/*.t
 PATH="/opt/homebrew/opt/node@22/bin:$PATH" npm run lint
 PATH="/opt/homebrew/opt/node@22/bin:$PATH" npx tsc --noEmit
 PATH="/opt/homebrew/opt/node@22/bin:$PATH" node scripts/qa-visual-style.mjs --baseline ba82f951fbade4289597fbb3163c6f13cad7ff8c
-PATH="/opt/homebrew/opt/node@22/bin:$PATH" QA_RUNTIME_BIN="/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev.app/Contents/Resources/runtime/bin" node scripts/qa-editor-renders.mjs
+PATH="/opt/homebrew/opt/node@22/bin:$PATH" QA_RUNTIME_BIN="<dev-checkout>/release/dev/ShortCut Studio Dev.app/Contents/Resources/runtime/bin" node scripts/qa-editor-renders.mjs
 PATH="/opt/homebrew/opt/node@22/bin:$PATH" npm run package:mac:dev
 ```
 

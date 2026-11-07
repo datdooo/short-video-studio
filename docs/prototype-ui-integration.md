@@ -7,7 +7,7 @@
 Base: `recovery/visual-dev-reconstructed`, HEAD
 `13f3c90f28afb30a3e6e53c87d40695197914712`, with pre-existing unfinished render/UI
 changes. No reset, source overlay, commit, push, dependency installation or upgrade.
-Reference: user-provided `/Users/datdo/Downloads/shortcut-studio-ui-prototype.zip`;
+Reference: user-provided `~/Downloads/shortcut-studio-ui-prototype.zip`;
 README and relevant components inspected without executing the prototype. Its
 palette, compact chrome and source/preview/Timeline/Inspector layout guide the
 implementation. No prototype mock fixtures, EditPlan types, Vite entry, manifests,

@@ -1,6 +1,6 @@
 # Beta — manual teaser toàn nguồn và nhãn tiến trình render
 
-Phạm vi: sửa source trên checkout `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`, branch `beta/maintenance`, nền `f9f118bf7ba93f1c4a08275b4449f65ab138d686`. Trước sửa working tree sạch. Đã đối chiếu app `release/beta/ShortCut Studio Beta.app/Contents/Resources/config.json`: profile beta, version 1.1.0-beta.1/build 1101, cùng commit nền, cổng 5373/8987. Không lấy thay đổi từ DEV.
+Phạm vi: sửa source trên checkout `<beta-checkout>`, branch `beta/maintenance`, nền `f9f118bf7ba93f1c4a08275b4449f65ab138d686`. Trước sửa working tree sạch. Đã đối chiếu app `release/beta/ShortCut Studio Beta.app/Contents/Resources/config.json`: profile beta, version 1.1.0-beta.1/build 1101, cùng commit nền, cổng 5373/8987. Không lấy thay đổi từ DEV.
 
 Chưa build/package hoặc cập nhật app trong lượt này. Không chạy AI, tests, lint/typecheck, render hay browser automation. Chỉ đọc source/diff và sửa source; không mở/ghi dữ liệu media, plans, drafts, database hay credentials. Không commit/push/merge.
 

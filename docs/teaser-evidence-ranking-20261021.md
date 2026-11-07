@@ -4,7 +4,7 @@ Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/AI_
 
 ## Trạng thái
 
-DEV duy nhất: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+DEV duy nhất: `<dev-checkout>`.
 Branch `recovery/visual-dev-reconstructed`, base `69307f4`.
 Đã sửa source và rà diff; một lượt Node22 DEV package thành công (exit0),
 `release/dev/ShortCut Studio Dev.app`, log

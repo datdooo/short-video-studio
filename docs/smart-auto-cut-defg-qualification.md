@@ -11,7 +11,7 @@ is built and running.
 H real-video/editorial acceptance and live main-selection quality remain pending
 with the user. This is not a claim that all Smart Auto Cut qualification is complete.
 
-Repository: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Repository: `<dev-checkout>`.
 Branch: `recovery/visual-dev-reconstructed`; clean starting HEAD `801a544`.
 Commits: D `5ff7b83`, E `8e6731c`, F `407ca90`, G `db47b11`, hardening/QA `feac0c7`.
 Final documentation HEAD is available with `git log -1 --oneline`.
@@ -119,7 +119,7 @@ uncaught browser errors/unexpected browser destinations. No provider/network cam
 Private HOME and fixture were removed after success; reports/screenshots retained.
 
 Normal `open` launch then passed web200 and worker health with real DEV data root
-`/Users/datdo/Library/Application Support/ShortCut Studio Dev/media`, not mock HOME.
+`~/Library/Application Support/ShortCut Studio Dev/media`, not mock HOME.
 DEV app is left running on5273/8887. No login credentials were accessed by the QA
 workflow (browser session route blocked; source worker used a QA-only service).
 This proves startup/import/resume dependency closure, not live editorial quality.
@@ -171,7 +171,7 @@ without saved settings need editor review. Existing yt-dlp health-probe issue is
 outside this task. Visual/hook historical qualifications remain unchanged.
 
 1. Open the updated app in place (not `/Applications`):
-   `open "/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev.app"`.
+   `open "<dev-checkout>/release/dev/ShortCut Studio Dev.app"`.
 2. Prepare one representative YouTube/local source, run Auto; inspect the actual
    method/provider, evidence, exclusions and fallback limitations for both parts.
    Watch/listen for relevant, coherent main segments and same-part hooks.

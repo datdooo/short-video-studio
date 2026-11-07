@@ -56,7 +56,7 @@ try{
   let ready=false;
   for(let i=0;i<180;i++){try{const health=await call('/health');if(health.ok&&(await fetch(runtime.webOrigin)).ok){assert.equal(health.dataRoot,runtime.dataRoot);ready=true;break;}}catch{/* starting */}await delay(500);}
   assert.ok(ready,logs);
-  const {chromium}=await import(process.env.QA_PLAYWRIGHT_MODULE||'/Users/datdo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs');
+  const {chromium}=await import(process.env.QA_PLAYWRIGHT_MODULE||'playwright');
   browser=await chromium.launch({channel:'chrome',headless:true});const ctx=await browser.newContext({viewport:{width:1500,height:1100}});
   await ctx.route('**/*',async route=>{
     const request=route.request(),u=new URL(request.url());

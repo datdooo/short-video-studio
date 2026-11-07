@@ -1,6 +1,6 @@
 # Phase 9 qualification — curated cut transitions
 
-Worktree: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Worktree: `<dev-checkout>`.
 Branch: `feature/visual-preset-engine`. Verified clean starting HEAD:
 `76aad14e3d9e1d593b3df730c77232a517359810` (qualified Phase 8).
 No competing bridge/editor run was active when Phase 9 began. Node 22.23.3.
@@ -189,7 +189,7 @@ two outputs each: `phase9-transition-history.json`.
 
 Actual DEV bootstrap reaches `SHORTCUT_READY`, HTTP 200 and healthy worker at
 5273/8887. Storage exposes only `current`; media root is
-`/Users/datdo/Library/Application Support/ShortCut Studio Dev/media`.
+`~/Library/Application Support/ShortCut Studio Dev/media`.
 Evidence: `phase9-bootstrap.json`, `phase9-bootstrap.log`.
 
 The same browser pass through the actual DEV bootstrap also passes all assertions:

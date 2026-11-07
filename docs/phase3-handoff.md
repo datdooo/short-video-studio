@@ -20,19 +20,19 @@ Checkpoint date: 2026-10-16. **WIP, not final Phase 3 qualification.** The user 
 
 ## Repository, commits and immutable resources
 
-- Worktree: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`
+- Worktree: `<dev-checkout>`
 - Branch: `feature/visual-preset-engine`
 - HEAD immediately before this WIP checkpoint: `6e6695cb956d5ba7156ced552fdb25092dbd7f7e` (`feat(fonts): add curated offline font registry`). The font portion of Phase 3 is already committed there; remaining text/UI work is in the subsequent WIP commit containing this document.
 - Phase 2: `6755f7f79dd78b6d700d39ab44781789bb85da49`
 - Phase 1: `ba82f951fbade4289597fbb3163c6f13cad7ff8c`
 - Stable tag: `stable-v1.1.0-before-visual-editor` -> `255a23cf2a1ae128066f2bbaa6e91daca998e6ea`; do not move it.
-- Never touch `main`, amend/rewrite the earlier commits, or edit the original checkout `/Users/datdo/Documents/tiktok-edit/short-video-studio`.
+- Never touch `main`, amend/rewrite the earlier commits, or edit the original checkout `<stable-checkout>`.
 - Never change, rebuild in place, install over, launch for testing, resign or stop `/Applications/ShortCut Studio.app`.
-- Never read/use/migrate production media, history, cache, OAuth or models from `/Users/datdo/Library/Application Support/ShortCut Studio/`. Preserve any unrelated external changes in production/original paths; do not attempt repairs.
+- Never read/use/migrate production media, history, cache, OAuth or models from `~/Library/Application Support/ShortCut Studio/`. Preserve any unrelated external changes in production/original paths; do not attempt repairs.
 - Every Node/npm command needs `PATH="/opt/homebrew/opt/node@22/bin:$PATH"`. Node 26 is unrelated and broken; do not repair it.
 - DEV identity: `ShortCut Studio Dev`, bundle ID `local.datdo.shortcutstudio.dev`.
 - DEV web `http://127.0.0.1:5273`; worker `http://127.0.0.1:8887/health`.
-- DEV data `/Users/datdo/Library/Application Support/ShortCut Studio Dev/media`, `MEDIA_WORKER_DISABLE_LEGACY=1`. Synthetic QA instead uses private temporary data roots.
+- DEV data `~/Library/Application Support/ShortCut Studio Dev/media`, `MEDIA_WORKER_DISABLE_LEGACY=1`. Synthetic QA instead uses private temporary data roots.
 - DEV commands remain `npm run personal:dev-isolated` and `npm run package:mac:dev`. Only package output is `release/dev/ShortCut Studio Dev.app`; never install it. Production ports 5173/8787 were not used by DEV QA.
 
 ## Phase 3 file inventory at the checkpoint
@@ -210,7 +210,7 @@ Corrected synthetic JP/KR titles, isolated font-only comparison, packaged worker
 Start by inspecting the checkpoint and safety state:
 
 ```sh
-cd /Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev
+cd <dev-checkout>
 export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
 node --version
 git branch --show-current
@@ -235,18 +235,18 @@ cat 'release/dev/ShortCut Studio Dev.app/Contents/Resources/config.json'
 To exercise packaged bootstrap without installing or opening the production app, first ensure no other DEV server owns 5273/8887. In one terminal run the DEV bundle's own Node/bootstrap, then in a second run the browser QA. Stop only that test bootstrap with Ctrl-C afterward; its signal handler stops its own child processes. This uses the separate normal DEV data root; browser worker calls are mocked.
 
 ```sh
-cd /Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev
+cd <dev-checkout>
 export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
 'release/dev/ShortCut Studio Dev.app/Contents/Resources/runtime/bin/node' \
   'release/dev/ShortCut Studio Dev.app/Contents/Resources/desktop/bootstrap.mjs'
 ```
 
 ```sh
-cd /Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev
+cd <dev-checkout>
 export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
 curl --fail http://127.0.0.1:5273/ -o /dev/null
 curl --fail http://127.0.0.1:8887/health
-QA_PLAYWRIGHT_MODULE='/Users/datdo/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs' \
+QA_PLAYWRIGHT_MODULE='~/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs' \
   node scripts/qa-text-style-ui.mjs
 ```
 
@@ -259,7 +259,7 @@ node scripts/qa-visual-style.mjs --baseline 6755f7f79dd78b6d700d39ab44781789bb85
 node scripts/qa-text-presets.mjs
 npm run package:mac:dev
 node scripts/qa-text-presets.mjs --packaged
-QA_RUNTIME_BIN='/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev.app/Contents/Resources/runtime/bin' \
+QA_RUNTIME_BIN='<dev-checkout>/release/dev/ShortCut Studio Dev.app/Contents/Resources/runtime/bin' \
   node scripts/qa-editor-renders.mjs
 ```
 

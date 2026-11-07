@@ -89,7 +89,7 @@ No unrelated Smart Auto Cut expansion/Sports Voiceover/production/push/merge.
 ---
 handoff_version: 1
 verified_date: 2026-10-19
-repository: /Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev
+repository: <dev-checkout>
 branch: recovery/visual-dev-reconstructed
 implementation_head_before_resume: d1e2cd6df0ee1ab640f8e6d111f0cbc6131c4ab6
 initial_worktree: six_inherited_modified_files_at_558ad67
@@ -241,12 +241,12 @@ This tag identifies history, not a newly audited installed production build.
 | --- | --- |
 | DEV identity / bundle ID | ShortCut Studio Dev / `local.datdo.shortcutstudio.dev` |
 | DEV web / worker | `5273` / `8887` |
-| DEV media root | `/Users/datdo/Library/Application Support/ShortCut Studio Dev/media` |
+| DEV media root | `~/Library/Application Support/ShortCut Studio Dev/media` |
 | DEV package | `release/dev/ShortCut Studio Dev.app` (run in place; never install) |
 | Node | 22; `PATH="/opt/homebrew/opt/node@22/bin:$PATH"` |
 | DEV credentials/runtime isolation | Separate Keychain service `ShortCut Studio Dev ChatGPT`; private child HOME/XDG/TMP; `MEDIA_WORKER_DISABLE_LEGACY=1` |
 
-Never modify main, `/Users/datdo/Documents/tiktok-edit/short-video-studio`,
+Never modify main, `<stable-checkout>`,
 `/Applications/ShortCut Studio.app`, production Application Support/credentials or
 ports **5173/8787**. No reset/amend/merge, tag moves, unrelated Homebrew changes,
 messaging integrations or unrelated features. Preserve dirty work if encountered.

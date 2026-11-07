@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { homedir } from 'node:os';
 import { windowsEnvironment } from './windows-config.mjs';
 test('Windows paths, fonts and binary names never reference the developer Mac', () => {
   const result = windowsEnvironment('C:\\Users\\Test User\\AppData\\Local\\ShortCut Studio\\runtime\\abc', { LOCALAPPDATA: 'C:\\Users\\Test User\\AppData\\Local', Path: 'C:\\Windows\\System32', SystemRoot: 'C:\\Windows' });
@@ -9,7 +10,7 @@ test('Windows paths, fonts and binary names never reference the developer Mac', 
   assert.ok(result.env.PATH.includes(';C:\\Windows\\System32'));
   assert.equal(result.env.Path, undefined);
   assert.ok(result.fontXml.includes('C:/Windows/Fonts'));
-  assert.ok(!JSON.stringify(result).includes('/Users/datdo'));
+  assert.ok(!JSON.stringify(result).includes(homedir()));
   assert.ok(result.dataRoot.endsWith('ShortCut Studio\\media'));
 });
 test('Windows bootstrap rejects missing local application data', () => {

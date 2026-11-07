@@ -2,7 +2,7 @@ Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/AI_
 
 # Beta project sweep — source fixes, 2026-10-24
 
-Checkout: `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`.
+Checkout: `<beta-checkout>`.
 Branch `beta/maintenance`, base HEAD
 `0708d250a98a252996b3f2f41ba66d433301547a` (packaged Beta 1104).
 This sweep is uncommitted source work; installed/release apps have not changed.

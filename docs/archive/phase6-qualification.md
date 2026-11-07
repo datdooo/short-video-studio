@@ -1,6 +1,6 @@
 # Phase 6 qualification — curated static overlay engine
 
-Isolated worktree `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`,
+Isolated worktree `<dev-checkout>`,
 branch `feature/visual-preset-engine`, Node 22.23.3; Phase 5 base
 `98b6c13d3c1e657ca3cf42de938cea18a7923605`. Engineering qualification is separate
 from merge/install/release approval. Stop after Phase 6; no full-template phase.

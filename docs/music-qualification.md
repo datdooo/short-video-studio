@@ -11,7 +11,7 @@ is foreground-only; legacy rainbow remains available. Current limits128tracks/
 
 # Music / ducking / rainbow / hook distance — DEV qualification
 
-2026-10-19, `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`,
+2026-10-19, `<dev-checkout>`,
 branch `recovery/visual-dev-reconstructed`; began clean at `179edf2`.
 Implementation `186e01a`; preview lifecycle repair `d9911f4`. Final documentation
 HEAD is `git log -1`. Updated app is ready for user acceptance, with limits below.
@@ -65,7 +65,7 @@ Architecture, exact schemas, sources/licenses and reuse record:
 | Source UI + real FFmpeg export | Import, play/pause/audition, no volume-triggered VAD/AI;40% job snapshot retained when editor moved to5%; two1080×1920 outputs,606 frames each, duration/audio20.221771 /20.214083s; CJK titles and rainbow frame inspected |
 | Single DEV package build | Package complete;44 native binaries audited, dependency closure and ad-hoc deep signature verified; VAD WASM and legal notices present |
 | Packaged UI | Real bundled VAD invocation, native mixed-audio playback, pause/audition, seek12s→1s across repeated hook mapping, volume isolation, workspace switch stops preview; zero browser errors |
-| Normal app launch | Web200, worker OK; actual data root `/Users/datdo/Library/Application Support/ShortCut Studio Dev/media`, not private QA HOME; normal library0 assets /8 links |
+| Normal app launch | Web200, worker OK; actual data root `~/Library/Application Support/ShortCut Studio Dev/media`, not private QA HOME; normal library0 assets /8 links |
 
 Reports/screenshots/short procedural clip are retained under
 `.isolation-verification/music/`: `audio-report.json`, `source-ui-report.json`,
@@ -125,7 +125,7 @@ fills budget → refuse/skip new cache writes. Temporary PCM/import/M4A files cl
 on success, failure and cancellation. No full-video intermediate was retained.
 
 Updated branch/history bundle (outside DEV):
-`/Users/datdo/Documents/tiktok-edit/short-video-studio-dev-bgm-20261019.bundle`.
+`<stable-checkout>-dev-bgm-20261019.bundle`.
 Created after final documentation commit; verify record in ignored
 `.isolation-verification/music/bundle-report.json` includes bundle SHA256/HEAD and
 independent bare-clone `git fsck --full`. It preserves reconstructed history; it
@@ -134,7 +134,7 @@ cannot recover the21 unavailable original local checkpoints. Existing backups st
 ## User acceptance
 
 Open in place:
-`open "/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev.app"`
+`open "<dev-checkout>/release/dev/ShortCut Studio Dev.app"`
 
 1. Download an individual candidate through its official Mixkit page, audition for
    singing/spoken/vocal samples, verify rights and import. Alternatively import your

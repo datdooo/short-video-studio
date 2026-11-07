@@ -1,7 +1,7 @@
 # Phase 4 qualification — curated video filters
 
 Qualified on 2026-10-16, branch `feature/visual-preset-engine`, isolated worktree
-`/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`, Node 22.23.3.
+`<dev-checkout>`, Node 22.23.3.
 Phase 3 base is `8e813ba`. The Phase 4 commit follows it without amending any
 checkpoint. This is engineering qualification, not merge/install/release approval.
 **Stop after Phase 4. Phase 5 has not started.**

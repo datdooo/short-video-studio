@@ -83,7 +83,7 @@ Exact file/line messages: `lint-final.log`. A zero-error lint exit does not mean
 
 ## Commands actually run
 
-Working directory: `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`.
+Working directory: `<beta-checkout>`.
 
 ```sh
 /opt/homebrew/opt/node@22/bin/node --test worker/batch-pipeline.test.mjs worker/teaser-selection.test.mjs lib/ai-progress.test.mjs lib/music-preview.test.mjs

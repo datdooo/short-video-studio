@@ -1,6 +1,6 @@
 # Phase 5 qualification — curated backgrounds
 
-Worktree `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`, branch
+Worktree `<dev-checkout>`, branch
 `feature/visual-preset-engine`, Node 22.23.3. Phase 4 base: `fb351e5`.
 This document records engineering qualification, not installation/merge approval.
 Stop after backgrounds; Phase 6 is outside this task.

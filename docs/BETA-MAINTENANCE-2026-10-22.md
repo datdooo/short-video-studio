@@ -4,8 +4,8 @@ Cập nhật 2026-11-04: OAuth đã được thay bằng Codex CLI; xem docs/AI_
 
 Baseline DEV checkpoint: `cf14ba4202eb25f1ecba5033c969d12797cbff9b`, local tag `checkpoint/dev-beta-base-2026-10-22`. Source matched the last packaged DEV source hashes before checkpoint. Parent was `865f75dd69893b9718a2590fb35243d0f2079b77`. No media, credentials, dependencies, app or cache was staged. DEV keeps its directory, branch name, app, configuration and user data.
 
-- DEV advanced work: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`, branch `recovery/visual-dev-reconstructed`.
-- Beta bug fixes/builds: `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`, branch `beta/maintenance`. This is an editable full source checkout with an independent `.git` directory/object database, no alternates or DEV-linked remote. No read-only/build lock is imposed: commit reviewed changes before packaging so each artifact has an exact revision.
+- DEV advanced work: `<dev-checkout>`, branch `recovery/visual-dev-reconstructed`.
+- Beta bug fixes/builds: `<beta-checkout>`, branch `beta/maintenance`. This is an editable full source checkout with an independent `.git` directory/object database, no alternates or DEV-linked remote. No read-only/build lock is imposed: commit reviewed changes before packaging so each artifact has an exact revision.
 - Release metadata: `desktop/beta-release.mjs`, initial version `1.1.0-beta.1`, build `1101`. Increment deliberately for each Beta update. Package receipts record the actual commit and baseline. Keep the previous good bundle/installer and its receipt; source history remains recoverable by Git.
 - Shared fixes: inspect compatibility, then intentionally transfer only selected commits (for example cherry-pick after review). Never auto-merge/synchronize all DEV work into Beta. No additional DEV checkout is needed for Beta fixes.
 

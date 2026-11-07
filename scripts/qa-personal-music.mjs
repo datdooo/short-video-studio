@@ -7,7 +7,7 @@ import {musicMixFilters} from '../worker/music-audio.mjs';
 import {adjustTeaserRange,presentationDuration} from '../lib/teaser-hooks.mjs';
 import {mapSpeechIntervals} from '../lib/music/envelope.mjs';
 const project=path.resolve(import.meta.dirname,'..'),root=path.join(project,'.isolation-verification/adaptive-teaser'),bin=path.join(project,'release/dev/ShortCut Studio Dev.app/Contents/Resources/runtime/bin');
-const source=path.join(project,'.isolation-verification/teaser-finish/real-building-200s.mp4'),music='/Users/datdo/Library/Application Support/ShortCut Studio Dev/media/music/d62bc20e3e9f97386ff7611d32f0e91936aaf2a218782cbca25e70caaf31b1b6.mp3';
+const source=path.join(project,'.isolation-verification/teaser-finish/real-building-200s.mp4'),music=process.env.HOME+'/Library/Application Support/ShortCut Studio Dev/media/music/d62bc20e3e9f97386ff7611d32f0e91936aaf2a218782cbca25e70caaf31b1b6.mp3';
 const cues=JSON.parse(await readFile(path.join(project,'.isolation-verification/teaser-resume-20261019/real-ai-plan.json'),'utf8')).plan.captionCues.cues;
 const part=adjustTeaserRange({id:1,manualLocked:true,segments:[{start:45,end:75}]},61.8,68.439,cues),duration=presentationDuration(part)/1.25;
 // Exact supplied interval fixture tests mapping; this does not claim fresh VAD accuracy.

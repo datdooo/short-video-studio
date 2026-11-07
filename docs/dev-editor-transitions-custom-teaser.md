@@ -131,5 +131,5 @@ the previous app in its own DEV staging directory; it has not been deleted.
 Open manually after quitting the previous DEV app normally:
 
 ```sh
-open "/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev.app"
+open "<dev-checkout>/release/dev/ShortCut Studio Dev.app"
 ```

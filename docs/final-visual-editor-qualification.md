@@ -6,7 +6,7 @@ imports. That blocker is fixed and current qualification passed; see the return
 audit below. The listed legacy/external-provider limitations remain explicit.
 Smart Auto Cut A/B foundations now exist; the full multi-signal feature is incomplete.
 
-Worktree: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Worktree: `<dev-checkout>`.
 Branch: `feature/visual-preset-engine`. Initial clean HEAD was
 `86889dbe843b45c40b129892751b97f5cc33e784`.
 
@@ -242,10 +242,10 @@ The latest instruction says preserve work, finish the nearest coherent boundary,
 run focused checks and defer expensive qualification. Do not restart planning.
 Original full requests are these user attachments:
 
-- RC: `/Users/datdo/.codex/attachments/7aeba214-314e-4e95-803a-2c965f71938e/Pasted text.txt`
-- FHD: `/Users/datdo/.codex/attachments/ff8e68e5-ee03-4e05-b1ba-2c0c95fa8d02/Pasted text.txt`
-- Smart Auto Cut: `/Users/datdo/.codex/attachments/1b22a4b6-2810-4d0e-90f6-0ba500b7b4a8/Pasted text.txt`
-- Mandatory multi-link extension: `/Users/datdo/.codex/attachments/c7fe3ea0-eb7c-4631-932b-94c7ab55b241/Pasted text.txt`
+- RC: `~/.codex/attachments/7aeba214-314e-4e95-803a-2c965f71938e/Pasted text.txt`
+- FHD: `~/.codex/attachments/ff8e68e5-ee03-4e05-b1ba-2c0c95fa8d02/Pasted text.txt`
+- Smart Auto Cut: `~/.codex/attachments/1b22a4b6-2810-4d0e-90f6-0ba500b7b4a8/Pasted text.txt`
+- Mandatory multi-link extension: `~/.codex/attachments/c7fe3ea0-eb7c-4631-932b-94c7ab55b241/Pasted text.txt`
 
 Smart Auto Cut A/B foundations are present in `81d2b09`, `558ad67` and the inherited
 fix checkpoint `37ac963`. They are not wired into Auto/Semi-Auto planning yet.

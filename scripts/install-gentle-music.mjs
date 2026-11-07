@@ -10,7 +10,7 @@ import {pipeline} from 'node:stream/promises';
 import {Transform,Readable} from 'node:stream';
 import {homedir} from 'node:os';import path from 'node:path';
 const project=path.resolve(import.meta.dirname,'..');
-if(project!=='/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev'||process.env.SHORTCUT_RUNTIME_PROFILE==='production')throw Error('DEV checkout only.');
+if(path.basename(project)!=='short-video-studio-visual-dev'||process.env.SHORTCUT_RUNTIME_PROFILE==='production')throw Error('DEV checkout only.');
 const root=path.join(homedir(),'Library/Application Support/ShortCut Studio Dev/media/music');
 await mkdir(root,{recursive:true});if((await lstat(root)).isSymbolicLink()||await realpath(root)!==root)throw Error('Unsafe DEV music root.');
 if((await statfs(root)).bavail*(await statfs(root)).bsize<1024**3)throw Error('Need1GiB free; no downloads started.');

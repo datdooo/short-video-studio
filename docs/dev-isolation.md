@@ -1,12 +1,12 @@
 # Isolated macOS development
 
 Use the `feature/visual-preset-engine` branch in
-`/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+`<dev-checkout>`.
 The stable checkout remains on `main`; its baseline is tagged
 `stable-v1.1.0-before-visual-editor` at `255a23cf2a1ae128066f2bbaa6e91daca998e6ea`.
 
 ```sh
-cd /Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev
+cd <dev-checkout>
 npm run personal:dev-isolated
 ```
 

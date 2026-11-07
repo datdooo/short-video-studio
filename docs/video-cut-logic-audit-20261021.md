@@ -2,7 +2,7 @@
 
 ## Phạm vi và bằng chứng
 
-- DEV: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+- DEV: `<dev-checkout>`.
 - Branch `recovery/visual-dev-reconstructed`; HEAD `87c3135c5ff176028f378c9f1d32833569e6c75c`.
 - Rà **source local có sửa chưa commit**, gồm framing/UI và manual teaser/bật-tắt
   mới nhất, không coi GitHub/HEAD là toàn bộ implementation hiện tại.

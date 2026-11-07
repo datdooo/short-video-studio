@@ -1,6 +1,6 @@
 # Phase 7 qualification — full visual templates
 
-Worktree: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Worktree: `<dev-checkout>`.
 Branch: `feature/visual-preset-engine`. Base: Phase 6
 `9e69e14896fafa42bc15581e0c8ac1fb97b08704`. Node 22.23.3.
 The initial worktree was clean, the phase history and implementation/qualification

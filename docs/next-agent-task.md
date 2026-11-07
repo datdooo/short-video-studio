@@ -145,7 +145,7 @@ Git recovery, push/merge or touch production. Earlier task sections below are hi
 
 # Historical task — D/E/F/G delivered; user H acceptance next
 
-Repository `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Repository `<dev-checkout>`.
 Branch `recovery/visual-dev-reconstructed`; began clean at `801a544`.
 D `5ff7b83`, E `8e6731c`, F `407ca90`, G `db47b11`, boundary/provenance and
 smoke hardening `feac0c7`. Resolve final documentation HEAD with `git log -1`.
@@ -165,7 +165,7 @@ Sports Voiceover, push/merge or unrelated work. The earlier sections below are h
 
 # Historical checkpoint — Smart Auto Cut A/B/C, 2026-10-19
 
-Repository `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Repository `<dev-checkout>`.
 Branch `recovery/visual-dev-reconstructed`; task started clean at `74d138d6406eeefc43c6735600f253742632941a`.
 A/B source wiring is committed at `316ea60`; the following C commit is the current
 checkpoint (resolve with `git log -2 --oneline`; no history rewrite).

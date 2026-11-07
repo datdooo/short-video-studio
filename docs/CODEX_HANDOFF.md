@@ -340,7 +340,7 @@ no commit/push/merge, user data or credential mutations. Preserve these changes.
 
 # Previous Beta build source — 2026-10-24
 
-Checkout: `/Users/datdo/Documents/tiktok-edit/short-video-studio-beta`, branch
+Checkout: `<beta-checkout>`, branch
 `beta/maintenance`, base `4fd5e4e402e6445b837e0522a169beaf16c82ac4`.
 The notes below this section are historical DEV records, not current Beta
 instructions or authorization to push. Preserve all current uncommitted work.
@@ -367,7 +367,7 @@ acceptance; no runtime, media-quality or speedup claim. No push/merge.
 
 # Historical: source checkpoint / push authorized, NO further packaging (2026-10-21)
 
-Repo `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+Repo `<dev-checkout>`.
 Actual branch `recovery/visual-dev-reconstructed`, base HEAD
 `0621d442435847c92ab200e10fabb86561c882b7`. Origin verified
 `https://github.com/datdooo/short-video-studio.git`; fetched successfully, remote
@@ -818,7 +818,7 @@ and all main ranges/history/job snapshots are preserved.
 # HANDOFF NOW — user paused implementation for quota (2026-10-21)
 
 **Stop new implementation. Preserve all work.** User requested immediate handoff.
-DEV `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+DEV `<dev-checkout>`.
 Actual branch `recovery/visual-dev-reconstructed`; base HEAD
 `ff4b6b7c5d2caa3549be89f94ffc6c9e715c83b9` before this handoff checkpoint.
 Origin `https://github.com/datdooo/short-video-studio.git`, upstream
@@ -993,7 +993,7 @@ final combined layout build pending. No app/worker restart or push.
 
 # Active checkpoint — teaser evidence/replay + audit fixes (2026-10-21)
 
-- DEV only `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`.
+- DEV only `<dev-checkout>`.
   Branch `recovery/visual-dev-reconstructed`, starting HEAD `69307f4a74150473e8078c2ee15d410a22e6584c`.
   All changes in this active entry are local; no push/merge. Use actual Git refs
   for the final checkpoint SHA, not old historical entries below.
@@ -1452,7 +1452,7 @@ historical handoff remain unresolved/out of scope.
 
 ## Verified Git / safety
 
-- Repository: `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev`
+- Repository: `<dev-checkout>`
 - Branch: `recovery/visual-dev-reconstructed`
 - Local implementation HEAD before this documentation checkpoint:
   `19be62910a26835a16702b63a60c94e061d6024b`.
@@ -1493,7 +1493,7 @@ Custom Time requests below were only inspected/researched when quota stop arrive
 
 ## Latest app: built versus verified
 
-- `/Users/datdo/Documents/tiktok-edit/short-video-studio-visual-dev/release/dev/ShortCut Studio Dev.app`
+- `<dev-checkout>/release/dev/ShortCut Studio Dev.app`
 - Latest build: Node22 `npm run package:mac:dev`, exit 0, source subsequently
   committed as `19be629` (only handoff documentation changed after that build).
 - Local log: `/tmp/shortcut-dev-remove-music-card-build-20261020.log`.
